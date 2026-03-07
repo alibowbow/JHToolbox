@@ -1,0 +1,23 @@
+﻿{
+  "name": "JH Toolbox",
+  "short_name": "JH Toolbox",
+  "description": "Browser-only file tools: PDF, image, video, audio, data, and web utilities.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f6f8",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
