@@ -141,7 +141,13 @@ export function ToolWorkbench({ tool }: { tool: ToolDefinition }) {
     setResults([]);
     setError(null);
     setProgress({ percent: 0, stage: messages.workbench.statusIdle });
-  }, [tool.id, messages.workbench.statusIdle]);
+  }, [tool.id]);
+
+  useEffect(() => {
+    if (!running && !results.length && !error) {
+      setProgress({ percent: 0, stage: messages.workbench.statusIdle });
+    }
+  }, [error, messages.workbench.statusIdle, results.length, running]);
 
   useEffect(() => {
     return () => {

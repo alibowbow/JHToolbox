@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ToolCard } from '@/components/tool-card';
 import { useLocale } from '@/components/providers/locale-provider';
 import { formatToolCount, getCategoryCopy } from '@/lib/i18n';
+import { getLocalizedToolCopy } from '@/lib/tool-localization';
 import { categoryIcons, categoryStyles } from '@/lib/tool-presentation';
 import { getRecentTools } from '@/lib/recent-tools';
 import { categories, tools } from '@/lib/tool-registry';
@@ -26,6 +27,8 @@ const itemVariants = {
   show: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 320, damping: 30 } },
 };
 
+const quickLaunchIds = ['pdf-merge', 'image-resize', 'ocr-image-to-text', 'qr-generator'] as const;
+
 export default function HomePage() {
   const { locale, messages } = useLocale();
   const [recentIds, setRecentIds] = useState<string[]>([]);
@@ -38,6 +41,10 @@ export default function HomePage() {
     () => recentIds.map((id) => tools.find((tool) => tool.id === id)).filter(isToolDefinition),
     [recentIds],
   );
+  const quickLaunchTools = useMemo(
+    () => quickLaunchIds.map((id) => tools.find((tool) => tool.id === id)).filter(isToolDefinition),
+    [],
+  );
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-10">
@@ -45,7 +52,7 @@ export default function HomePage() {
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="relative overflow-hidden rounded-xl3 border border-border bg-base-elevated p-7 shadow-card sm:p-10"
+        className="surface-glow relative overflow-hidden rounded-xl3 border border-border p-7 shadow-card sm:p-10"
       >
         <div className="absolute inset-0 bg-grid-faint opacity-60" />
         <div className="relative z-10 max-w-3xl">
@@ -58,7 +65,7 @@ export default function HomePage() {
             <br />
             <span className="text-prime">{messages.home.titleAccent}</span>
           </h1>
-          <p className="mt-4 max-w-2xl text-sm leading-relaxed text-ink-muted sm:text-base">{messages.home.description}</p>
+          <p className="mt-4 max-w-2xl text-sm leading-relaxed text-ink-muted sm:text-[1rem]">{messages.home.description}</p>
 
           <div className="mt-6 flex flex-wrap gap-3">
             <Link href="/tools" className="btn-primary">
@@ -69,6 +76,25 @@ export default function HomePage() {
               {messages.home.secondaryCta}
               <ChevronDown size={16} />
             </a>
+          </div>
+
+          <div className="mt-6 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium uppercase tracking-[0.18em] text-ink-faint">
+              {locale === 'ko' ? '빠른 실행' : 'Quick launch'}
+            </span>
+            {quickLaunchTools.map((tool) => {
+              const localizedTool = getLocalizedToolCopy(tool, locale);
+
+              return (
+                <Link
+                  key={tool.id}
+                  href={`/tools/${tool.category}/${tool.id}`}
+                  className="badge border border-border bg-base-elevated/80 text-ink-muted transition-colors hover:border-prime/30 hover:text-ink"
+                >
+                  {localizedTool.name}
+                </Link>
+              );
+            })}
           </div>
         </div>
       </motion.section>
@@ -105,7 +131,7 @@ export default function HomePage() {
                         {formatToolCount(locale, category.tools.length)}
                       </span>
                     </div>
-                    <p className="mt-4 text-base font-semibold text-ink">{copy.nav}</p>
+                    <p className="mt-4 text-[1rem] font-semibold text-ink">{copy.nav}</p>
                     <p className="mt-1 text-sm leading-relaxed text-ink-muted">{copy.shortDescription}</p>
                     <div className="mt-4 flex items-center gap-1 text-xs font-medium text-ink-faint transition-colors group-hover:text-prime">
                       {messages.home.openCategory}

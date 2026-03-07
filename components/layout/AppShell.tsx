@@ -1,6 +1,5 @@
 'use client';
 
-import { AnimatePresence } from 'framer-motion';
 import { usePathname } from 'next/navigation';
 import { BottomNav } from '@/components/layout/BottomNav';
 import { Sidebar } from '@/components/layout/Sidebar';
@@ -16,9 +15,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-screen min-w-0 flex-1 flex-col overflow-hidden">
         <Topbar />
         <main className="flex-1 overflow-y-auto px-4 pb-24 pt-4 sm:px-6 lg:px-8 lg:pb-10 lg:pt-6">
-          <AnimatePresence mode="wait" initial={false}>
-            <PageTransition key={pathname}>{children}</PageTransition>
-          </AnimatePresence>
+          <PageTransition routeKey={pathname}>{children}</PageTransition>
         </main>
         <BottomNav />
       </div>

@@ -67,6 +67,7 @@ export function Topbar() {
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
   const title = resolveTitle(pathname, locale, messages);
+  const showDescription = pathname !== '/';
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -127,11 +128,11 @@ export function Topbar() {
           </button>
           <div className="min-w-0">
             <h1 className="truncate text-lg font-semibold tracking-tight text-ink">{title.title}</h1>
-            <p className="hidden truncate text-xs text-ink-muted sm:block">{title.description}</p>
+            {showDescription ? <p className="hidden truncate text-xs text-ink-muted lg:block">{title.description}</p> : null}
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 pl-3">
           <button
             type="button"
             onClick={() => setSearchOpen(true)}
@@ -143,7 +144,7 @@ export function Topbar() {
           <button
             type="button"
             onClick={() => setSearchOpen(true)}
-            className="group hidden w-72 items-center gap-2 rounded-xl border border-border bg-base-elevated px-3 py-2 text-sm text-ink-muted transition-colors hover:border-border-bright hover:text-ink sm:inline-flex"
+            className="group hidden min-w-0 items-center gap-2 rounded-xl border border-border bg-base-elevated px-3 py-2 text-sm text-ink-muted transition-colors hover:border-border-bright hover:text-ink sm:inline-flex sm:w-56 lg:w-72"
           >
             <Search size={14} className="shrink-0 text-ink-faint transition-colors group-hover:text-prime" />
             <span className="truncate">{messages.topbar.searchLabel}</span>

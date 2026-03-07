@@ -3,24 +3,68 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: light;
+    --color-base: 244 247 252;
+    --color-base-subtle: 251 253 255;
+    --color-base-elevated: 255 255 255;
+    --color-border: 15 23 42;
+    --color-ink: 12 18 28;
+    --color-ink-muted: 85 96 121;
+    --color-ink-faint: 129 140 162;
+    --color-prime: 0 179 214;
+    --color-prime-dim: 0 145 178;
+    --color-accent: 134 196 52;
+    --color-accent-dim: 108 156 42;
+    --color-ok: 16 185 129;
+    --color-warn: 217 119 6;
+    --color-danger: 239 68 68;
+    --color-prime-contrast: 3 19 26;
+    --shadow-card: 0 20px 45px -32px rgba(15, 23, 42, 0.35), 0 1px 0 rgba(255, 255, 255, 0.85) inset;
+    --surface-highlight: rgba(255, 255, 255, 0.88);
+  }
+
+  html.dark {
+    color-scheme: dark;
+    --color-base: 10 10 15;
+    --color-base-subtle: 17 17 24;
+    --color-base-elevated: 24 24 31;
+    --color-border: 255 255 255;
+    --color-ink: 240 240 245;
+    --color-ink-muted: 136 136 160;
+    --color-ink-faint: 92 92 118;
+    --color-prime: 0 229 255;
+    --color-prime-dim: 0 184 204;
+    --color-accent: 184 255 87;
+    --color-accent-dim: 146 204 68;
+    --color-ok: 52 211 153;
+    --color-warn: 251 191 36;
+    --color-danger: 248 113 113;
+    --color-prime-contrast: 3 19 26;
+    --shadow-card: 0 1px 0 0 rgba(255, 255, 255, 0.08), inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+    --surface-highlight: rgba(255, 255, 255, 0.06);
+  }
+
   * {
     box-sizing: border-box;
     border-color: theme('colors.border.DEFAULT');
   }
 
   html {
-    color-scheme: dark;
+    background-color: rgb(var(--color-base));
   }
 
   body {
     @apply bg-base font-sans text-ink antialiased;
     min-height: 100vh;
     background-image:
-      radial-gradient(circle at top left, rgba(0, 229, 255, 0.08), transparent 30%),
-      radial-gradient(circle at bottom right, rgba(184, 255, 87, 0.08), transparent 26%),
-      theme('backgroundImage.grid-faint'),
+      radial-gradient(circle at top left, rgb(var(--color-prime) / 0.1), transparent 30%),
+      radial-gradient(circle at bottom right, rgb(var(--color-accent) / 0.08), transparent 26%),
+      linear-gradient(rgb(var(--color-border) / 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(var(--color-border) / 0.05) 1px, transparent 1px),
       url('/noise.png');
-    background-size: auto, auto, 40px 40px, 220px 220px;
+    background-size: auto, auto, 40px 40px, 40px 40px, 220px 220px;
+    background-position: 0 0, 100% 100%, 0 0, 0 0, 0 0;
   }
 
   a {
@@ -33,6 +77,17 @@
   select,
   textarea {
     font: inherit;
+  }
+
+  button {
+    color: inherit;
+  }
+
+  :focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 2px rgb(var(--color-base) / 1),
+      0 0 0 4px rgb(var(--color-prime) / 0.3);
   }
 
   ::selection {
@@ -56,6 +111,7 @@
 @layer components {
   .card {
     @apply rounded-xl2 border border-border bg-base-elevated shadow-card;
+    background-image: linear-gradient(180deg, rgb(var(--color-base-elevated) / 0.98), rgb(var(--color-base-elevated) / 0.92));
   }
 
   .badge {
@@ -64,17 +120,32 @@
   }
 
   .btn-primary {
-    @apply inline-flex items-center gap-2 rounded-xl bg-prime px-5 py-2.5 text-sm font-semibold text-base hover:bg-prime-dim active:scale-95;
-    box-shadow: 0 0 24px 0 #00e5ff22;
+    @apply inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold active:scale-95;
+    background: rgb(var(--color-prime) / 1);
+    color: rgb(var(--color-prime-contrast) / 1);
+    box-shadow: 0 0 24px 0 rgb(var(--color-prime) / 0.22);
     transition: transform 120ms ease, background-color 180ms ease, box-shadow 180ms ease;
+  }
+
+  .btn-primary:hover {
+    background: rgb(var(--color-prime-dim) / 1);
   }
 
   .btn-ghost {
     @apply inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm font-medium text-ink-muted hover:border-border-bright hover:text-ink active:scale-95;
+    background: rgb(var(--color-base-elevated) / 0.68);
     transition: transform 120ms ease, border-color 180ms ease, color 180ms ease;
   }
 
   .input-surface {
     @apply rounded-xl border border-border bg-base-elevated px-3 py-2 text-sm text-ink outline-none transition focus:border-prime;
+    box-shadow: inset 0 1px 0 var(--surface-highlight);
+  }
+
+  .surface-glow {
+    background:
+      radial-gradient(circle at top left, rgb(var(--color-prime) / 0.12), transparent 34%),
+      radial-gradient(circle at bottom right, rgb(var(--color-accent) / 0.08), transparent 28%),
+      linear-gradient(180deg, rgb(var(--color-base-elevated) / 0.98), rgb(var(--color-base-elevated) / 0.92));
   }
 }

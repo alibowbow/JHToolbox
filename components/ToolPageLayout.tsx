@@ -33,7 +33,7 @@ export function ToolPageLayout({
         </div>
         <div className="min-w-0">
           <h2 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{title}</h2>
-          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-ink-muted sm:text-base">{description}</p>
+          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-ink-muted sm:text-[1rem]">{description}</p>
         </div>
       </motion.div>
 
