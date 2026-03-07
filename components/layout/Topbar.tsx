@@ -4,70 +4,21 @@ import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Menu, Search, Sparkles, X } from 'lucide-react';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { usePathname } from 'next/navigation';
 import { NavigationList } from '@/components/layout/navigation-list';
 import { useLocale } from '@/components/providers/locale-provider';
 import { getCategoryCopy } from '@/lib/i18n';
 import { getLocalizedToolCopy } from '@/lib/tool-localization';
 import { categoryIcons, categoryStyles } from '@/lib/tool-presentation';
-import { categories, getToolById, tools } from '@/lib/tool-registry';
+import { tools } from '@/lib/tool-registry';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { LocaleToggle } from '@/components/ui/LocaleToggle';
 
-function resolveTitle(pathname: string, locale: 'en' | 'ko', messages: ReturnType<typeof useLocale>['messages']) {
-  if (pathname === '/') {
-    return {
-      title: messages.nav.home,
-      description: messages.appTagline,
-    };
-  }
-
-  if (pathname === '/tools') {
-    return {
-      title: messages.directory.title,
-      description: messages.directory.description,
-    };
-  }
-
-  const segments = pathname.split('/').filter(Boolean);
-  if (segments[0] !== 'tools') {
-    return {
-      title: messages.appName,
-      description: messages.appTagline,
-    };
-  }
-
-  const categoryId = segments[1] as (typeof categories)[number]['id'] | undefined;
-  if (!categoryId) {
-    return {
-      title: messages.directory.title,
-      description: messages.directory.description,
-    };
-  }
-
-  if (segments[2]) {
-    const tool = getToolById(segments[2]);
-    return {
-      title: tool ? getLocalizedToolCopy(tool, locale).name : messages.appName,
-      description: getCategoryCopy(locale, categoryId).title,
-    };
-  }
-
-  return {
-    title: getCategoryCopy(locale, categoryId).title,
-    description: getCategoryCopy(locale, categoryId).description,
-  };
-}
-
 export function Topbar() {
-  const pathname = usePathname();
   const { locale, messages } = useLocale();
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
-  const title = resolveTitle(pathname, locale, messages);
-  const showDescription = pathname !== '/';
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -117,7 +68,7 @@ export function Topbar() {
   return (
     <>
       <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between border-b border-border bg-base-subtle/80 px-4 backdrop-blur-md sm:px-6 lg:px-8">
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="flex items-center">
           <button
             type="button"
             onClick={() => setMenuOpen(true)}
@@ -126,13 +77,9 @@ export function Topbar() {
           >
             <Menu size={18} />
           </button>
-          <div className="min-w-0">
-            <h1 className="truncate text-lg font-semibold tracking-tight text-ink">{title.title}</h1>
-            {showDescription ? <p className="hidden truncate text-xs text-ink-muted lg:block">{title.description}</p> : null}
-          </div>
         </div>
 
-        <div className="flex items-center gap-2 pl-3">
+        <div className="flex min-w-0 items-center gap-2">
           <button
             type="button"
             onClick={() => setSearchOpen(true)}

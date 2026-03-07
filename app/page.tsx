@@ -171,12 +171,11 @@ export default function HomePage() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.4 }}
-        className="grid grid-cols-1 gap-3 md:grid-cols-3"
+        className="grid grid-cols-1 gap-3 md:grid-cols-2"
       >
         {[
           { title: messages.home.featureOneTitle, body: messages.home.featureOneBody },
           { title: messages.home.featureTwoTitle, body: messages.home.featureTwoBody },
-          { title: messages.home.featureThreeTitle, body: messages.home.featureThreeBody },
         ].map((item) => (
           <div key={item.title} className="card p-5">
             <p className="text-sm font-semibold text-ink">{item.title}</p>
