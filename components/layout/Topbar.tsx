@@ -8,6 +8,7 @@ import { usePathname } from 'next/navigation';
 import { NavigationList } from '@/components/layout/navigation-list';
 import { useLocale } from '@/components/providers/locale-provider';
 import { getCategoryCopy } from '@/lib/i18n';
+import { getLocalizedToolCopy } from '@/lib/tool-localization';
 import { categoryIcons, categoryStyles } from '@/lib/tool-presentation';
 import { categories, getToolById, tools } from '@/lib/tool-registry';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -47,7 +48,7 @@ function resolveTitle(pathname: string, locale: 'en' | 'ko', messages: ReturnTyp
   if (segments[2]) {
     const tool = getToolById(segments[2]);
     return {
-      title: tool?.name ?? messages.appName,
+      title: tool ? getLocalizedToolCopy(tool, locale).name : messages.appName,
       description: getCategoryCopy(locale, categoryId).title,
     };
   }
@@ -99,9 +100,12 @@ export function Topbar() {
     return tools
       .filter((tool) => {
         const categoryLabel = getCategoryCopy(locale, tool.category).nav.toLowerCase();
+        const localizedTool = getLocalizedToolCopy(tool, locale);
         return (
           tool.name.toLowerCase().includes(normalizedQuery) ||
           tool.description.toLowerCase().includes(normalizedQuery) ||
+          localizedTool.name.toLowerCase().includes(normalizedQuery) ||
+          localizedTool.description.toLowerCase().includes(normalizedQuery) ||
           tool.tags.some((tag) => tag.toLowerCase().includes(normalizedQuery)) ||
           categoryLabel.includes(normalizedQuery)
         );
@@ -122,12 +126,20 @@ export function Topbar() {
             <Menu size={18} />
           </button>
           <div className="min-w-0">
-            <h1 className="truncate font-display text-lg font-semibold tracking-tight text-ink">{title.title}</h1>
+            <h1 className="truncate text-lg font-semibold tracking-tight text-ink">{title.title}</h1>
             <p className="hidden truncate text-xs text-ink-muted sm:block">{title.description}</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSearchOpen(true)}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-base-elevated text-ink-muted transition-colors hover:border-border-bright hover:text-ink sm:hidden"
+            aria-label={messages.topbar.searchLabel}
+          >
+            <Search size={16} />
+          </button>
           <button
             type="button"
             onClick={() => setSearchOpen(true)}
@@ -221,6 +233,7 @@ export function Topbar() {
                     {searchResults.map((tool) => {
                       const Icon = categoryIcons[tool.category];
                       const category = getCategoryCopy(locale, tool.category);
+                      const localizedTool = getLocalizedToolCopy(tool, locale);
                       const style = categoryStyles[tool.category];
 
                       return (
@@ -239,10 +252,10 @@ export function Topbar() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-2">
-                                <p className="text-sm font-semibold text-ink">{tool.name}</p>
+                                <p className="text-sm font-semibold text-ink">{localizedTool.name}</p>
                                 <span className={`badge border ${style.badge}`}>{category.nav}</span>
                               </div>
-                              <p className="mt-1 text-xs leading-relaxed text-ink-muted">{tool.description}</p>
+                              <p className="mt-1 text-xs leading-relaxed text-ink-muted">{localizedTool.description}</p>
                             </div>
                           </motion.div>
                         </Link>

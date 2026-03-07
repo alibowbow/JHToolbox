@@ -11,6 +11,12 @@ import { ToolDefinition, ToolOption } from '@/types/tool';
 import { ToolPageLayout } from '@/components/ToolPageLayout';
 import { useLocale } from '@/components/providers/locale-provider';
 import { formatMegaBytes, getCategoryCopy } from '@/lib/i18n';
+import {
+  getLocalizedChoiceLabel,
+  getLocalizedOptionLabel,
+  getLocalizedPlaceholder,
+  getLocalizedToolCopy,
+} from '@/lib/tool-localization';
 import { categoryIcons, categoryStyles } from '@/lib/tool-presentation';
 import { DropZone } from '@/components/ui/DropZone';
 import { ProgressBar } from '@/components/ui/ProgressBar';
@@ -28,6 +34,7 @@ function getDefaults(tool: ToolDefinition): Record<string, string | number | boo
 function renderField(
   option: ToolOption,
   value: string | number | boolean | undefined,
+  locale: 'en' | 'ko',
   onChange: (key: string, nextValue: string | number | boolean) => void,
 ) {
   const commonClassName = 'input-surface mt-1 w-full';
@@ -41,7 +48,7 @@ function renderField(
       >
         {(option.options ?? []).map((entry) => (
           <option key={String(entry.value)} value={String(entry.value)}>
-            {entry.label}
+            {getLocalizedChoiceLabel(entry.label, locale)}
           </option>
         ))}
       </select>
@@ -57,7 +64,7 @@ function renderField(
           onChange={(event) => onChange(option.key, event.target.checked)}
           className="h-4 w-4"
         />
-        Enabled
+        {locale === 'ko' ? '사용' : 'Enabled'}
       </label>
     );
   }
@@ -100,7 +107,7 @@ function renderField(
       min={option.min}
       max={option.max}
       step={option.step}
-      placeholder={option.placeholder}
+      placeholder={getLocalizedPlaceholder(option, locale)}
       className={commonClassName}
     />
   );
@@ -121,7 +128,11 @@ export function ToolWorkbench({ tool }: { tool: ToolDefinition }) {
   const Icon = categoryIcons[tool.category];
   const style = categoryStyles[tool.category];
   const category = getCategoryCopy(locale, tool.category);
-  const acceptLabel = useMemo(() => (tool.accept === '*' ? 'Any file' : tool.accept), [tool.accept]);
+  const localizedTool = getLocalizedToolCopy(tool, locale);
+  const acceptLabel = useMemo(
+    () => (tool.accept === '*' ? (locale === 'ko' ? '모든 파일' : 'Any file') : tool.accept),
+    [locale, tool.accept],
+  );
   const fileOptional = OPTIONAL_FILE_TOOLS.has(tool.id);
 
   useEffect(() => {
@@ -219,7 +230,7 @@ export function ToolWorkbench({ tool }: { tool: ToolDefinition }) {
   const dropLabel = fileOptional ? messages.workbench.dropzoneOptional : messages.workbench.dropzone;
 
   return (
-    <ToolPageLayout title={tool.name} description={tool.description} icon={Icon} iconColor={style.icon}>
+    <ToolPageLayout title={localizedTool.name} description={localizedTool.description} icon={Icon} iconColor={style.icon}>
       <div className="space-y-6">
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
           <section className="card space-y-4 p-5 xl:col-span-3">
@@ -245,8 +256,10 @@ export function ToolWorkbench({ tool }: { tool: ToolDefinition }) {
             <div className="mt-4 space-y-4">
               {(tool.options ?? []).map((option) => (
                 <div key={option.key}>
-                  <label className="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">{option.label}</label>
-                  {renderField(option, options[option.key], (key, nextValue) =>
+                  <label className="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">
+                    {getLocalizedOptionLabel(option, locale)}
+                  </label>
+                  {renderField(option, options[option.key], locale, (key, nextValue) =>
                     setOptions((currentOptions) => ({
                       ...currentOptions,
                       [key]: nextValue,

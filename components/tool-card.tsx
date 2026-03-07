@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { ArrowUpRight } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { getCategoryCopy } from '@/lib/i18n';
+import { getLocalizedToolCopy } from '@/lib/tool-localization';
 import { categoryIcons, categoryStyles } from '@/lib/tool-presentation';
 import { ToolDefinition } from '@/types/tool';
 
@@ -13,6 +14,7 @@ export function ToolCard({ tool }: { tool: ToolDefinition }) {
   const Icon = categoryIcons[tool.category];
   const style = categoryStyles[tool.category];
   const category = getCategoryCopy(locale, tool.category);
+  const localizedTool = getLocalizedToolCopy(tool, locale);
 
   return (
     <Link href={`/tools/${tool.category}/${tool.id}`} className="block h-full">
@@ -30,10 +32,10 @@ export function ToolCard({ tool }: { tool: ToolDefinition }) {
 
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <p className="text-sm font-semibold text-ink">{tool.name}</p>
+            <p className="text-sm font-semibold text-ink">{localizedTool.name}</p>
             <ArrowUpRight size={14} className="text-ink-faint transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-prime" />
           </div>
-          <p className="text-xs leading-relaxed text-ink-muted">{tool.description}</p>
+          <p className="text-xs leading-relaxed text-ink-muted">{localizedTool.description}</p>
         </div>
 
         <div className="mt-auto flex flex-wrap gap-2">

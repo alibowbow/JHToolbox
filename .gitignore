@@ -3,6 +3,7 @@ node_modules
 out
 test-results
 playwright-report
+playwright-audit
 *.tsbuildinfo
 *.log
 npm-debug.log*
