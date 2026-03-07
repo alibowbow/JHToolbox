@@ -1,4 +1,4 @@
-﻿const CACHE = 'tinywow-tools-v1';
+const CACHE = 'jhtoolbox-v1';
 const ASSETS = ['/', '/tools', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {

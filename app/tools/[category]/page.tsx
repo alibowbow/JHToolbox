@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { ToolCard } from '@/components/tool-card';
+import { CategoryPageContent } from '@/components/category-page-content';
 import { categories, getToolsByCategory } from '@/lib/tool-registry';
 
 export function generateStaticParams() {
@@ -14,15 +14,5 @@ export default function CategoryPage({ params }: { params: { category: string } 
 
   const items = getToolsByCategory(category.id);
 
-  return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">{category.label}</h1>
-      <p className="text-sm text-muted">{category.description}</p>
-      <div className="tool-grid">
-        {items.map((tool) => (
-          <ToolCard key={tool.id} tool={tool} />
-        ))}
-      </div>
-    </div>
-  );
+  return <CategoryPageContent category={category} items={items} />;
 }

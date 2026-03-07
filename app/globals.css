@@ -2,69 +2,79 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --bg: #f4f6f8;
-  --surface: #ffffff;
-  --text: #0f172a;
-  --muted: #475569;
-  --border: #dbe3ec;
-  --accent: #0ea5e9;
+@layer base {
+  * {
+    box-sizing: border-box;
+    border-color: theme('colors.border.DEFAULT');
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-base font-sans text-ink antialiased;
+    min-height: 100vh;
+    background-image:
+      radial-gradient(circle at top left, rgba(0, 229, 255, 0.08), transparent 30%),
+      radial-gradient(circle at bottom right, rgba(184, 255, 87, 0.08), transparent 26%),
+      theme('backgroundImage.grid-faint'),
+      url('/noise.png');
+    background-size: auto, auto, 40px 40px, 220px 220px;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  ::selection {
+    @apply bg-prime/20 text-prime;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-base;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-border-bright;
+  }
 }
 
-.dark {
-  --bg: #0b1220;
-  --surface: #111b2e;
-  --text: #e2e8f0;
-  --muted: #a7b4c8;
-  --border: #1f2f4a;
-  --accent: #38bdf8;
-}
+@layer components {
+  .card {
+    @apply rounded-xl2 border border-border bg-base-elevated shadow-card;
+  }
 
-* {
-  box-sizing: border-box;
-}
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium tracking-wide;
+    font-family: var(--font-geist-mono), monospace;
+  }
 
-html,
-body {
-  margin: 0;
-  padding: 0;
-  min-height: 100%;
-}
+  .btn-primary {
+    @apply inline-flex items-center gap-2 rounded-xl bg-prime px-5 py-2.5 text-sm font-semibold text-base hover:bg-prime-dim active:scale-95;
+    box-shadow: 0 0 24px 0 #00e5ff22;
+    transition: transform 120ms ease, background-color 180ms ease, box-shadow 180ms ease;
+  }
 
-body {
-  background:
-    radial-gradient(circle at 0% 0%, rgba(14, 165, 233, 0.12), transparent 40%),
-    radial-gradient(circle at 100% 100%, rgba(56, 189, 248, 0.15), transparent 45%),
-    var(--bg);
-  color: var(--text);
-  font-family: 'Segoe UI', 'Pretendard', 'Noto Sans KR', sans-serif;
-}
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm font-medium text-ink-muted hover:border-border-bright hover:text-ink active:scale-95;
+    transition: transform 120ms ease, border-color 180ms ease, color 180ms ease;
+  }
 
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
-
-.app-wrap {
-  min-height: 100vh;
-}
-
-.panel {
-  border: 1px solid var(--border);
-  background: var(--surface);
-  border-radius: 16px;
-  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.06);
-}
-
-.tool-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 14px;
+  .input-surface {
+    @apply rounded-xl border border-border bg-base-elevated px-3 py-2 text-sm text-ink outline-none transition focus:border-prime;
+  }
 }

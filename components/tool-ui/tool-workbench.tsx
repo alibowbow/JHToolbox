@@ -1,13 +1,22 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import JSZip from 'jszip';
-import { Download, LoaderCircle, Play, UploadCloud, X } from 'lucide-react';
+import { Download, LoaderCircle, Play, Sparkles } from 'lucide-react';
 import { runTool } from '@/lib/processors';
 import { pushRecentTool } from '@/lib/recent-tools';
 import { downloadBlob, safeFileName } from '@/lib/utils';
 import { ProcessedFile } from '@/types/processor';
 import { ToolDefinition, ToolOption } from '@/types/tool';
+import { ToolPageLayout } from '@/components/ToolPageLayout';
+import { useLocale } from '@/components/providers/locale-provider';
+import { formatMegaBytes, getCategoryCopy } from '@/lib/i18n';
+import { categoryIcons, categoryStyles } from '@/lib/tool-presentation';
+import { DropZone } from '@/components/ui/DropZone';
+import { ProgressBar } from '@/components/ui/ProgressBar';
+import { ResultCard } from '@/components/ui/ResultCard';
+import { Tabs } from '@/components/ui/Tabs';
+import { toast } from '@/components/ui/Toast';
 
 const OPTIONAL_FILE_TOOLS = new Set(['qr-generator', 'url-image', 'url-pdf', 'detect-cms']);
 
@@ -21,8 +30,7 @@ function renderField(
   value: string | number | boolean | undefined,
   onChange: (key: string, nextValue: string | number | boolean) => void,
 ) {
-  const commonClassName =
-    'mt-1 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:border-accent';
+  const commonClassName = 'input-surface mt-1 w-full';
 
   if (option.type === 'select') {
     return (
@@ -42,7 +50,7 @@ function renderField(
 
   if (option.type === 'checkbox') {
     return (
-      <label className="mt-2 inline-flex items-center gap-2 text-sm">
+      <label className="mt-2 inline-flex items-center gap-2 text-sm text-ink-muted">
         <input
           type="checkbox"
           checked={Boolean(value)}
@@ -60,14 +68,14 @@ function renderField(
         type="color"
         value={String(value)}
         onChange={(event) => onChange(option.key, event.target.value)}
-        className="mt-1 h-10 w-full rounded-md border border-border bg-transparent"
+        className="mt-1 h-10 w-full rounded-xl border border-border bg-base-subtle"
       />
     );
   }
 
   if (option.type === 'range') {
     return (
-      <div className="mt-1 space-y-1">
+      <div className="mt-1 space-y-2">
         <input
           type="range"
           value={Number(value)}
@@ -75,9 +83,9 @@ function renderField(
           min={option.min}
           max={option.max}
           step={option.step}
-          className="w-full"
+          className="w-full accent-cyan-400"
         />
-        <p className="text-xs text-muted">{String(value)}</p>
+        <p className="text-xs font-mono text-ink-muted">{String(value)}</p>
       </div>
     );
   }
@@ -99,22 +107,30 @@ function renderField(
 }
 
 export function ToolWorkbench({ tool }: { tool: ToolDefinition }) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const { locale, messages } = useLocale();
   const [files, setFiles] = useState<File[]>([]);
   const [running, setRunning] = useState(false);
-  const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [options, setOptions] = useState<Record<string, string | number | boolean>>(getDefaults(tool));
-  const [progress, setProgress] = useState({ percent: 0, stage: 'Waiting' });
+  const [progress, setProgress] = useState<{ percent: number; stage: string }>({
+    percent: 0,
+    stage: messages.workbench.statusIdle,
+  });
   const [results, setResults] = useState<ProcessedFile[]>([]);
+
+  const Icon = categoryIcons[tool.category];
+  const style = categoryStyles[tool.category];
+  const category = getCategoryCopy(locale, tool.category);
+  const acceptLabel = useMemo(() => (tool.accept === '*' ? 'Any file' : tool.accept), [tool.accept]);
+  const fileOptional = OPTIONAL_FILE_TOOLS.has(tool.id);
 
   useEffect(() => {
     setOptions(getDefaults(tool));
     setFiles([]);
     setResults([]);
     setError(null);
-    setProgress({ percent: 0, stage: 'Waiting' });
-  }, [tool.id]);
+    setProgress({ percent: 0, stage: messages.workbench.statusIdle });
+  }, [tool.id, messages.workbench.statusIdle]);
 
   useEffect(() => {
     return () => {
@@ -126,21 +142,10 @@ export function ToolWorkbench({ tool }: { tool: ToolDefinition }) {
     };
   }, [results]);
 
-  const acceptLabel = useMemo(() => (tool.accept === '*' ? 'Any file' : tool.accept), [tool.accept]);
-  const fileOptional = OPTIONAL_FILE_TOOLS.has(tool.id);
-
-  const addFiles = (incomingFiles: File[]) => {
-    setFiles((currentFiles) => {
-      if (tool.multiple) {
-        return [...currentFiles, ...incomingFiles];
-      }
-      return incomingFiles.slice(0, 1);
-    });
-  };
-
   const onProcess = async () => {
     if (!files.length && !fileOptional) {
-      setError('Add at least one file before running this tool.');
+      setError(messages.workbench.addFileError);
+      toast.error(messages.workbench.addFileError);
       return;
     }
 
@@ -148,7 +153,7 @@ export function ToolWorkbench({ tool }: { tool: ToolDefinition }) {
       setError(null);
       setResults([]);
       setRunning(true);
-      setProgress({ percent: 2, stage: 'Starting' });
+      setProgress({ percent: 2, stage: messages.workbench.statusRunning });
 
       const processedFiles = await runTool({
         toolId: tool.id,
@@ -177,12 +182,14 @@ export function ToolWorkbench({ tool }: { tool: ToolDefinition }) {
       });
 
       setResults(filesWithPreview);
-      setProgress({ percent: 100, stage: 'Done' });
+      setProgress({ percent: 100, stage: messages.workbench.statusDone });
       pushRecentTool(tool.id);
+      toast.success(messages.workbench.success);
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : 'Processing failed.';
+      const message = cause instanceof Error ? cause.message : messages.workbench.failure;
       setError(message);
-      setProgress({ percent: 0, stage: 'Failed' });
+      setProgress({ percent: 0, stage: messages.workbench.statusError });
+      toast.error(message);
     } finally {
       setRunning(false);
     }
@@ -208,181 +215,165 @@ export function ToolWorkbench({ tool }: { tool: ToolDefinition }) {
     downloadBlob(blob, `${tool.id}-results.zip`);
   };
 
-  return (
-    <div className="space-y-6">
-      <section className="panel p-5 sm:p-6">
-        <h1 className="text-2xl font-semibold">{tool.name}</h1>
-        <p className="mt-1 text-sm text-muted">{tool.description}</p>
-      </section>
+  const progressStatus = error ? 'error' : results.length ? 'done' : running ? 'running' : 'idle';
+  const dropLabel = fileOptional ? messages.workbench.dropzoneOptional : messages.workbench.dropzone;
 
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-        <div className="panel p-4 lg:col-span-3">
-          <p className="text-sm font-semibold">1. Files</p>
-          <div
-            className={`mt-3 rounded-xl border-2 border-dashed p-6 text-center transition ${
-              dragging ? 'border-accent bg-accent/10' : 'border-border'
-            }`}
-            onDragOver={(event) => {
-              event.preventDefault();
-              setDragging(true);
-            }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={(event) => {
-              event.preventDefault();
-              setDragging(false);
-              addFiles(Array.from(event.dataTransfer.files));
-            }}
-          >
-            <UploadCloud className="mx-auto text-muted" />
-            <p className="mt-2 text-sm text-muted">
-              {fileOptional ? 'This tool can run without uploading a file.' : 'Drag and drop files here or browse.'}
-            </p>
-            <p className="mt-1 text-xs text-muted">Accepted input: {acceptLabel}</p>
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              className="mt-3 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white"
-            >
-              Choose files
-            </button>
-            <input
-              ref={inputRef}
-              type="file"
-              className="hidden"
+  return (
+    <ToolPageLayout title={tool.name} description={tool.description} icon={Icon} iconColor={style.icon}>
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
+          <section className="card space-y-4 p-5 xl:col-span-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-ink">{messages.workbench.files}</p>
+                <p className="mt-1 text-xs text-ink-muted">{messages.workbench.acceptedInput}: {acceptLabel}</p>
+              </div>
+              {fileOptional ? <span className={`badge border ${style.badge}`}>{messages.workbench.optionalUpload}</span> : null}
+            </div>
+
+            <DropZone
+              files={files}
+              onFiles={setFiles}
               accept={tool.accept === '*' ? undefined : tool.accept}
               multiple={Boolean(tool.multiple)}
-              onChange={(event) => {
-                addFiles(Array.from(event.target.files ?? []));
-                event.target.value = '';
-              }}
+              label={dropLabel}
             />
-          </div>
+          </section>
 
-          {files.length > 0 && (
-            <div className="mt-3 space-y-2">
-              {files.map((file, index) => (
-                <div
-                  key={`${file.name}-${index}`}
-                  className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm"
-                >
-                  <span className="truncate">{file.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => setFiles((currentFiles) => currentFiles.filter((_, itemIndex) => itemIndex !== index))}
-                    className="rounded p-1 text-muted hover:bg-accent/10"
-                  >
-                    <X size={16} />
-                  </button>
+          <section className="card p-5 xl:col-span-2">
+            <p className="text-sm font-semibold text-ink">{messages.workbench.options}</p>
+            <div className="mt-4 space-y-4">
+              {(tool.options ?? []).map((option) => (
+                <div key={option.key}>
+                  <label className="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">{option.label}</label>
+                  {renderField(option, options[option.key], (key, nextValue) =>
+                    setOptions((currentOptions) => ({
+                      ...currentOptions,
+                      [key]: nextValue,
+                    }))
+                  )}
                 </div>
               ))}
+              {tool.options?.length ? null : <p className="text-sm text-ink-muted">{messages.workbench.noOptions}</p>}
             </div>
-          )}
+
+            <button
+              type="button"
+              disabled={running}
+              onClick={onProcess}
+              className="btn-primary mt-5 w-full justify-center"
+            >
+              {running ? <LoaderCircle size={18} className="animate-spin" /> : <Play size={18} />}
+              {running ? messages.workbench.running : messages.workbench.runTool}
+            </button>
+          </section>
         </div>
 
-        <div className="panel p-4 lg:col-span-2">
-          <p className="text-sm font-semibold">2. Options</p>
-          <div className="mt-3 space-y-3">
-            {(tool.options ?? []).map((option) => (
-              <div key={option.key}>
-                <label className="text-xs font-medium text-muted">{option.label}</label>
-                {renderField(option, options[option.key], (key, nextValue) =>
-                  setOptions((currentOptions) => ({
-                    ...currentOptions,
-                    [key]: nextValue,
-                  }))
-                )}
-              </div>
-            ))}
-            {tool.options?.length ? null : (
-              <p className="text-sm text-muted">This tool does not require extra options.</p>
-            )}
+        <section className="card p-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-ink">{messages.workbench.progress}</p>
+              <p className="mt-1 text-xs text-ink-muted">{progress.stage}</p>
+            </div>
+            <span className={`badge border ${style.badge}`}>{category.nav}</span>
           </div>
+          <ProgressBar value={progress.percent} label={progress.stage} status={progressStatus} />
+        </section>
 
-          <button
-            type="button"
-            disabled={running}
-            onClick={onProcess}
-            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 font-semibold text-white disabled:opacity-60"
-          >
-            {running ? <LoaderCircle size={18} className="animate-spin" /> : <Play size={18} />}
-            Run tool
-          </button>
-        </div>
-      </section>
+        <Tabs
+          tabs={[
+            { id: 'results', label: messages.workbench.results },
+            { id: 'inspector', label: messages.workbench.inspector },
+          ]}
+        >
+          {(activeTab) => {
+            if (activeTab === 'inspector') {
+              return (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  <div className="card p-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.toolId}</p>
+                    <p className="mt-2 text-sm font-semibold text-ink">{tool.id}</p>
+                  </div>
+                  <div className="card p-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.acceptedInput}</p>
+                    <p className="mt-2 text-sm font-semibold text-ink">{acceptLabel}</p>
+                  </div>
+                  <div className="card p-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.outputFiles}</p>
+                    <p className="mt-2 text-sm font-semibold text-ink">{results.length}</p>
+                  </div>
+                  <div className="card p-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.tags}</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {tool.tags.map((tag) => (
+                        <span key={tag} className="badge border border-border bg-base-subtle text-ink-muted">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
 
-      <section className="panel p-4">
-        <p className="text-sm font-semibold">3. Progress</p>
-        <div className="mt-2 h-2 rounded-full bg-border">
-          <div className="h-2 rounded-full bg-accent transition-all" style={{ width: `${progress.percent}%` }} />
-        </div>
-        <p className="mt-2 text-sm text-muted">
-          {Math.round(progress.percent)}% - {progress.stage}
-        </p>
-      </section>
+            return (
+              <section className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-ink">{messages.workbench.results}</p>
+                  <button type="button" onClick={onDownloadAll} disabled={!results.length} className="btn-ghost disabled:opacity-60">
+                    <Download size={16} />
+                    {messages.workbench.downloadAll}
+                  </button>
+                </div>
 
-      <section className="panel p-4">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-semibold">4. Results</p>
-          <button
-            type="button"
-            onClick={onDownloadAll}
-            disabled={!results.length}
-            className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:border-accent disabled:opacity-60"
-          >
-            <Download size={16} />
-            Download
-          </button>
-        </div>
+                {error ? (
+                  <div className="card border-danger/30 bg-danger/10 p-4 text-sm text-danger">{error}</div>
+                ) : null}
 
-        {error && (
-          <p className="mt-3 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
-            {error}
-          </p>
-        )}
-
-        {results.length === 0 ? (
-          <p className="mt-3 text-sm text-muted">Processed files will appear here.</p>
-        ) : (
-          <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {results.map((result) => (
-              <article key={result.name} className="rounded-xl border border-border p-3">
-                <p className="truncate text-sm font-medium">{result.name}</p>
-                {result.previewUrl && result.mimeType.startsWith('image/') && (
-                  <img
-                    src={result.previewUrl}
-                    alt={result.name}
-                    className="mt-2 max-h-72 w-full rounded-lg object-contain"
-                  />
+                {results.length === 0 ? (
+                  <div className="card flex items-center gap-3 p-5 text-sm text-ink-muted">
+                    <Sparkles size={16} className="text-prime" />
+                    {messages.workbench.emptyResults}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    {results.map((result) => (
+                      <ResultCard
+                        key={result.name}
+                        fileName={result.name}
+                        fileSize={formatMegaBytes(result.blob.size)}
+                        title={messages.workbench.success}
+                        actionLabel={messages.workbench.download}
+                        onDownload={() => downloadBlob(result.blob, result.name)}
+                      >
+                        {result.previewUrl && result.mimeType.startsWith('image/') ? (
+                          <img src={result.previewUrl} alt={result.name} className="max-h-80 w-full rounded-xl object-contain" />
+                        ) : null}
+                        {result.previewUrl && result.mimeType.startsWith('video/') ? (
+                          <video src={result.previewUrl} controls className="max-h-80 w-full rounded-xl" />
+                        ) : null}
+                        {result.previewUrl && result.mimeType.startsWith('audio/') ? (
+                          <audio src={result.previewUrl} controls className="w-full" />
+                        ) : null}
+                        {result.textContent ? (
+                          <pre className="max-h-64 overflow-auto rounded-xl border border-border bg-base-subtle p-3 text-xs text-ink">
+                            {result.textContent}
+                          </pre>
+                        ) : null}
+                        {result.metadata ? (
+                          <pre className="max-h-64 overflow-auto rounded-xl border border-border bg-base-subtle p-3 text-xs text-ink">
+                            {JSON.stringify(result.metadata, null, 2)}
+                          </pre>
+                        ) : null}
+                      </ResultCard>
+                    ))}
+                  </div>
                 )}
-                {result.previewUrl && result.mimeType.startsWith('video/') && (
-                  <video src={result.previewUrl} controls className="mt-2 max-h-72 w-full rounded-lg" />
-                )}
-                {result.previewUrl && result.mimeType.startsWith('audio/') && (
-                  <audio src={result.previewUrl} controls className="mt-2 w-full" />
-                )}
-                {result.textContent && (
-                  <pre className="mt-2 max-h-60 overflow-auto rounded-md bg-black/80 p-3 text-xs text-white">
-                    {result.textContent}
-                  </pre>
-                )}
-                {result.metadata && (
-                  <pre className="mt-2 max-h-60 overflow-auto rounded-md bg-black/80 p-3 text-xs text-white">
-                    {JSON.stringify(result.metadata, null, 2)}
-                  </pre>
-                )}
-                <button
-                  type="button"
-                  onClick={() => downloadBlob(result.blob, result.name)}
-                  className="mt-3 inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:border-accent"
-                >
-                  <Download size={14} />
-                  Save file
-                </button>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
+              </section>
+            );
+          }}
+        </Tabs>
+      </div>
+    </ToolPageLayout>
   );
 }

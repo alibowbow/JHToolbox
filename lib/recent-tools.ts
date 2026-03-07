@@ -1,4 +1,4 @@
-const KEY = 'tinywow.recentTools';
+const KEY = 'jhtoolbox.recentTools';
 const MAX_ITEMS = 8;
 
 export function getRecentTools(): string[] {

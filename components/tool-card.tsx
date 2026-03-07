@@ -2,34 +2,49 @@
 
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { FileAudio2, FileCode2, FileImage, FileSearch2, FileText, FileVideo2, Globe, Wrench } from 'lucide-react';
+import { ArrowUpRight } from 'lucide-react';
+import { useLocale } from '@/components/providers/locale-provider';
+import { getCategoryCopy } from '@/lib/i18n';
+import { categoryIcons, categoryStyles } from '@/lib/tool-presentation';
 import { ToolDefinition } from '@/types/tool';
 
-function iconOf(category: ToolDefinition['category']) {
-  if (category === 'pdf') return FileText;
-  if (category === 'image') return FileImage;
-  if (category === 'ocr') return FileSearch2;
-  if (category === 'video') return FileVideo2;
-  if (category === 'audio') return FileAudio2;
-  if (category === 'file') return FileCode2;
-  if (category === 'web') return Globe;
-  return Wrench;
-}
-
 export function ToolCard({ tool }: { tool: ToolDefinition }) {
-  const Icon = iconOf(tool.category);
+  const { locale, messages } = useLocale();
+  const Icon = categoryIcons[tool.category];
+  const style = categoryStyles[tool.category];
+  const category = getCategoryCopy(locale, tool.category);
 
   return (
-    <motion.div whileHover={{ y: -3 }} transition={{ duration: 0.2 }}>
-      <Link href={`/tools/${tool.category}/${tool.id}`} className="panel block h-full p-4 transition hover:border-accent">
-        <div className="flex items-center gap-2">
-          <span className="rounded-lg bg-accent/10 p-2 text-accent">
+    <Link href={`/tools/${tool.category}/${tool.id}`} className="block h-full">
+      <motion.article
+        whileHover={{ y: -2 }}
+        whileTap={{ scale: 0.98 }}
+        className={`card group flex h-full flex-col gap-4 border ${style.border} bg-gradient-to-br ${style.gradient} p-4 transition-all`}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className={`flex h-10 w-10 items-center justify-center rounded-xl border border-border ${style.iconBg} ${style.icon}`}>
             <Icon size={18} />
-          </span>
-          <p className="font-semibold">{tool.name}</p>
+          </div>
+          <span className={`badge border ${style.badge}`}>{category.nav}</span>
         </div>
-        <p className="mt-3 text-sm text-muted">{tool.description}</p>
-      </Link>
-    </motion.div>
+
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-semibold text-ink">{tool.name}</p>
+            <ArrowUpRight size={14} className="text-ink-faint transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-prime" />
+          </div>
+          <p className="text-xs leading-relaxed text-ink-muted">{tool.description}</p>
+        </div>
+
+        <div className="mt-auto flex flex-wrap gap-2">
+          {tool.tags.slice(0, 3).map((tag) => (
+            <span key={tag} className="badge border border-border bg-base-subtle text-ink-faint">
+              {tag}
+            </span>
+          ))}
+          <span className="badge border border-border bg-base-subtle text-ink-muted">{messages.common.open}</span>
+        </div>
+      </motion.article>
+    </Link>
   );
 }
