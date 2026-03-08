@@ -87,6 +87,40 @@ test('audio cutter shows waveform editing before processing and exports a trimme
   ).toBeVisible();
   await expect(page.getByText('Selection length')).toBeVisible();
   await expect(page.getByText('Results')).toHaveCount(0);
+  await expect(page.getByTestId('waveform-selection-overlay')).toBeVisible();
+
+  await page.locator('select').first().selectOption('remove');
+  await page.locator('input[type="number"]').first().fill('0.20');
+  await page.locator('input[type="number"]').nth(1).fill('0.60');
+
+  const previewAudio = page.getByTestId('waveform-preview-audio');
+  await previewAudio.evaluate((element) => {
+    const audio = element as HTMLAudioElement;
+    audio.currentTime = 0.8;
+    audio.dispatchEvent(new Event('seeking'));
+  });
+  await expect
+    .poll(() => previewAudio.evaluate((element) => Number((element as HTMLAudioElement).currentTime.toFixed(2))))
+    .toBeCloseTo(0.6, 1);
+
+  await previewAudio.evaluate((element) => {
+    const audio = element as HTMLAudioElement;
+    audio.currentTime = 0.05;
+    audio.dispatchEvent(new Event('seeking'));
+  });
+  await expect
+    .poll(() => previewAudio.evaluate((element) => Number((element as HTMLAudioElement).currentTime.toFixed(2))))
+    .toBeCloseTo(0.2, 1);
+
+  await previewAudio.evaluate((element) => {
+    (element as HTMLAudioElement).currentTime = 0.6;
+  });
+  await page.getByRole('button', { name: 'Play' }).click();
+  await expect
+    .poll(() => previewAudio.evaluate((element) => Number((element as HTMLAudioElement).currentTime.toFixed(2))))
+    .toBeGreaterThanOrEqual(0.2);
+  expect(await previewAudio.evaluate((element) => (element as HTMLAudioElement).currentTime)).toBeLessThan(0.4);
+  await page.getByRole('button', { name: 'Pause' }).click();
 
   await page.locator('input[type="number"]').nth(1).fill('1.00');
   await page.getByRole('button', { name: 'Run tool' }).click();

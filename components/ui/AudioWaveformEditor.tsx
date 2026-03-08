@@ -114,6 +114,7 @@ export function AudioWaveformEditor({
   const canvasWidth = Math.max(baseWidth, Math.round(baseWidth * zoom));
   const startPercent = safeDuration ? normalizedSelection.startTime / safeDuration : 0;
   const endPercent = safeDuration ? normalizedSelection.endTime / safeDuration : 0;
+  const selectionWidthPercent = Math.max((endPercent - startPercent) * 100, 0.5);
   const playheadPercent = safeDuration ? clamp(currentTime / safeDuration, 0, 1) : 0;
   const localizedTrimMode = getLocalizedChoiceLabel(
     trimMode === 'remove' ? 'Remove selection' : 'Keep selection',
@@ -247,16 +248,32 @@ export function AudioWaveformEditor({
       return;
     }
 
+    const syncToSelection = () => {
+      const outsideSelection =
+        audio.currentTime < normalizedSelection.startTime || audio.currentTime > normalizedSelection.endTime;
+
+      if (!outsideSelection) {
+        return;
+      }
+
+      const nextTime = clamp(audio.currentTime, normalizedSelection.startTime, normalizedSelection.endTime);
+
+      audio.currentTime = nextTime;
+      setCurrentTime(nextTime);
+    };
+
     const onLoadedMetadata = () => {
       if (audio.duration && Number.isFinite(audio.duration)) {
         setDuration(audio.duration);
       }
+
+      syncToSelection();
     };
 
     const onTimeUpdate = () => {
       setCurrentTime(audio.currentTime);
 
-      if (trimMode === 'keep' && audio.currentTime >= normalizedSelection.endTime) {
+      if (audio.currentTime >= normalizedSelection.endTime) {
         audio.pause();
         audio.currentTime = normalizedSelection.endTime;
         setCurrentTime(normalizedSelection.endTime);
@@ -264,21 +281,48 @@ export function AudioWaveformEditor({
       }
     };
 
-    const onPlay = () => setIsPlaying(true);
+    const onPlay = () => {
+      if (audio.currentTime < normalizedSelection.startTime || audio.currentTime >= normalizedSelection.endTime) {
+        audio.currentTime = normalizedSelection.startTime;
+        setCurrentTime(normalizedSelection.startTime);
+      }
+
+      setIsPlaying(true);
+    };
     const onPause = () => setIsPlaying(false);
+    const onSeeking = () => syncToSelection();
 
     audio.addEventListener('loadedmetadata', onLoadedMetadata);
     audio.addEventListener('timeupdate', onTimeUpdate);
     audio.addEventListener('play', onPlay);
     audio.addEventListener('pause', onPause);
+    audio.addEventListener('seeking', onSeeking);
 
     return () => {
       audio.removeEventListener('loadedmetadata', onLoadedMetadata);
       audio.removeEventListener('timeupdate', onTimeUpdate);
       audio.removeEventListener('play', onPlay);
       audio.removeEventListener('pause', onPause);
+      audio.removeEventListener('seeking', onSeeking);
     };
-  }, [normalizedSelection.endTime, trimMode]);
+  }, [normalizedSelection.endTime, normalizedSelection.startTime]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+
+    const outsideSelection =
+      audio.currentTime < normalizedSelection.startTime || audio.currentTime >= normalizedSelection.endTime;
+
+    if (!outsideSelection) {
+      return;
+    }
+
+    audio.currentTime = normalizedSelection.startTime;
+    setCurrentTime(normalizedSelection.startTime);
+  }, [normalizedSelection.endTime, normalizedSelection.startTime]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -296,10 +340,7 @@ export function AudioWaveformEditor({
       if (event.code === 'Space') {
         event.preventDefault();
         if (audio.paused) {
-          if (
-            trimMode === 'keep' &&
-            (audio.currentTime < normalizedSelection.startTime || audio.currentTime >= normalizedSelection.endTime)
-          ) {
+          if (audio.currentTime < normalizedSelection.startTime || audio.currentTime >= normalizedSelection.endTime) {
             audio.currentTime = normalizedSelection.startTime;
             setCurrentTime(normalizedSelection.startTime);
           }
@@ -311,20 +352,28 @@ export function AudioWaveformEditor({
 
       if (event.key === 'ArrowLeft') {
         event.preventDefault();
-        audio.currentTime = clamp(audio.currentTime - 0.25, 0, safeDuration);
+        audio.currentTime = clamp(
+          audio.currentTime - 0.25,
+          normalizedSelection.startTime,
+          normalizedSelection.endTime,
+        );
         setCurrentTime(audio.currentTime);
       }
 
       if (event.key === 'ArrowRight') {
         event.preventDefault();
-        audio.currentTime = clamp(audio.currentTime + 0.25, 0, safeDuration);
+        audio.currentTime = clamp(
+          audio.currentTime + 0.25,
+          normalizedSelection.startTime,
+          normalizedSelection.endTime,
+        );
         setCurrentTime(audio.currentTime);
       }
     };
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [normalizedSelection.endTime, normalizedSelection.startTime, safeDuration, trimMode]);
+  }, [normalizedSelection.endTime, normalizedSelection.startTime]);
 
   const updateSelection = (nextStart: number, nextEnd: number) => {
     onChangeRef.current(normalizeSelection(nextStart, nextEnd, safeDuration));
@@ -395,10 +444,7 @@ export function AudioWaveformEditor({
     }
 
     if (audio.paused) {
-      if (
-        trimMode === 'keep' &&
-        (audio.currentTime < normalizedSelection.startTime || audio.currentTime >= normalizedSelection.endTime)
-      ) {
+      if (audio.currentTime < normalizedSelection.startTime || audio.currentTime >= normalizedSelection.endTime) {
         audio.currentTime = normalizedSelection.startTime;
         setCurrentTime(normalizedSelection.startTime);
       }
@@ -433,15 +479,41 @@ export function AudioWaveformEditor({
               {peaks.length > 0 ? (
                 <>
                   <div
-                    className="absolute inset-y-0 border-x border-prime/40 bg-prime/12"
+                    aria-hidden="true"
+                    data-testid="waveform-selection-mask-start"
+                    className="absolute inset-y-0 left-0 bg-base/70"
+                    style={{ width: `${startPercent * 100}%` }}
+                  />
+                  <div
+                    aria-hidden="true"
+                    data-testid="waveform-selection-mask-end"
+                    className="absolute inset-y-0 right-0 bg-base/70"
+                    style={{ width: `${Math.max((1 - endPercent) * 100, 0)}%` }}
+                  />
+                  <div
+                    aria-hidden="true"
+                    data-testid="waveform-selection-overlay"
+                    className="absolute inset-y-2 rounded-lg border border-prime/70 bg-gradient-to-r from-prime/35 via-prime/20 to-accent/20 shadow-[0_0_0_1px_rgba(0,179,214,0.18),0_0_24px_rgba(0,179,214,0.14)]"
                     style={{
                       left: `${startPercent * 100}%`,
-                      width: `${Math.max((endPercent - startPercent) * 100, 0.5)}%`,
+                      width: `${selectionWidthPercent}%`,
                     }}
                   />
-                  <div className="absolute inset-y-0 w-0.5 bg-prime" style={{ left: `${startPercent * 100}%` }} />
-                  <div className="absolute inset-y-0 w-0.5 bg-prime" style={{ left: `${endPercent * 100}%` }} />
-                  <div className="absolute inset-y-0 w-0.5 bg-accent shadow-glow-accent" style={{ left: `${playheadPercent * 100}%` }} />
+                  <div
+                    aria-hidden="true"
+                    className="absolute inset-y-1 w-1.5 rounded-full bg-prime shadow-[0_0_14px_rgba(0,179,214,0.55)]"
+                    style={{ left: `${startPercent * 100}%` }}
+                  />
+                  <div
+                    aria-hidden="true"
+                    className="absolute inset-y-1 w-1.5 rounded-full bg-prime shadow-[0_0_14px_rgba(0,179,214,0.55)]"
+                    style={{ left: `${endPercent * 100}%` }}
+                  />
+                  <div
+                    aria-hidden="true"
+                    className="absolute inset-y-0 w-0.5 bg-accent shadow-glow-accent"
+                    style={{ left: `${playheadPercent * 100}%` }}
+                  />
                 </>
               ) : null}
               {loading ? (
@@ -457,7 +529,14 @@ export function AudioWaveformEditor({
             </div>
           </div>
 
-          <audio ref={audioRef} src={previewUrl} controls className="w-full" preload="metadata" />
+          <audio
+            ref={audioRef}
+            data-testid="waveform-preview-audio"
+            src={previewUrl}
+            controls
+            className="w-full"
+            preload="metadata"
+          />
         </div>
 
         <div className="space-y-3 rounded-xl border border-border bg-base-elevated p-4">
