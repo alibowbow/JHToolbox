@@ -307,7 +307,7 @@ Object.assign(koToolDescriptions, {
   'screen-mic-recorder': '화면과 마이크 음성을 함께 녹화합니다.',
   'screen-camera-recorder': '화면 녹화에 웹캠 오버레이를 합성합니다.',
   'webcam-recorder': '웹캠 영상을 브라우저에서 바로 녹화합니다.',
-  'audio-recorder': '마이크 음성을 브라우저에서 바로 녹음합니다.',
+  'audio-recorder': '마이크 음성을 녹음한 뒤 파형을 보고 자르거나 WAV, MP3로 저장합니다.',
   'screenshot-capture': '선택한 화면이나 탭을 정지 이미지로 캡처합니다.',
 });
 

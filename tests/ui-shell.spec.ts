@@ -245,6 +245,15 @@ test('screen capture tools render the browser capture workbench without a file d
   await expect(page.getByText(/Drag files here|Drop files here/)).toHaveCount(0);
 });
 
+test('audio recorder exposes waveform-first export options', async ({ page }) => {
+  await page.goto('/tools/audio/audio-recorder');
+
+  await expect(page.getByText('Microphone preview')).toBeVisible();
+  await expect(page.locator('select').first()).toHaveValue('keep');
+  await expect(page.locator('select').nth(1)).toHaveValue('wav');
+  await expect(page.getByText(/waveform editor will appear here/i)).toBeVisible();
+});
+
 test.describe('mobile shell', () => {
   test.use({
     viewport: { width: 390, height: 844 },
@@ -271,6 +280,25 @@ test.describe('mobile shell', () => {
     await drawer.getByRole('link', { name: 'All Tools' }).click();
     await expect(page).toHaveURL(/\/tools$/);
   });
+
+  test('mobile bottom navigation scrolls horizontally so all categories stay reachable', async ({ page }) => {
+    await page.goto('/');
+
+    const scroller = page.getByTestId('mobile-bottom-nav-scroll');
+    await expect(scroller).toBeVisible();
+
+    const metrics = await scroller.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }));
+    expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth);
+
+    await scroller.evaluate((element) => {
+      element.scrollLeft = element.scrollWidth;
+    });
+
+    await expect(scroller.getByRole('link', { name: /Web|웹/ })).toBeVisible();
+  });
 });
 
 test.describe('mobile capture flows', () => {
@@ -289,5 +317,22 @@ test.describe('mobile capture flows', () => {
 
     await expect(page.getByRole('button', { name: 'Start capture' })).toBeVisible();
     await expect(page.getByText(/On supported mobile browsers, choose This Tab/)).toBeVisible();
+  });
+
+  test('screen recorder shows the unsupported mobile warning in Korean', async ({ page }) => {
+    await page.addInitScript(() => {
+      const original = navigator.mediaDevices;
+      Object.defineProperty(navigator, 'mediaDevices', {
+        configurable: true,
+        value: {
+          ...original,
+          getDisplayMedia: undefined,
+        },
+      });
+    });
+    await page.goto('/tools/screen/screen-recorder');
+
+    await page.getByRole('button', { name: 'ko' }).click();
+    await expect(page.getByText(/이 모바일 브라우저는 화면 공유 API/)).toBeVisible();
   });
 });

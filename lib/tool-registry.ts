@@ -1323,12 +1323,34 @@ export const tools: ToolDefinition[] = [
     id: 'audio-recorder',
     name: 'Audio Recorder',
     category: 'audio',
-    description: 'Record microphone audio without leaving the browser.',
+    description: 'Record microphone audio, review the waveform, and export WAV or MP3 locally.',
     accept: '*',
     tags: ['audio', 'microphone', 'record'],
     browseGroups: ['new', 'capture', 'editor-enabled'],
     inputMode: 'capture',
     previewKind: 'audio',
+    options: [
+      {
+        key: 'trimMode',
+        label: 'Selection mode',
+        type: 'select',
+        defaultValue: 'keep',
+        options: [
+          { label: 'Keep selection', value: 'keep' },
+          { label: 'Remove selection', value: 'remove' },
+        ],
+      },
+      {
+        key: 'outputFormat',
+        label: 'Output format',
+        type: 'select',
+        defaultValue: 'wav',
+        options: [
+          { label: 'WAV', value: 'wav' },
+          { label: 'MP3', value: 'mp3' },
+        ],
+      },
+    ],
   },
   {
     id: 'screenshot-capture',

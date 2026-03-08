@@ -23,6 +23,22 @@ type VideoFormatConfig = {
 };
 
 type UnifiedVideoOutputFormat = keyof typeof VIDEO_FORMATS | 'gif' | 'webp';
+type AudioTransformProgress = {
+  percent: number;
+  stage: string;
+};
+
+type AudioTransformOptions = {
+  outputFormat: string;
+  bitrate?: string;
+  sampleRate?: string;
+  channels?: string;
+  trimMode?: string;
+  startTime?: number;
+  endTime?: number;
+  outputName?: string;
+  onProgress?: (progress: AudioTransformProgress) => void;
+};
 
 const AUDIO_FORMATS: Record<string, AudioFormatConfig> = {
   mp3: { ext: 'mp3', mimeType: 'audio/mpeg', codecArgs: ['-c:a', 'libmp3lame'], bitrateOptional: true },
@@ -181,6 +197,80 @@ function buildAudioCutArgs(
   }
 
   return ['-i', inputName, '-ss', `${startTime}`, '-to', `${endTime}`, ...args, outputName];
+}
+
+async function transformSingleAudioFile(
+  file: File,
+  outputName: string,
+  mimeType: string,
+  buildArgs: (inputName: string, outputName: string) => string[],
+  onProgress?: (progress: AudioTransformProgress) => void,
+) {
+  const { ffmpeg, fetchFile } = await getFfmpeg((ratio) =>
+    onProgress?.({
+      percent: Math.max(5, Math.min(95, ratio * 100)),
+      stage: 'Processing audio',
+    }),
+  );
+
+  const inputName = `audio-transform-input-${Date.now()}.${extOf(file.name) || 'bin'}`;
+  const fsOutputName = `audio-transform-output-${Date.now()}.${extOf(outputName) || 'bin'}`;
+
+  try {
+    await ffmpeg.writeFile(inputName, await fetchFile(file));
+    await ffmpeg.exec(buildArgs(inputName, fsOutputName));
+    const data = await ffmpeg.readFile(fsOutputName);
+    const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+    onProgress?.({ percent: 100, stage: 'Finished audio' });
+    return {
+      name: outputName,
+      blob: blobFromBytes(bytes, mimeType),
+      mimeType,
+    } satisfies ProcessedFile;
+  } finally {
+    await Promise.allSettled([ffmpeg.deleteFile(inputName), ffmpeg.deleteFile(fsOutputName)]);
+  }
+}
+
+export async function convertAudioFile(file: File, options: AudioTransformOptions) {
+  const config = getAudioFormatConfig(options.outputFormat, extOf(file.name));
+  const outputName = options.outputName ?? `${baseName(file.name)}-converted.${config.ext}`;
+
+  return await transformSingleAudioFile(
+    file,
+    outputName,
+    config.mimeType,
+    (inputName, fsOutputName) =>
+      buildAudioConvertArgs(inputName, file, fsOutputName, {
+        outputFormat: options.outputFormat,
+        bitrate: options.bitrate ?? '192k',
+        sampleRate: options.sampleRate ?? 'keep',
+        channels: options.channels ?? 'keep',
+      }),
+    options.onProgress,
+  );
+}
+
+export async function trimAudioFile(file: File, options: AudioTransformOptions) {
+  const config = getAudioFormatConfig(options.outputFormat, extOf(file.name));
+  const outputName = options.outputName ?? `${baseName(file.name)}-trimmed.${config.ext}`;
+
+  return await transformSingleAudioFile(
+    file,
+    outputName,
+    config.mimeType,
+    (inputName, fsOutputName) =>
+      buildAudioCutArgs(inputName, file, fsOutputName, {
+        outputFormat: options.outputFormat,
+        trimMode: options.trimMode ?? 'keep',
+        startTime: options.startTime ?? 0,
+        endTime: options.endTime ?? 0,
+        bitrate: options.bitrate ?? '192k',
+        sampleRate: options.sampleRate ?? 'keep',
+        channels: options.channels ?? 'keep',
+      }),
+    options.onProgress,
+  );
 }
 
 async function execWithFallback(ffmpeg: any, primaryArgs: string[], fallbackArgs: string[]) {
