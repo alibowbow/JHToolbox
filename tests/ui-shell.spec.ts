@@ -282,6 +282,23 @@ test('html to pdf renders an uploaded html file without server conversion', asyn
   await expect(page.getByText('sample.pdf')).toBeVisible({ timeout: 60_000 });
 });
 
+test('html to pdf offers common canvas width presets instead of only raw pixel entry', async ({ page }) => {
+  await page.goto('/tools/pdf/html-to-pdf');
+
+  await expect(page.getByText('Common canvas widths')).toBeVisible();
+  await page.getByTestId('option-preset-width-mobile').click();
+  await expect(page.locator('input[type="number"]').first()).toHaveValue('390');
+});
+
+test('image resize presets fill both width and height together', async ({ page }) => {
+  await page.goto('/tools/image/image-resize');
+
+  await expect(page.getByText('Recommended sizes')).toBeVisible();
+  await page.getByTestId('option-preset-width-story').click();
+  await expect(page.locator('input[type="number"]').first()).toHaveValue('1080');
+  await expect(page.locator('input[type="number"]').nth(1)).toHaveValue('1920');
+});
+
 test('url-based tools start from direct input without showing the upload dropzone', async ({ page }) => {
   await page.goto('/tools/pdf/url-pdf');
 

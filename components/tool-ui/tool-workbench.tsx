@@ -34,6 +34,205 @@ const PDF_EDITOR_TOOLS = new Set(['pdf-merge', 'pdf-rearrange']);
 const CUSTOM_OPTIONS_IN_PREVIEW_TOOLS = new Set(['pdf-rearrange']);
 
 type SearchParamSource = Pick<URLSearchParams, 'get'>;
+type ToolOptionValues = Record<string, string | number | boolean>;
+
+type OptionPreset = {
+  id: string;
+  label: string;
+  values: Record<string, number>;
+};
+
+type OptionPresetGroup = {
+  title: string;
+  description: string;
+  presets: OptionPreset[];
+};
+
+const RESOLUTION_PRESET_TOOL_IDS = new Set(['image-resize', 'image-crop', 'video-resize', 'video-crop']);
+const OVERLAY_SIZE_PRESET_TOOL_IDS = new Set(['pdf-redact', 'edit-pdf', 'pdf-sign']);
+const OUTPUT_WIDTH_PRESET_TOOL_IDS = new Set([
+  'video-convert',
+  'images-to-gif',
+  'video-thumbnail-generator',
+  'video-to-gif',
+  'video-to-webp',
+]);
+
+const PRESET_COPY = {
+  en: {
+    recommendedSizesTitle: 'Recommended sizes',
+    recommendedSizesDescription: 'Start from a common preset, then fine-tune the numbers below.',
+    canvasWidthTitle: 'Common canvas widths',
+    canvasWidthDescription: 'Use a typical viewport width instead of guessing pixel values.',
+    outputWidthTitle: 'Common output widths',
+    outputWidthDescription: 'Pick a typical export width and adjust only if you need a custom size.',
+    overlaySizeTitle: 'Common box sizes',
+    overlaySizeDescription: 'These presets match typical stamp, signature, and redact box sizes.',
+    presetSquare: 'Square',
+    presetPortrait: 'Portrait',
+    presetStory: 'Story',
+    presetHd: 'HD',
+    presetFullHd: 'Full HD',
+    presetMobile: 'Mobile',
+    presetTablet: 'Tablet',
+    presetLaptop: 'Laptop',
+    presetDesktop: 'Desktop',
+    presetCompact: 'Compact',
+    presetDefault: 'Default',
+    presetLarge: 'Large',
+    presetWide: 'Wide',
+    presetSmall: 'Small',
+    presetMedium: 'Medium',
+  },
+  ko: {
+    recommendedSizesTitle: '추천 크기',
+    recommendedSizesDescription: '자주 쓰는 크기부터 고른 뒤, 아래 숫자로 미세 조정하세요.',
+    canvasWidthTitle: '자주 쓰는 캔버스 너비',
+    canvasWidthDescription: '픽셀 값을 추측하지 말고 대표 화면 폭부터 고르세요.',
+    outputWidthTitle: '자주 쓰는 출력 너비',
+    outputWidthDescription: '보편적인 출력 폭을 먼저 고르고 필요할 때만 직접 조정하세요.',
+    overlaySizeTitle: '자주 쓰는 박스 크기',
+    overlaySizeDescription: '서명, 편집 박스, 가림 영역에 맞는 대표 크기입니다.',
+    presetSquare: '정사각형',
+    presetPortrait: '세로형',
+    presetStory: '스토리',
+    presetHd: 'HD',
+    presetFullHd: '풀 HD',
+    presetMobile: '모바일',
+    presetTablet: '태블릿',
+    presetLaptop: '노트북',
+    presetDesktop: '데스크톱',
+    presetCompact: '작게',
+    presetDefault: '기본',
+    presetLarge: '크게',
+    presetWide: '넓게',
+    presetSmall: '작게',
+    presetMedium: '보통',
+  },
+} as const;
+
+function clampToOptionBounds(value: number, option: ToolOption) {
+  const minimum = option.min ?? Number.NEGATIVE_INFINITY;
+  const maximum = option.max ?? Number.POSITIVE_INFINITY;
+  return Math.max(minimum, Math.min(maximum, value));
+}
+
+function applyPresetValues(
+  presetValues: Record<string, number>,
+  allOptions: ToolOption[],
+  onChange: (key: string, nextValue: string | number | boolean) => void,
+) {
+  Object.entries(presetValues).forEach(([key, rawValue]) => {
+    const matchingOption = allOptions.find((option) => option.key === key);
+    if (!matchingOption) {
+      return;
+    }
+
+    onChange(key, clampToOptionBounds(rawValue, matchingOption));
+  });
+}
+
+function isPresetActive(preset: OptionPreset, values: ToolOptionValues) {
+  return Object.entries(preset.values).every(([key, presetValue]) => Number(values[key]) === presetValue);
+}
+
+function buildOverlayPresets(
+  locale: 'en' | 'ko',
+  widthOption: ToolOption,
+  heightOption: ToolOption,
+): OptionPreset[] {
+  const copy = PRESET_COPY[locale];
+  const baseWidth = Number(widthOption.defaultValue);
+  const baseHeight = Number(heightOption.defaultValue);
+  const scales = [
+    { id: 'compact', label: copy.presetCompact, multiplier: 0.75 },
+    { id: 'default', label: copy.presetDefault, multiplier: 1 },
+    { id: 'large', label: copy.presetLarge, multiplier: 1.4 },
+    { id: 'wide', label: copy.presetWide, multiplier: 2 },
+  ];
+
+  return scales.map((preset) => ({
+    id: preset.id,
+    label: `${preset.label} ${Math.round(clampToOptionBounds(baseWidth * preset.multiplier, widthOption))}×${Math.round(
+      clampToOptionBounds(baseHeight * preset.multiplier, heightOption),
+    )}`,
+    values: {
+      width: Math.round(clampToOptionBounds(baseWidth * preset.multiplier, widthOption)),
+      height: Math.round(clampToOptionBounds(baseHeight * preset.multiplier, heightOption)),
+    },
+  }));
+}
+
+function getOptionPresetGroup(
+  tool: ToolDefinition,
+  option: ToolOption,
+  optionIndex: number,
+  allOptions: ToolOption[],
+  locale: 'en' | 'ko',
+): OptionPresetGroup | null {
+  const copy = PRESET_COPY[locale];
+
+  if (option.type !== 'number' || option.key !== 'width') {
+    return null;
+  }
+
+  const nextOption = allOptions[optionIndex + 1];
+  const hasHeightPair = nextOption?.key === 'height' && nextOption.type === 'number';
+
+  if (hasHeightPair && nextOption) {
+    if (RESOLUTION_PRESET_TOOL_IDS.has(tool.id)) {
+      return {
+        title: copy.recommendedSizesTitle,
+        description: copy.recommendedSizesDescription,
+        presets: [
+          { id: 'square', label: `${copy.presetSquare} 1080×1080`, values: { width: 1080, height: 1080 } },
+          { id: 'portrait', label: `${copy.presetPortrait} 1080×1350`, values: { width: 1080, height: 1350 } },
+          { id: 'story', label: `${copy.presetStory} 1080×1920`, values: { width: 1080, height: 1920 } },
+          { id: 'hd', label: `${copy.presetHd} 1280×720`, values: { width: 1280, height: 720 } },
+          { id: 'full-hd', label: `${copy.presetFullHd} 1920×1080`, values: { width: 1920, height: 1080 } },
+        ],
+      };
+    }
+
+    if (OVERLAY_SIZE_PRESET_TOOL_IDS.has(tool.id)) {
+      return {
+        title: copy.overlaySizeTitle,
+        description: copy.overlaySizeDescription,
+        presets: buildOverlayPresets(locale, option, nextOption),
+      };
+    }
+  }
+
+  if (/canvas width/i.test(option.label)) {
+    return {
+      title: copy.canvasWidthTitle,
+      description: copy.canvasWidthDescription,
+      presets: [
+        { id: 'mobile', label: `${copy.presetMobile} 390px`, values: { width: 390 } },
+        { id: 'tablet', label: `${copy.presetTablet} 768px`, values: { width: 768 } },
+        { id: 'laptop', label: `${copy.presetLaptop} 1280px`, values: { width: 1280 } },
+        { id: 'desktop', label: `${copy.presetDesktop} 1440px`, values: { width: 1440 } },
+        { id: 'full-hd', label: `${copy.presetFullHd} 1920px`, values: { width: 1920 } },
+      ],
+    };
+  }
+
+  if (OUTPUT_WIDTH_PRESET_TOOL_IDS.has(tool.id)) {
+    return {
+      title: copy.outputWidthTitle,
+      description: copy.outputWidthDescription,
+      presets: [
+        { id: 'small', label: `${copy.presetSmall} 480px`, values: { width: 480 } },
+        { id: 'medium', label: `${copy.presetMedium} 720px`, values: { width: 720 } },
+        { id: 'hd', label: `${copy.presetHd} 1280px`, values: { width: 1280 } },
+        { id: 'desktop', label: `${copy.presetDesktop} 1440px`, values: { width: 1440 } },
+        { id: 'full-hd', label: `${copy.presetFullHd} 1920px`, values: { width: 1920 } },
+      ],
+    };
+  }
+
+  return null;
+}
 
 function getDefaults(tool: ToolDefinition): Record<string, string | number | boolean> {
   const entries = (tool.options ?? []).map((option) => [option.key, option.defaultValue] as const);
@@ -168,6 +367,59 @@ function renderField(
       placeholder={getLocalizedPlaceholder(option, locale)}
       className={commonClassName}
     />
+  );
+}
+
+function renderOptionField(
+  tool: ToolDefinition,
+  option: ToolOption,
+  optionIndex: number,
+  allOptions: ToolOption[],
+  values: ToolOptionValues,
+  locale: 'en' | 'ko',
+  onChange: (key: string, nextValue: string | number | boolean) => void,
+) {
+  const presetGroup = getOptionPresetGroup(tool, option, optionIndex, allOptions, locale);
+
+  return (
+    <div key={option.key}>
+      <label className="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">
+        {getLocalizedOptionLabel(option, locale)}
+      </label>
+      {presetGroup ? (
+        <div className="mt-2 rounded-xl border border-border bg-base-subtle/70 p-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-faint">{presetGroup.title}</p>
+              <p className="mt-1 text-xs text-ink-muted">{presetGroup.description}</p>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {presetGroup.presets.map((preset) => {
+              const active = isPresetActive(preset, values);
+
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  data-testid={`option-preset-${option.key}-${preset.id}`}
+                  onClick={() => applyPresetValues(preset.values, allOptions, onChange)}
+                  className={cx(
+                    'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                    active
+                      ? 'border-prime/60 bg-prime/10 text-prime'
+                      : 'border-border bg-base-elevated text-ink-muted hover:border-border-bright hover:text-ink',
+                  )}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+      {renderField(option, values[option.key], locale, onChange)}
+    </div>
   );
 }
 
@@ -403,19 +655,21 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
               </div>
 
               <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                {(tool.options ?? []).map((option) => (
-                  <div key={option.key}>
-                    <label className="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">
-                      {getLocalizedOptionLabel(option, locale)}
-                    </label>
-                    {renderField(option, options[option.key], locale, (key, nextValue) =>
+                {(tool.options ?? []).map((option, optionIndex, allOptions) =>
+                  renderOptionField(
+                    tool,
+                    option,
+                    optionIndex,
+                    allOptions,
+                    options,
+                    locale,
+                    (key, nextValue) =>
                       setOptions((currentOptions) => ({
                         ...currentOptions,
                         [key]: nextValue,
-                      }))
-                    )}
-                  </div>
-                ))}
+                      })),
+                  ),
+                )}
               </div>
 
               <button type="button" disabled={running} onClick={onProcess} className="btn-primary mt-5 w-full justify-center lg:w-auto">
@@ -553,19 +807,21 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
                 <section className={cx('card p-5', !showWideEditorLayout && 'xl:col-span-2')}>
                   <p className="text-sm font-semibold text-ink">{messages.workbench.options}</p>
                   <div className="mt-4 space-y-4">
-                    {(tool.options ?? []).map((option) => (
-                      <div key={option.key}>
-                        <label className="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">
-                          {getLocalizedOptionLabel(option, locale)}
-                        </label>
-                        {renderField(option, options[option.key], locale, (key, nextValue) =>
+                    {(tool.options ?? []).map((option, optionIndex, allOptions) =>
+                      renderOptionField(
+                        tool,
+                        option,
+                        optionIndex,
+                        allOptions,
+                        options,
+                        locale,
+                        (key, nextValue) =>
                           setOptions((currentOptions) => ({
                             ...currentOptions,
                             [key]: nextValue,
-                          }))
-                        )}
-                      </div>
-                    ))}
+                          })),
+                      ),
+                    )}
                   </div>
 
                   <button type="button" disabled={running} onClick={onProcess} className="btn-primary mt-5 w-full justify-center">
