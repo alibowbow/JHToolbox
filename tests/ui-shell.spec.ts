@@ -236,6 +236,63 @@ test('url-based tools start from direct input without showing the upload dropzon
   await expect(page.getByText(/Drag files here|Drop files here/)).toHaveCount(0);
 });
 
+test('url image allows trimming a long captured page before saving', async ({ page }) => {
+  const tallSvg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="3600" viewBox="0 0 1200 3600">
+      <rect width="1200" height="3600" fill="#f8fafc" />
+      <rect x="80" y="80" width="1040" height="320" rx="36" fill="#0f172a" />
+      <text x="130" y="210" font-size="68" font-family="Arial, sans-serif" fill="#f8fafc">News headline</text>
+      <text x="130" y="290" font-size="34" font-family="Arial, sans-serif" fill="#cbd5e1">Primary article content</text>
+      <rect x="80" y="520" width="1040" height="1380" rx="40" fill="#ffffff" stroke="#cbd5e1" stroke-width="12" />
+      <text x="130" y="700" font-size="46" font-family="Arial, sans-serif" fill="#111827">Story body</text>
+      <rect x="80" y="2140" width="1040" height="420" rx="40" fill="#f59e0b" opacity="0.32" />
+      <text x="130" y="2360" font-size="54" font-family="Arial, sans-serif" fill="#7c2d12">Ad area</text>
+      <rect x="80" y="2700" width="1040" height="720" rx="40" fill="#dbeafe" />
+      <text x="130" y="2920" font-size="54" font-family="Arial, sans-serif" fill="#1d4ed8">More news grid</text>
+    </svg>
+  `;
+
+  await page.route('https://image.thum.io/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'image/svg+xml',
+      body: tallSvg,
+    });
+  });
+
+  await page.goto('/tools/web/url-image');
+  await page.getByRole('button', { name: 'Run tool' }).click();
+
+  await expect(page.getByTestId('url-image-cropper')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole('button', { name: 'Download original' })).toBeVisible();
+
+  const startInput = page.getByTestId('url-image-crop-start-input');
+  await expect(startInput).toHaveValue('0');
+  const startHandle = page.getByTestId('url-image-crop-start-handle');
+  const handleBox = await startHandle.boundingBox();
+  if (!handleBox) {
+    throw new Error('URL image crop start handle bounding box was not available.');
+  }
+
+  const handleCenterX = handleBox.x + handleBox.width / 2;
+  const handleCenterY = handleBox.y + handleBox.height / 2;
+  await page.mouse.move(handleCenterX, handleCenterY);
+  await page.mouse.down();
+  await page.mouse.move(handleCenterX, handleCenterY + 110, { steps: 10 });
+  await page.mouse.up();
+
+  await expect.poll(async () => Number(await startInput.inputValue())).toBeGreaterThan(0);
+
+  await startInput.fill('240');
+  await expect(startInput).toHaveValue('240');
+  await expect(page.getByText(/Crop height:/)).toBeVisible();
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByTestId('url-image-crop-download').click();
+  const download = await downloadPromise;
+  expect(await download.suggestedFilename()).toContain('-cropped');
+});
+
 test('screen capture tools render the browser capture workbench without a file dropzone', async ({ page }) => {
   await page.goto('/tools/screen/screenshot-capture');
 
@@ -252,6 +309,7 @@ test('audio recorder exposes waveform-first export options', async ({ page }) =>
   await expect(page.getByTestId('live-audio-waveform')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Start recording' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Start capture' })).toHaveCount(0);
+  await expect(page.getByText('Progress')).toHaveCount(0);
   await expect(page.locator('select').first()).toHaveValue('keep');
   await expect(page.locator('select').nth(1)).toHaveValue('wav');
   await expect(page.getByRole('button', { name: 'Export edited audio' })).toHaveCount(0);

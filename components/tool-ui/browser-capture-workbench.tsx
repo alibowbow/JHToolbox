@@ -12,6 +12,7 @@ import { ResultCard } from '@/components/ui/ResultCard';
 import { Tabs } from '@/components/ui/Tabs';
 import { toast } from '@/components/ui/Toast';
 import { formatMegaBytes, getCategoryCopy } from '@/lib/i18n';
+import { createWavRecordingSession, type WavRecordingSession } from '@/lib/processors/audio-recording';
 import { convertAudioFile, trimAudioFile } from '@/lib/processors/media';
 import { getLocalizedChoiceLabel, getLocalizedOptionLabel, getLocalizedToolCopy } from '@/lib/tool-localization';
 import { categoryIcons, categoryStyles } from '@/lib/tool-presentation';
@@ -572,12 +573,14 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [audioEditorFile, setAudioEditorFile] = useState<File | null>(null);
   const [audioEditorPreviewUrl, setAudioEditorPreviewUrl] = useState<string | null>(null);
+  const [liveAudioPeaks, setLiveAudioPeaks] = useState<number[]>([]);
   const [progress, setProgress] = useState<{ percent: number; stage: string }>({
     percent: 0,
     stage: messages.workbench.statusIdle,
   });
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const wavRecorderRef = useRef<WavRecordingSession | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const cleanupRef = useRef<(() => void) | null>(null);
   const timerRef = useRef<number | null>(null);
@@ -605,6 +608,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
     setStatus('idle');
     setError(null);
     setElapsedSeconds(0);
+    setLiveAudioPeaks([]);
     setProgress({ percent: 0, stage: messages.workbench.statusIdle });
     setResult((currentResult) => {
       if (currentResult?.previewUrl?.startsWith('blob:')) {
@@ -642,6 +646,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
       }
 
       mediaRecorderRef.current?.stop();
+      void wavRecorderRef.current?.cleanup();
       cleanupRef.current?.();
       if (resultPreviewUrlRef.current) {
         URL.revokeObjectURL(resultPreviewUrlRef.current);
@@ -681,6 +686,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
     }
 
     mediaRecorderRef.current = null;
+    wavRecorderRef.current = null;
     cleanupRef.current?.();
     cleanupRef.current = null;
     setLivePreviewStream(null);
@@ -691,6 +697,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
     setStatus('idle');
     setError(null);
     setElapsedSeconds(0);
+    setLiveAudioPeaks([]);
     setProgress({ percent: 0, stage: messages.workbench.statusIdle });
     setResult((currentResult) => {
       if (currentResult?.previewUrl?.startsWith('blob:')) {
@@ -776,6 +783,28 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
     }
   };
 
+  const finalizeDirectAudioRecording = async (file: File, duration: number) => {
+    stopActiveCapture();
+
+    try {
+      setAudioEditorSource(file);
+      setOptions((currentOptions) => ({
+        ...currentOptions,
+        startTime: 0,
+        endTime: Number(duration.toFixed(3)),
+      }));
+      setElapsedSeconds(Number(duration.toFixed(1)));
+      setStatus('idle');
+      setProgress({ percent: 0, stage: messages.workbench.statusIdle });
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : copy.captureFailed;
+      setError(message);
+      setStatus('error');
+      setProgress({ percent: 0, stage: message });
+      toast.error(message);
+    }
+  };
+
   const exportEditedAudio = async () => {
     if (!audioEditorFile) {
       return;
@@ -812,6 +841,8 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
         },
         copy.audioExportReadyToast,
       );
+      setStatus('idle');
+      setProgress({ percent: 0, stage: messages.workbench.statusIdle });
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : copy.captureFailed;
       setError(message);
@@ -833,7 +864,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
   };
 
   const startRecording = async () => {
-    if (!isCaptureAvailable || !navigator.mediaDevices || typeof MediaRecorder === 'undefined') {
+    if (!navigator.mediaDevices || (!isAudioRecorder && (!isCaptureAvailable || typeof MediaRecorder === 'undefined'))) {
       const message = capabilityMessage ?? copy.genericCaptureUnsupported;
       setError(message);
       setStatus('error');
@@ -854,6 +885,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
         return null;
       });
       clearAudioEditorState();
+      setLiveAudioPeaks([]);
 
       let session: CaptureSession;
       const includeMic = Boolean(options.includeMicrophone ?? true);
@@ -920,7 +952,21 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
       cleanupRef.current = session.cleanup;
       setLivePreviewStream(session.previewStream);
 
-      const mimeType = pickSupportedMimeType(isAudioRecorder ? 'audio' : 'video');
+      if (isAudioRecorder) {
+        const wavRecorder = await createWavRecordingSession(session.recordStream, {
+          outputName: `audio-recording-${createTimestampLabel()}.wav`,
+          onPeak: (peak) =>
+            setLiveAudioPeaks((currentPeaks) => [...currentPeaks, Number(peak.toFixed(4))]),
+        });
+
+        wavRecorderRef.current = wavRecorder;
+        startElapsedTimer();
+        setStatus('recording');
+        setProgress({ percent: 0, stage: `${copy.recordingLive} (${elapsedSeconds.toFixed(1)} s)` });
+        return;
+      }
+
+      const mimeType = pickSupportedMimeType('video');
       const recorder = mimeType ? new MediaRecorder(session.recordStream, { mimeType }) : new MediaRecorder(session.recordStream);
       chunksRef.current = [];
       mediaRecorderRef.current = recorder;
@@ -935,14 +981,9 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
         const outputMimeType =
           recorder.mimeType ||
           mimeType ||
-          pickSupportedMimeType(isAudioRecorder ? 'audio' : 'video') ||
-          (isAudioRecorder ? 'audio/webm' : 'video/webm');
+          pickSupportedMimeType('video') ||
+          'video/webm';
         const blobResult = new Blob(chunksRef.current, { type: outputMimeType });
-
-        if (isAudioRecorder) {
-          void finalizeAudioRecording(blobResult, outputMimeType);
-          return;
-        }
 
         stopActiveCapture();
         const previewUrl = URL.createObjectURL(blobResult);
@@ -964,6 +1005,11 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
       session.onEndedTrack?.addEventListener(
         'ended',
         () => {
+          if (isAudioRecorder && wavRecorderRef.current) {
+            void stopRecording();
+            return;
+          }
+
           if (mediaRecorderRef.current?.state === 'recording') {
             mediaRecorderRef.current.stop();
           }
@@ -985,7 +1031,20 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
     }
   };
 
-  const stopRecording = () => {
+  const stopRecording = async () => {
+    if (isAudioRecorder && wavRecorderRef.current) {
+      try {
+        const recording = await wavRecorderRef.current.stop();
+        await finalizeDirectAudioRecording(recording.file, recording.duration);
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : copy.captureFailed;
+        setError(message);
+        setStatus('error');
+        toast.error(message);
+      }
+      return;
+    }
+
     if (mediaRecorderRef.current?.state === 'recording') {
       mediaRecorderRef.current.stop();
     }
@@ -1018,9 +1077,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
     }
   };
 
-  const showProgress = isAudioRecorder
-    ? status === 'starting' || status === 'recording' || status === 'error'
-    : status === 'starting' || status === 'recording' || status === 'error' || status === 'done';
+  const showProgress = !isAudioRecorder && (status === 'starting' || status === 'recording' || status === 'error' || status === 'done');
   const progressValue =
     progress.percent > 0
       ? progress.percent
@@ -1067,9 +1124,54 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
             {capabilityMessage ? <div className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn">{capabilityMessage}</div> : null}
 
             {isAudioRecorder ? (
-              audioEditorFile && audioEditorPreviewUrl ? null : (
+              audioEditorFile && audioEditorPreviewUrl ? (
+                <section className="space-y-4 rounded-xl border border-border bg-base-elevated p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-ink">{copy.waveformEditor}</p>
+                      <p className="mt-1 text-xs text-ink-muted">{copy.waveformEditorDescription}</p>
+                    </div>
+                    <span className="badge border border-border bg-base-subtle text-ink-muted">WAV master</span>
+                  </div>
+
+                  <AudioWaveformEditor
+                    file={audioEditorFile}
+                    previewUrl={audioEditorPreviewUrl}
+                    trimMode={trimMode}
+                    outputFormat={audioOutputFormat}
+                    startTime={Number(options.startTime ?? 0)}
+                    endTime={Number(options.endTime ?? 0)}
+                    onChange={(nextValues) => setOptions((currentOptions) => ({ ...currentOptions, ...nextValues }))}
+                  />
+
+                  <div className="flex flex-wrap gap-3">
+                    <button type="button" onClick={() => void exportEditedAudio()} disabled={status === 'starting' || status === 'recording'} className="btn-primary disabled:cursor-not-allowed disabled:opacity-60">
+                      {status === 'starting' ? <LoaderCircle size={16} className="animate-spin" /> : <Scissors size={16} />}
+                      {copy.exportEditedAudio}
+                    </button>
+                  </div>
+
+                  {result ? (
+                    <ResultCard
+                      fileName={result.name}
+                      fileSize={formatMegaBytes(result.blob.size)}
+                      title={copy.currentAudioOutput}
+                      onDownload={() => downloadBlob(result.blob, result.name)}
+                    >
+                      {result.previewUrl && result.mimeType.startsWith('audio/') ? (
+                        <audio src={result.previewUrl} controls className="w-full" />
+                      ) : null}
+                      {result.details ? (
+                        <pre className="overflow-auto rounded-xl border border-border bg-base-subtle p-3 text-xs text-ink">
+                          {JSON.stringify(result.details, null, 2)}
+                        </pre>
+                      ) : null}
+                    </ResultCard>
+                  ) : null}
+                </section>
+              ) : (
                 <LiveAudioWaveform
-                  stream={livePreviewStream}
+                  peaks={liveAudioPeaks}
                   isRecording={status === 'recording'}
                   title={copy.waveformEditor}
                   description={status === 'recording' ? copy.localOnlyNote : copy.permissionNote}
@@ -1105,7 +1207,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
                   {copy.captureScreenshot}
                 </button>
               ) : status === 'recording' ? (
-                <button type="button" onClick={stopRecording} className="btn-primary">
+                <button type="button" onClick={() => void stopRecording()} className="btn-primary">
                   <CircleStop size={16} />
                   {isAudioRecorder ? copy.stopRecording : copy.stopCapture}
                 </button>
@@ -1159,53 +1261,6 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
             </section>
           </div>
         </section>
-
-        {isAudioRecorder && audioEditorFile && audioEditorPreviewUrl ? (
-          <section className="card space-y-4 p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-ink">{copy.waveformEditor}</p>
-                <p className="mt-1 text-xs text-ink-muted">{copy.waveformEditorDescription}</p>
-              </div>
-              <span className="badge border border-border bg-base-subtle text-ink-muted">WAV master</span>
-            </div>
-
-            <AudioWaveformEditor
-              file={audioEditorFile}
-              previewUrl={audioEditorPreviewUrl}
-              trimMode={trimMode}
-              outputFormat={audioOutputFormat}
-              startTime={Number(options.startTime ?? 0)}
-              endTime={Number(options.endTime ?? 0)}
-              onChange={(nextValues) => setOptions((currentOptions) => ({ ...currentOptions, ...nextValues }))}
-            />
-
-            <div className="flex flex-wrap gap-3">
-              <button type="button" onClick={() => void exportEditedAudio()} disabled={status === 'starting' || status === 'recording'} className="btn-primary disabled:cursor-not-allowed disabled:opacity-60">
-                {status === 'starting' ? <LoaderCircle size={16} className="animate-spin" /> : <Scissors size={16} />}
-                {copy.exportEditedAudio}
-              </button>
-            </div>
-
-            {result ? (
-              <ResultCard
-                fileName={result.name}
-                fileSize={formatMegaBytes(result.blob.size)}
-                title={copy.currentAudioOutput}
-                onDownload={() => downloadBlob(result.blob, result.name)}
-              >
-                {result.previewUrl && result.mimeType.startsWith('audio/') ? (
-                  <audio src={result.previewUrl} controls className="w-full" />
-                ) : null}
-                {result.details ? (
-                  <pre className="overflow-auto rounded-xl border border-border bg-base-subtle p-3 text-xs text-ink">
-                    {JSON.stringify(result.details, null, 2)}
-                  </pre>
-                ) : null}
-              </ResultCard>
-            ) : null}
-          </section>
-        ) : null}
 
         {showProgress ? (
           <section className="card p-5">

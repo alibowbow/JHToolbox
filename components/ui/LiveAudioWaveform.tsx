@@ -1,25 +1,49 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Mic } from 'lucide-react';
 
 interface LiveAudioWaveformProps {
-  stream: MediaStream | null;
+  peaks: number[];
   isRecording: boolean;
   title: string;
   description: string;
   statusLabel: string;
 }
 
+const BAR_WIDTH = 4;
+const BAR_GAP = 2;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
 export function LiveAudioWaveform({
-  stream,
+  peaks,
   isRecording,
   title,
   description,
   statusLabel,
 }: LiveAudioWaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const rafRef = useRef<number | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [baseWidth, setBaseWidth] = useState(640);
+  const canvasWidth = Math.max(baseWidth, peaks.length * (BAR_WIDTH + BAR_GAP));
+
+  useEffect(() => {
+    const scrollArea = scrollRef.current;
+    if (!scrollArea || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const nextWidth = entries[0]?.contentRect.width ?? 640;
+      setBaseWidth(Math.max(320, Math.floor(nextWidth)));
+    });
+
+    observer.observe(scrollArea);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -32,107 +56,76 @@ export function LiveAudioWaveform({
       return;
     }
 
-    const resizeCanvas = () => {
-      const dpr = window.devicePixelRatio || 1;
-      const width = canvas.clientWidth || 640;
-      const height = canvas.clientHeight || 192;
-      canvas.width = Math.round(width * dpr);
-      canvas.height = Math.round(height * dpr);
-      context.setTransform(1, 0, 0, 1, 0, 0);
-      context.scale(dpr, dpr);
-      return { width, height };
-    };
+    const height = 192;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(canvasWidth * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.width = `${canvasWidth}px`;
+    canvas.style.height = `${height}px`;
 
-    const drawFrame = (samples?: Uint8Array) => {
-      const { width, height } = resizeCanvas();
-      context.clearRect(0, 0, width, height);
-      context.fillStyle = 'rgba(255,255,255,0.03)';
-      context.fillRect(0, 0, width, height);
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.scale(dpr, dpr);
+    context.clearRect(0, 0, canvasWidth, height);
+    context.fillStyle = 'rgba(255,255,255,0.03)';
+    context.fillRect(0, 0, canvasWidth, height);
 
-      context.strokeStyle = 'rgba(255,255,255,0.08)';
-      context.lineWidth = 1;
-      context.beginPath();
-      context.moveTo(0, height / 2);
-      context.lineTo(width, height / 2);
-      context.stroke();
+    context.strokeStyle = 'rgba(255,255,255,0.08)';
+    context.lineWidth = 1;
+    context.beginPath();
+    context.moveTo(0, height / 2);
+    context.lineTo(canvasWidth, height / 2);
+    context.stroke();
 
-      context.strokeStyle = isRecording ? 'rgba(0,229,255,0.95)' : 'rgba(136,136,160,0.65)';
+    if (!peaks.length) {
+      const segments = Math.max(12, Math.floor(canvasWidth / 48));
+      context.strokeStyle = 'rgba(136,136,160,0.4)';
       context.lineWidth = 2;
       context.beginPath();
 
-      if (samples && samples.length > 1) {
-        for (let index = 0; index < samples.length; index += 1) {
-          const x = (index / (samples.length - 1)) * width;
-          const normalized = (samples[index] - 128) / 128;
-          const y = height / 2 + normalized * height * 0.36;
+      for (let index = 0; index <= segments; index += 1) {
+        const x = (index / segments) * canvasWidth;
+        const y =
+          height / 2 +
+          Math.sin(index * 0.46) * height * 0.06 +
+          Math.sin(index * 0.18) * height * 0.02;
 
-          if (index === 0) {
-            context.moveTo(x, y);
-          } else {
-            context.lineTo(x, y);
-          }
-        }
-      } else {
-        const segments = 56;
-        for (let index = 0; index <= segments; index += 1) {
-          const x = (index / segments) * width;
-          const y =
-            height / 2 +
-            Math.sin(index * 0.42) * height * 0.08 +
-            Math.sin(index * 0.17) * height * 0.03;
-
-          if (index === 0) {
-            context.moveTo(x, y);
-          } else {
-            context.lineTo(x, y);
-          }
+        if (index === 0) {
+          context.moveTo(x, y);
+        } else {
+          context.lineTo(x, y);
         }
       }
 
       context.stroke();
-    };
-
-    drawFrame();
-
-    if (!stream || !isRecording) {
       return;
     }
 
-    const AudioContextCtor =
-      window.AudioContext ||
-      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    const color = isRecording ? 'rgba(0,229,255,0.95)' : 'rgba(136,136,160,0.85)';
+    for (let index = 0; index < peaks.length; index += 1) {
+      const peak = clamp(peaks[index], 0.02, 1);
+      const barHeight = Math.max(10, peak * height * 0.82);
+      const x = index * (BAR_WIDTH + BAR_GAP);
+      const y = height / 2 - barHeight / 2;
+      context.fillStyle = color;
+      context.fillRect(x, y, BAR_WIDTH, barHeight);
+    }
+  }, [canvasWidth, isRecording, peaks]);
 
-    if (!AudioContextCtor) {
+  useEffect(() => {
+    if (!isRecording) {
       return;
     }
 
-    const audioContext = new AudioContextCtor();
-    const source = audioContext.createMediaStreamSource(stream);
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0.82;
-    source.connect(analyser);
+    const scrollArea = scrollRef.current;
+    if (!scrollArea) {
+      return;
+    }
 
-    const timeData = new Uint8Array(analyser.fftSize);
-
-    const render = () => {
-      analyser.getByteTimeDomainData(timeData);
-      drawFrame(timeData);
-      rafRef.current = window.requestAnimationFrame(render);
-    };
-
-    render();
-
-    return () => {
-      if (rafRef.current) {
-        window.cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-      source.disconnect();
-      analyser.disconnect();
-      void audioContext.close().catch(() => undefined);
-    };
-  }, [isRecording, stream]);
+    scrollArea.scrollTo({
+      left: Math.max(scrollArea.scrollWidth - scrollArea.clientWidth, 0),
+      behavior: 'smooth',
+    });
+  }, [canvasWidth, isRecording, peaks.length]);
 
   return (
     <div className="rounded-xl border border-border bg-base-elevated p-5">
@@ -146,8 +139,8 @@ export function LiveAudioWaveform({
         </div>
       </div>
 
-      <div className="mt-4 overflow-hidden rounded-xl border border-border bg-base-subtle/70">
-        <canvas ref={canvasRef} data-testid="live-audio-waveform" className="block h-48 w-full" />
+      <div ref={scrollRef} className="mt-4 overflow-x-auto rounded-xl border border-border bg-base-subtle/70">
+        <canvas ref={canvasRef} data-testid="live-audio-waveform" className="block h-48 min-w-full" />
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
