@@ -68,8 +68,8 @@ const koToolNames: Record<string, string> = {
   'create-zip': 'ZIP 만들기',
   'extract-zip': 'ZIP 압축 해제',
   'qr-generator': 'QR 코드 생성기',
-  'url-image': 'URL을 이미지로',
-  'url-pdf': 'URL을 PDF로',
+  'url-image': '웹페이지를 이미지로',
+  'url-pdf': 'URL 전체 스크롤을 PDF로',
   'detect-cms': 'CMS 감지',
   'image-metadata': '이미지 메타데이터 보기',
 };
@@ -141,8 +141,8 @@ const koToolDescriptions: Record<string, string> = {
   'create-zip': '여러 파일을 ZIP 아카이브로 묶습니다.',
   'extract-zip': 'ZIP 파일을 개별 파일로 압축 해제합니다.',
   'qr-generator': '텍스트나 URL로 QR 코드를 생성합니다.',
-  'url-image': '웹 페이지를 이미지로 캡처합니다.',
-  'url-pdf': '웹 페이지를 PDF로 저장합니다.',
+  'url-image': 'URL을 이미지로 캡처합니다.',
+  'url-pdf': '웹 페이지 전체 스크롤을 PDF로 저장합니다.',
   'detect-cms': '웹 페이지의 CMS 사용 여부를 추정합니다.',
   'image-metadata': '이미지 안에 포함된 메타데이터를 확인합니다.',
 };

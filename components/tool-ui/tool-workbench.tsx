@@ -171,7 +171,7 @@ function renderField(
   );
 }
 
-export function ToolWorkbench({ tool }: { tool: ToolDefinition }) {
+export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; categoryId?: ToolDefinition['category'] }) {
   if (tool.inputMode === 'capture') {
     return <BrowserCaptureWorkbench tool={tool} />;
   }
@@ -192,9 +192,10 @@ export function ToolWorkbench({ tool }: { tool: ToolDefinition }) {
   const [results, setResults] = useState<ProcessedFile[]>([]);
   const [inputPreviewUrl, setInputPreviewUrl] = useState<string | null>(null);
 
-  const Icon = categoryIcons[tool.category];
-  const style = categoryStyles[tool.category];
-  const category = getCategoryCopy(locale, tool.category);
+  const displayCategoryId = categoryId ?? tool.category;
+  const Icon = categoryIcons[displayCategoryId];
+  const style = categoryStyles[displayCategoryId];
+  const category = getCategoryCopy(locale, displayCategoryId);
   const localizedTool = getLocalizedToolCopy(tool, locale);
   const usesDirectInput = tool.inputMode === 'url';
   const usesPdfEditor = PDF_EDITOR_TOOLS.has(tool.id);

@@ -149,7 +149,7 @@ export async function processWebTool(ctx: ProcessContext): Promise<ProcessedFile
     const width = Math.max(320, parseNumber(options.width, 1200));
 
     onProgress({ percent: 10, stage: 'Capturing webpage screenshot' });
-    const pngBlob = await fetchWebsiteScreenshot(url, width, false);
+    const pngBlob = await fetchWebsiteScreenshot(url, width, true);
     const pngBytes = new Uint8Array(await pngBlob.arrayBuffer());
 
     onProgress({ percent: 75, stage: 'Creating PDF capture' });

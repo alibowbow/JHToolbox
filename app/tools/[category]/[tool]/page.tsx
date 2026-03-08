@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 import { notFound, redirect } from 'next/navigation';
 import { ToolWorkbench } from '@/components/tool-ui/tool-workbench';
-import { categories, getToolById } from '@/lib/tool-registry';
+import { categories, getCategoryById, getToolById, isToolInCategory } from '@/lib/tool-registry';
 
 const legacyToolRedirects: Partial<Record<string, string>> = {
   'mp4-webm': '/tools/video/video-convert?outputFormat=webm',
@@ -28,14 +28,15 @@ export default function ToolPage({ params }: { params: { category: string; tool:
     redirect(legacyRedirect);
   }
 
+  const category = getCategoryById(params.category);
   const tool = getToolById(params.tool);
-  if (!tool || tool.category !== params.category) {
+  if (!category || !tool || !isToolInCategory(category.id, tool.id)) {
     notFound();
   }
 
   return (
     <Suspense fallback={null}>
-      <ToolWorkbench tool={tool} />
+      <ToolWorkbench tool={tool} categoryId={category.id} />
     </Suspense>
   );
 }

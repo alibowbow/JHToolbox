@@ -228,12 +228,47 @@ test('pdf rearrange shows page editor controls before processing', async ({ page
   await expect(page.getByText('sample-rearranged.pdf')).toBeVisible({ timeout: 60_000 });
 });
 
+test('pdf menu lists url full page to pdf and opens the pdf route', async ({ page }) => {
+  await page.goto('/tools/pdf');
+
+  const pdfToolCard = page.locator('a[href="/tools/pdf/url-pdf"]').first();
+  await expect(pdfToolCard).toBeVisible();
+  await expect(pdfToolCard).toContainText('URL Full Page to PDF');
+
+  await pdfToolCard.click();
+  await expect(page).toHaveURL(/\/tools\/pdf\/url-pdf$/);
+  await expect(page.getByRole('heading', { level: 2, name: 'URL Full Page to PDF' })).toBeVisible();
+});
+
 test('url-based tools start from direct input without showing the upload dropzone', async ({ page }) => {
-  await page.goto('/tools/web/url-pdf');
+  await page.goto('/tools/pdf/url-pdf');
 
   await expect(page.getByText('Direct input')).toBeVisible();
   await expect(page.locator('input[type="text"]').first()).toHaveValue('https://example.com');
   await expect(page.getByText(/Drag files here|Drop files here/)).toHaveCount(0);
+});
+
+test('url pdf captures the full page scroll before generating the pdf', async ({ page }) => {
+  const tinyPng = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9n+wAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  let requestedCaptureUrl = '';
+
+  await page.route('https://image.thum.io/**', async (route) => {
+    requestedCaptureUrl = route.request().url();
+    await route.fulfill({
+      status: 200,
+      contentType: 'image/png',
+      body: tinyPng,
+    });
+  });
+
+  await page.goto('/tools/pdf/url-pdf');
+  await page.getByRole('button', { name: 'Run tool' }).click();
+
+  await expect(page.getByText('url-capture.pdf')).toBeVisible({ timeout: 60_000 });
+  expect(requestedCaptureUrl).toContain('/fullpage/');
 });
 
 test('url image allows trimming a long captured page before saving', async ({ page }) => {

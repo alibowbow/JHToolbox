@@ -9,15 +9,16 @@ import { getLocalizedToolCopy } from '@/lib/tool-localization';
 import { categoryIcons, categoryStyles } from '@/lib/tool-presentation';
 import { ToolDefinition } from '@/types/tool';
 
-export function ToolCard({ tool }: { tool: ToolDefinition }) {
+export function ToolCard({ tool, categoryId }: { tool: ToolDefinition; categoryId?: ToolDefinition['category'] }) {
   const { locale, messages } = useLocale();
-  const Icon = categoryIcons[tool.category];
-  const style = categoryStyles[tool.category];
-  const category = getCategoryCopy(locale, tool.category);
+  const displayCategoryId = categoryId ?? tool.category;
+  const Icon = categoryIcons[displayCategoryId];
+  const style = categoryStyles[displayCategoryId];
+  const category = getCategoryCopy(locale, displayCategoryId);
   const localizedTool = getLocalizedToolCopy(tool, locale);
 
   return (
-    <Link href={`/tools/${tool.category}/${tool.id}`} className="block h-full">
+    <Link href={`/tools/${displayCategoryId}/${tool.id}`} className="block h-full">
       <motion.article
         whileHover={{ y: -2 }}
         whileTap={{ scale: 0.98 }}

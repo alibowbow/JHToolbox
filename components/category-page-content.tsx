@@ -48,7 +48,7 @@ export function CategoryPageContent({
                 show: { opacity: 1, y: 0, transition: { duration: 0.22 } },
               }}
             >
-              <ToolCard tool={tool} />
+              <ToolCard tool={tool} categoryId={category.id} />
             </motion.div>
           ))}
         </motion.div>

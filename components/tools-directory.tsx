@@ -93,7 +93,7 @@ export function ToolsDirectory() {
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {items.map((tool) => (
-            <ToolCard key={tool.id} tool={tool} />
+            <ToolCard key={tool.id} tool={tool} categoryId={category.id} />
           ))}
         </div>
       </section>

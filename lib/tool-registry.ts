@@ -1476,9 +1476,9 @@ export const tools: ToolDefinition[] = [
   },
   {
     id: 'url-image',
-    name: 'URL to Image',
+    name: 'Webpage to Image',
     category: 'web',
-    description: 'Capture readable HTML from a URL into an image.',
+    description: 'Capture a URL as an image.',
     accept: '*',
     tags: ['url', 'screenshot', 'image'],
     inputMode: 'url',
@@ -1491,9 +1491,9 @@ export const tools: ToolDefinition[] = [
   },
   {
     id: 'url-pdf',
-    name: 'URL to PDF',
+    name: 'URL Full Page to PDF',
     category: 'web',
-    description: 'Capture readable HTML from a URL into a PDF.',
+    description: 'Capture a full-scroll webpage from a URL into a PDF.',
     accept: '*',
     tags: ['url', 'pdf', 'web'],
     inputMode: 'url',
@@ -1546,6 +1546,7 @@ export const categories: ToolCategoryDefinition[] = [
       'pdf-to-jpg',
       'pdf-to-webp',
       'image-to-pdf',
+      'url-pdf',
     ],
   },
   {
@@ -1594,12 +1595,12 @@ export const categories: ToolCategoryDefinition[] = [
     label: 'Video Tools',
     description: 'Convert, compress, mute, and extract media from video files.',
     tools: [
+      'video-convert',
+      'extract-audio',
       'video-to-gif',
       'video-to-webp',
       'mute-video',
-      'extract-audio',
       'video-compress',
-      'video-convert',
       'video-speed-change',
       'video-crop',
       'video-resize',
@@ -1622,13 +1623,13 @@ export const categories: ToolCategoryDefinition[] = [
     label: 'Audio Tools',
     description: 'Convert and edit audio with a browser-first workflow.',
     tools: [
+      'audio-recorder',
       'audio-convert',
       'audio-cut',
       'audio-merge',
       'audio-fade',
       'audio-speed-change',
       'audio-pitch-change',
-      'audio-recorder',
       'm4a-mp3',
       'm4a-wav',
       'aac-mp3',
@@ -1670,7 +1671,7 @@ export const categories: ToolCategoryDefinition[] = [
     id: 'web',
     label: 'Web Tools',
     description: 'Generate QR codes, capture URLs, detect CMS signatures, and inspect image metadata.',
-    tools: ['qr-generator', 'url-image', 'url-pdf', 'detect-cms', 'image-metadata'],
+    tools: ['url-image', 'qr-generator', 'url-pdf', 'detect-cms', 'image-metadata'],
   },
 ];
 
@@ -1681,8 +1682,29 @@ export function getToolById(toolId: string): ToolDefinition | undefined {
   return toolById.get(toolId);
 }
 
+export function getCategoryById(categoryId: string): ToolCategoryDefinition | undefined {
+  return categories.find((item) => item.id === categoryId);
+}
+
+export function isToolInCategory(categoryId: string, toolId: string): boolean {
+  const category = getCategoryById(categoryId);
+  if (category) {
+    return category.tools.includes(toolId);
+  }
+
+  return getToolById(toolId)?.category === categoryId;
+}
+
 export function getToolsByCategory(categoryId: string, { includeHidden = true }: { includeHidden?: boolean } = {}): ToolDefinition[] {
-  return tools.filter((tool) => tool.category === categoryId && (includeHidden || !tool.hiddenFromBrowse));
+  const category = getCategoryById(categoryId);
+  if (!category) {
+    return tools.filter((tool) => tool.category === categoryId && (includeHidden || !tool.hiddenFromBrowse));
+  }
+
+  return category.tools
+    .map((toolId) => getToolById(toolId))
+    .filter((tool): tool is ToolDefinition => Boolean(tool))
+    .filter((tool) => includeHidden || !tool.hiddenFromBrowse);
 }
 
 export function getBrowsableTools(): ToolDefinition[] {
