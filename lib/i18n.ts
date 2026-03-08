@@ -105,6 +105,10 @@ export const dictionaries = {
       tags: 'Tags',
       outputFiles: 'Output files',
       clear: 'Clear',
+      extractedText: 'Extracted text',
+      copyText: 'Copy text',
+      copyTextSuccess: 'The extracted text was copied.',
+      copyTextError: 'The extracted text could not be copied.',
       statusIdle: 'Waiting',
       statusRunning: 'Running',
       statusDone: 'Done',
@@ -262,6 +266,10 @@ export const dictionaries = {
       tags: '태그',
       outputFiles: '출력 파일',
       clear: '비우기',
+      extractedText: '추출 텍스트',
+      copyText: '텍스트 복사',
+      copyTextSuccess: '추출된 텍스트를 복사했습니다.',
+      copyTextError: '추출된 텍스트를 복사하지 못했습니다.',
       statusIdle: '대기 중',
       statusRunning: '실행 중',
       statusDone: '완료',
@@ -324,14 +332,16 @@ export type AppDictionary = (typeof dictionaries)[Locale];
 
 export const categoryCopy: Record<
   Locale,
-  Record<
-    ToolCategory,
-    {
-      nav: string;
-      title: string;
-      description: string;
-      shortDescription: string;
-    }
+  Partial<
+    Record<
+      ToolCategory,
+      {
+        nav: string;
+        title: string;
+        description: string;
+        shortDescription: string;
+      }
+    >
   >
 > = {
   en: {
@@ -425,7 +435,18 @@ export const categoryCopy: Record<
 };
 
 export function getCategoryCopy(locale: Locale, category: ToolCategory) {
-  return categoryCopy[locale][category];
+  return (
+    categoryCopy[locale][category] ?? {
+      nav: category === 'screen' ? 'Screen' : category.toUpperCase(),
+      title: category === 'screen' ? 'Screen Capture Tools' : `${category} Tools`,
+      description:
+        category === 'screen'
+          ? 'Record screens, webcams, and microphones directly in the browser.'
+          : 'Browser-side tools for this category.',
+      shortDescription:
+        category === 'screen' ? 'Record screens, webcams, and audio.' : 'Browser-side workflow tools.',
+    }
+  );
 }
 
 export function formatToolCount(locale: Locale, count: number) {

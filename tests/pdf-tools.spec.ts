@@ -20,6 +20,9 @@ test('pdf-to-png processes a PDF without worker errors', async ({ page }) => {
 });
 
 test('ocr pdf-to-text extracts text from the sample PDF', async ({ page }) => {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], {
+    origin: 'http://127.0.0.1:3100',
+  });
   await page.goto('/tools/ocr/ocr-pdf-to-text');
   await page.locator('input[type="file"]').setInputFiles(samplePdfPath);
   await page.getByRole('button', { name: 'Run tool' }).click();
@@ -27,4 +30,7 @@ test('ocr pdf-to-text extracts text from the sample PDF', async ({ page }) => {
   await expect(page.getByText('sample.txt')).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('pre').first()).toContainText('Sample PDF Page 1', { timeout: 30_000 });
   await expect(page.locator('pre').first()).toContainText('Sample PDF Page 3', { timeout: 30_000 });
+  await page.getByTestId('result-copy-text').click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('Sample PDF Page 1');
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('Sample PDF Page 3');
 });

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import JSZip from 'jszip';
-import { Download, LoaderCircle, Play } from 'lucide-react';
+import { Copy, Download, LoaderCircle, Play } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { ToolPageLayout } from '@/components/ToolPageLayout';
 import { useLocale } from '@/components/providers/locale-provider';
@@ -71,6 +71,24 @@ function moveFileItem(files: File[], fromIndex: number, toIndex: number) {
   const [item] = nextFiles.splice(fromIndex, 1);
   nextFiles.splice(toIndex, 0, item);
   return nextFiles;
+}
+
+async function copyTextContent(text: string) {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  textarea.style.pointerEvents = 'none';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  textarea.remove();
 }
 
 function renderField(
@@ -344,6 +362,15 @@ export function ToolWorkbench({ tool }: { tool: ToolDefinition }) {
 
     const blob = await zip.generateAsync({ type: 'blob' });
     downloadBlob(blob, `${tool.id}-results.zip`);
+  };
+
+  const onCopyResultText = async (text: string) => {
+    try {
+      await copyTextContent(text);
+      toast.success(messages.workbench.copyTextSuccess);
+    } catch {
+      toast.error(messages.workbench.copyTextError);
+    }
   };
 
   const progressStatus = error ? 'error' : results.length ? 'done' : running ? 'running' : 'idle';
@@ -624,9 +651,23 @@ export function ToolWorkbench({ tool }: { tool: ToolDefinition }) {
                             <audio src={result.previewUrl} controls className="w-full" />
                           ) : null}
                           {result.textContent ? (
-                            <pre className="max-h-64 overflow-auto rounded-xl border border-border bg-base-subtle p-3 text-xs text-ink">
-                              {result.textContent}
-                            </pre>
+                            <div className="space-y-3">
+                              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-base-subtle/70 px-3 py-2">
+                                <p className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.extractedText}</p>
+                                <button
+                                  type="button"
+                                  data-testid="result-copy-text"
+                                  onClick={() => void onCopyResultText(result.textContent ?? '')}
+                                  className="btn-ghost px-3 py-2 text-xs"
+                                >
+                                  <Copy size={14} />
+                                  {messages.workbench.copyText}
+                                </button>
+                              </div>
+                              <pre className="max-h-64 overflow-auto rounded-xl border border-border bg-base-subtle p-3 text-xs text-ink">
+                                {result.textContent}
+                              </pre>
+                            </div>
                           ) : null}
                           {result.metadata ? (
                             <pre className="max-h-64 overflow-auto rounded-xl border border-border bg-base-subtle p-3 text-xs text-ink">
