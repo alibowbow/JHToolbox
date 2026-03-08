@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Camera, CircleStop, Download, LoaderCircle, Mic, Monitor, Play, RefreshCw, Scissors } from 'lucide-react';
+import { Camera, CircleStop, Download, LoaderCircle, Monitor, Play, RefreshCw, Scissors } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { ToolPageLayout } from '@/components/ToolPageLayout';
 import { useLocale } from '@/components/providers/locale-provider';
 import { AudioWaveformEditor } from '@/components/ui/AudioWaveformEditor';
+import { LiveAudioWaveform } from '@/components/ui/LiveAudioWaveform';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { ResultCard } from '@/components/ui/ResultCard';
 import { Tabs } from '@/components/ui/Tabs';
@@ -576,7 +577,6 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
     stage: messages.workbench.statusIdle,
   });
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
-  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const cleanupRef = useRef<(() => void) | null>(null);
@@ -632,18 +632,6 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
     video.srcObject = livePreviewStream;
     return () => {
       video.srcObject = null;
-    };
-  }, [livePreviewStream]);
-
-  useEffect(() => {
-    const audio = previewAudioRef.current;
-    if (!audio) {
-      return;
-    }
-
-    audio.srcObject = livePreviewStream;
-    return () => {
-      audio.srcObject = null;
     };
   }, [livePreviewStream]);
 
@@ -1030,7 +1018,9 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
     }
   };
 
-  const showProgress = status === 'starting' || status === 'recording' || status === 'error' || status === 'done';
+  const showProgress = isAudioRecorder
+    ? status === 'starting' || status === 'recording' || status === 'error'
+    : status === 'starting' || status === 'recording' || status === 'error' || status === 'done';
   const progressValue =
     progress.percent > 0
       ? progress.percent
@@ -1054,9 +1044,10 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
   const guidanceLine = isMobileDevice ? copy.mobileGuidance : copy.desktopGuidance;
   const audioOutputFormat = String(options.outputFormat ?? 'wav');
   const trimMode = String(options.trimMode ?? 'keep');
-  const audioResultIsEdited = Boolean(result?.details && Object.prototype.hasOwnProperty.call(result.details, copy.selectionMode));
-  const audioResultTitle = audioResultIsEdited ? messages.workbench.success : copy.masterRecordingReady;
   const showStandaloneResults = Boolean(result) && !isAudioRecorder;
+  const captureNotes = isAudioRecorder
+    ? [copy.permissionNote, copy.localOnlyNote]
+    : [copy.permissionNote, copy.screenAudioNote, guidanceLine, copy.mobilePlatformLimit, copy.localOnlyNote];
 
   return (
     <ToolPageLayout title={localizedTool.name} description={localizedTool.description} icon={Icon} iconColor={style.icon}>
@@ -1076,19 +1067,19 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
             {capabilityMessage ? <div className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn">{capabilityMessage}</div> : null}
 
             {isAudioRecorder ? (
-              <div className="rounded-xl border border-border bg-base-elevated p-5">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-border bg-base-subtle text-accent">
-                    <Mic size={20} />
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold text-ink">{copy.microphonePreview}</p>
-                    <p className="text-xs text-ink-muted">{copy.microphonePreviewDescription}</p>
-                    <p className="text-xs text-ink-faint">{copy.microphoneEditorDescription}</p>
-                  </div>
-                </div>
-                <audio ref={previewAudioRef} autoPlay muted controls={Boolean(livePreviewStream)} className="mt-4 w-full" />
-              </div>
+              audioEditorFile && audioEditorPreviewUrl ? null : (
+                <LiveAudioWaveform
+                  stream={livePreviewStream}
+                  isRecording={status === 'recording'}
+                  title={copy.waveformEditor}
+                  description={status === 'recording' ? copy.localOnlyNote : copy.permissionNote}
+                  statusLabel={
+                    status === 'recording'
+                      ? `${copy.recordingLive} (${elapsedSeconds.toFixed(1)} s)`
+                      : messages.workbench.statusIdle
+                  }
+                />
+              )
             ) : livePreviewStream ? (
               <div className="rounded-xl border border-border bg-base-elevated p-3">
                 <video ref={previewVideoRef} autoPlay muted playsInline controls={false} className="max-h-[26rem] w-full rounded-xl bg-base" />
@@ -1161,11 +1152,9 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
             <section className="rounded-xl border border-border bg-base-elevated p-4">
               <p className="text-sm font-semibold text-ink">{copy.captureNotes}</p>
               <ul className="mt-3 space-y-2 text-sm text-ink-muted">
-                <li>{copy.permissionNote}</li>
-                <li>{copy.screenAudioNote}</li>
-                <li>{guidanceLine}</li>
-                <li>{copy.mobilePlatformLimit}</li>
-                <li>{copy.localOnlyNote}</li>
+                {captureNotes.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
               </ul>
             </section>
           </div>
@@ -1199,24 +1188,21 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
             </div>
 
             {result ? (
-              <div className="space-y-3">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">{copy.currentAudioOutput}</p>
-                <ResultCard
-                  fileName={result.name}
-                  fileSize={formatMegaBytes(result.blob.size)}
-                  title={audioResultTitle}
-                  onDownload={() => downloadBlob(result.blob, result.name)}
-                >
-                  {result.previewUrl && result.mimeType.startsWith('audio/') ? (
-                    <audio src={result.previewUrl} controls className="w-full" />
-                  ) : null}
-                  {result.details ? (
-                    <pre className="overflow-auto rounded-xl border border-border bg-base-subtle p-3 text-xs text-ink">
-                      {JSON.stringify(result.details, null, 2)}
-                    </pre>
-                  ) : null}
-                </ResultCard>
-              </div>
+              <ResultCard
+                fileName={result.name}
+                fileSize={formatMegaBytes(result.blob.size)}
+                title={copy.currentAudioOutput}
+                onDownload={() => downloadBlob(result.blob, result.name)}
+              >
+                {result.previewUrl && result.mimeType.startsWith('audio/') ? (
+                  <audio src={result.previewUrl} controls className="w-full" />
+                ) : null}
+                {result.details ? (
+                  <pre className="overflow-auto rounded-xl border border-border bg-base-subtle p-3 text-xs text-ink">
+                    {JSON.stringify(result.details, null, 2)}
+                  </pre>
+                ) : null}
+              </ResultCard>
             ) : null}
           </section>
         ) : null}
