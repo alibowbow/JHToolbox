@@ -1,4 +1,3 @@
-import html2canvas from 'html2canvas';
 import QRCode from 'qrcode';
 import { PDFDocument } from 'pdf-lib';
 import { ProcessContext, ProcessedFile } from '@/types/processor';
@@ -36,54 +35,45 @@ async function fetchHtmlForUrl(url: string): Promise<string> {
   return await mirror.text();
 }
 
-async function captureUrlToCanvas(url: string, width: number): Promise<HTMLCanvasElement> {
-  const html = await fetchHtmlForUrl(url);
-  const container = document.createElement('div');
-  container.style.position = 'fixed';
-  container.style.left = '-10000px';
-  container.style.top = '0';
-  container.style.width = `${width}px`;
-  container.style.padding = '20px';
-  container.style.background = '#ffffff';
-  container.style.color = '#111827';
-  container.style.fontFamily = 'Segoe UI, sans-serif';
-  container.style.lineHeight = '1.6';
-
-  const escapedHtml = html.replace(/</g, '&lt;').replace(/>/g, '&gt;').slice(0, 8000);
-
-  container.innerHTML = `
-    <h1 style="font-size:20px; margin:0 0 10px;">Captured: ${url}</h1>
-    <p style="font-size:12px; color:#334155; margin:0 0 14px;">
-      The original page could not be rendered directly, so this capture shows the fetched HTML snapshot.
-    </p>
-    <pre style="font-size:11px; white-space:pre-wrap; word-break:break-word; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px;">${escapedHtml}</pre>
-  `;
-
-  document.body.appendChild(container);
-  const canvas = await html2canvas(container, {
-    backgroundColor: '#ffffff',
-    scale: 1,
-    useCORS: true,
-    logging: false,
-  });
-  container.remove();
-  return canvas;
+function normalizeUrl(url: string) {
+  const trimmed = url.trim();
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  return new URL(withProtocol).toString();
 }
 
-async function canvasBlob(canvas: HTMLCanvasElement, mimeType = 'image/png', quality = 0.92): Promise<Blob> {
-  return await new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) {
-          reject(new Error('Failed to create a blob from the canvas.'));
-          return;
-        }
-        resolve(blob);
-      },
-      mimeType,
-      quality,
-    );
-  });
+function buildScreenshotUrl(url: string, width: number) {
+  const normalizedUrl = normalizeUrl(url);
+  return `https://image.thum.io/get/png/noanimate/width/${width}/${normalizedUrl}`;
+}
+
+async function fetchWebsiteScreenshot(url: string, width: number): Promise<Blob> {
+  const screenshotUrl = buildScreenshotUrl(url, width);
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const response = await fetch(screenshotUrl, {
+      method: 'GET',
+      mode: 'cors',
+      cache: 'no-store',
+    }).catch((cause) => {
+      lastError = cause instanceof Error ? cause : new Error('Screenshot fetch failed.');
+      return null;
+    });
+
+    if (response?.ok) {
+      const blob = await response.blob();
+      if (!blob.type.startsWith('image/')) {
+        throw new Error('The remote screenshot service returned an unexpected response.');
+      }
+
+      return blob;
+    }
+
+    lastError = new Error(`Screenshot fetch failed with status ${response?.status ?? 'unknown'}.`);
+    await new Promise((resolve) => setTimeout(resolve, 1200 * (attempt + 1)));
+  }
+
+  throw lastError ?? new Error('Unable to capture a rendered webpage screenshot for this URL.');
 }
 
 function detectCmsFromHtml(html: string): string[] {
@@ -139,14 +129,14 @@ export async function processWebTool(ctx: ProcessContext): Promise<ProcessedFile
     const url = String(options.url ?? 'https://example.com');
     const width = Math.max(320, parseNumber(options.width, 1200));
 
-    onProgress({ percent: 10, stage: 'Fetching page content' });
-    const canvas = await captureUrlToCanvas(url, width);
-    onProgress({ percent: 80, stage: 'Creating image capture' });
+    onProgress({ percent: 10, stage: 'Capturing webpage screenshot' });
+    const screenshotBlob = await fetchWebsiteScreenshot(url, width);
+    onProgress({ percent: 85, stage: 'Preparing image download' });
 
     return [
       {
         name: 'url-capture.png',
-        blob: await canvasBlob(canvas, 'image/png', 1),
+        blob: screenshotBlob,
         mimeType: 'image/png',
       },
     ];
@@ -156,9 +146,8 @@ export async function processWebTool(ctx: ProcessContext): Promise<ProcessedFile
     const url = String(options.url ?? 'https://example.com');
     const width = Math.max(320, parseNumber(options.width, 1200));
 
-    onProgress({ percent: 10, stage: 'Fetching page content' });
-    const canvas = await captureUrlToCanvas(url, width);
-    const pngBlob = await canvasBlob(canvas, 'image/png', 1);
+    onProgress({ percent: 10, stage: 'Capturing webpage screenshot' });
+    const pngBlob = await fetchWebsiteScreenshot(url, width);
     const pngBytes = new Uint8Array(await pngBlob.arrayBuffer());
 
     onProgress({ percent: 75, stage: 'Creating PDF capture' });
