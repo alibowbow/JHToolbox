@@ -88,6 +88,23 @@ test('audio cutter shows waveform editing before processing and exports a trimme
   await expect(page.getByText('Selection length')).toBeVisible();
   await expect(page.getByText('Results')).toHaveCount(0);
   await expect(page.getByTestId('waveform-selection-overlay')).toBeVisible();
+  await expect(page.getByTestId('play-selection-from-start')).toBeVisible();
+
+  const waveformScrollArea = page.getByTestId('waveform-scroll-area');
+  const waveformWidth = await waveformScrollArea.evaluate((element) => Math.round(element.getBoundingClientRect().width));
+  expect(waveformWidth).toBeGreaterThan(600);
+
+  await page.getByTestId('waveform-zoom-slider').evaluate((element) => {
+    const slider = element as HTMLInputElement;
+    slider.value = '8';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    slider.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  const zoomedMetrics = await waveformScrollArea.evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+  }));
+  expect(zoomedMetrics.scrollWidth).toBeGreaterThan(zoomedMetrics.clientWidth);
 
   await page.locator('select').first().selectOption('remove');
   await page.locator('input[type="number"]').first().fill('0.20');
@@ -113,13 +130,13 @@ test('audio cutter shows waveform editing before processing and exports a trimme
     .toBeCloseTo(0.2, 1);
 
   await previewAudio.evaluate((element) => {
-    (element as HTMLAudioElement).currentTime = 0.6;
+    (element as HTMLAudioElement).currentTime = 0.55;
   });
-  await page.getByRole('button', { name: 'Play' }).click();
-  await expect
-    .poll(() => previewAudio.evaluate((element) => Number((element as HTMLAudioElement).currentTime.toFixed(2))))
-    .toBeGreaterThanOrEqual(0.2);
-  expect(await previewAudio.evaluate((element) => (element as HTMLAudioElement).currentTime)).toBeLessThan(0.4);
+  await page.getByTestId('play-selection-from-start').click();
+  await page.waitForTimeout(150);
+  const restartedTime = await previewAudio.evaluate((element) => (element as HTMLAudioElement).currentTime);
+  expect(restartedTime).toBeGreaterThanOrEqual(0.2);
+  expect(restartedTime).toBeLessThan(0.4);
   await page.getByRole('button', { name: 'Pause' }).click();
 
   await page.locator('input[type="number"]').nth(1).fill('1.00');

@@ -1,11 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pause, Play } from 'lucide-react';
+import { Pause, Play, SkipBack } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { getLocalizedChoiceLabel } from '@/lib/tool-localization';
 
 const MIN_SELECTION_SECONDS = 0.05;
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 12;
+const ZOOM_STEP = 0.5;
 
 interface AudioWaveformEditorProps {
   file: File;
@@ -122,6 +125,29 @@ export function AudioWaveformEditor({
   );
   const localizedOutputFormat =
     outputFormat === 'keep' ? getLocalizedChoiceLabel('Keep original', locale) : outputFormat.toUpperCase();
+
+  const scrollTimeIntoView = (time: number) => {
+    const scrollContainer = scrollRef.current;
+    if (!scrollContainer || canvasWidth <= scrollContainer.clientWidth || safeDuration <= 0) {
+      return;
+    }
+
+    const targetX = (time / safeDuration) * canvasWidth;
+    const nextScrollLeft = clamp(
+      targetX - scrollContainer.clientWidth * 0.35,
+      0,
+      Math.max(canvasWidth - scrollContainer.clientWidth, 0),
+    );
+
+    scrollContainer.scrollTo({
+      left: nextScrollLeft,
+      behavior: 'smooth',
+    });
+  };
+
+  const updateZoom = (nextZoom: number) => {
+    setZoom(clamp(Number(nextZoom.toFixed(2)), MIN_ZOOM, MAX_ZOOM));
+  };
 
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -455,140 +481,181 @@ export function AudioWaveformEditor({
     audio.pause();
   };
 
+  const playSelectionFromStart = async () => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+
+    audio.currentTime = normalizedSelection.startTime;
+    setCurrentTime(normalizedSelection.startTime);
+    scrollTimeIntoView(normalizedSelection.startTime);
+    await audio.play();
+  };
+
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-ink-muted">{messages.workbench.waveformHint}</p>
-            <button type="button" onClick={() => updateSelection(0, safeDuration)} className="btn-ghost px-3 py-2 text-xs">
-              {messages.workbench.resetSelection}
-            </button>
-          </div>
-
-          <div ref={scrollRef} className="overflow-x-auto rounded-xl border border-border bg-base-elevated">
-            <div
-              className="relative h-44 min-w-full touch-none select-none"
-              style={{ width: `${canvasWidth}px` }}
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={() => setDragState(null)}
-              onPointerCancel={() => setDragState(null)}
-            >
-              <canvas ref={canvasRef} className="absolute inset-0 h-full w-full cursor-crosshair" />
-              {peaks.length > 0 ? (
-                <>
-                  <div
-                    aria-hidden="true"
-                    data-testid="waveform-selection-mask-start"
-                    className="absolute inset-y-0 left-0 bg-base/70"
-                    style={{ width: `${startPercent * 100}%` }}
-                  />
-                  <div
-                    aria-hidden="true"
-                    data-testid="waveform-selection-mask-end"
-                    className="absolute inset-y-0 right-0 bg-base/70"
-                    style={{ width: `${Math.max((1 - endPercent) * 100, 0)}%` }}
-                  />
-                  <div
-                    aria-hidden="true"
-                    data-testid="waveform-selection-overlay"
-                    className="absolute inset-y-2 rounded-lg border border-prime/70 bg-gradient-to-r from-prime/35 via-prime/20 to-accent/20 shadow-[0_0_0_1px_rgba(0,179,214,0.18),0_0_24px_rgba(0,179,214,0.14)]"
-                    style={{
-                      left: `${startPercent * 100}%`,
-                      width: `${selectionWidthPercent}%`,
-                    }}
-                  />
-                  <div
-                    aria-hidden="true"
-                    className="absolute inset-y-1 w-1.5 rounded-full bg-prime shadow-[0_0_14px_rgba(0,179,214,0.55)]"
-                    style={{ left: `${startPercent * 100}%` }}
-                  />
-                  <div
-                    aria-hidden="true"
-                    className="absolute inset-y-1 w-1.5 rounded-full bg-prime shadow-[0_0_14px_rgba(0,179,214,0.55)]"
-                    style={{ left: `${endPercent * 100}%` }}
-                  />
-                  <div
-                    aria-hidden="true"
-                    className="absolute inset-y-0 w-0.5 bg-accent shadow-glow-accent"
-                    style={{ left: `${playheadPercent * 100}%` }}
-                  />
-                </>
-              ) : null}
-              {loading ? (
-                <div className="absolute inset-0 flex items-center justify-center text-sm text-ink-muted">
-                  {messages.workbench.waveformLoading}
-                </div>
-              ) : null}
-              {waveformError ? (
-                <div className="absolute inset-x-4 bottom-4 rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn">
-                  {waveformError}
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          <audio
-            ref={audioRef}
-            data-testid="waveform-preview-audio"
-            src={previewUrl}
-            controls
-            className="w-full"
-            preload="metadata"
-          />
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-ink-muted">{messages.workbench.waveformHint}</p>
+          <button type="button" onClick={() => updateSelection(0, safeDuration)} className="btn-ghost px-3 py-2 text-xs">
+            {messages.workbench.resetSelection}
+          </button>
         </div>
 
-        <div className="space-y-3 rounded-xl border border-border bg-base-elevated p-4">
-          <div className="flex items-center justify-between gap-3">
+        <div
+          ref={scrollRef}
+          data-testid="waveform-scroll-area"
+          className="overflow-x-auto rounded-xl border border-border bg-base-elevated"
+        >
+          <div
+            className="relative h-52 min-w-full touch-none select-none sm:h-56"
+            style={{ width: `${canvasWidth}px` }}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={() => setDragState(null)}
+            onPointerCancel={() => setDragState(null)}
+          >
+            <canvas ref={canvasRef} className="absolute inset-0 h-full w-full cursor-crosshair" />
+            {peaks.length > 0 ? (
+              <>
+                <div
+                  aria-hidden="true"
+                  data-testid="waveform-selection-mask-start"
+                  className="absolute inset-y-0 left-0 bg-base/70"
+                  style={{ width: `${startPercent * 100}%` }}
+                />
+                <div
+                  aria-hidden="true"
+                  data-testid="waveform-selection-mask-end"
+                  className="absolute inset-y-0 right-0 bg-base/70"
+                  style={{ width: `${Math.max((1 - endPercent) * 100, 0)}%` }}
+                />
+                <div
+                  aria-hidden="true"
+                  data-testid="waveform-selection-overlay"
+                  className="absolute inset-y-2 rounded-lg border border-prime/70 bg-gradient-to-r from-prime/35 via-prime/20 to-accent/20 shadow-[0_0_0_1px_rgba(0,179,214,0.18),0_0_24px_rgba(0,179,214,0.14)]"
+                  style={{
+                    left: `${startPercent * 100}%`,
+                    width: `${selectionWidthPercent}%`,
+                  }}
+                />
+                <div
+                  aria-hidden="true"
+                  className="absolute inset-y-1 w-1.5 rounded-full bg-prime shadow-[0_0_14px_rgba(0,179,214,0.55)]"
+                  style={{ left: `${startPercent * 100}%` }}
+                />
+                <div
+                  aria-hidden="true"
+                  className="absolute inset-y-1 w-1.5 rounded-full bg-prime shadow-[0_0_14px_rgba(0,179,214,0.55)]"
+                  style={{ left: `${endPercent * 100}%` }}
+                />
+                <div
+                  aria-hidden="true"
+                  className="absolute inset-y-0 w-0.5 bg-accent shadow-glow-accent"
+                  style={{ left: `${playheadPercent * 100}%` }}
+                />
+              </>
+            ) : null}
+            {loading ? (
+              <div className="absolute inset-0 flex items-center justify-center text-sm text-ink-muted">
+                {messages.workbench.waveformLoading}
+              </div>
+            ) : null}
+            {waveformError ? (
+              <div className="absolute inset-x-4 bottom-4 rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn">
+                {waveformError}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <audio
+          ref={audioRef}
+          data-testid="waveform-preview-audio"
+          src={previewUrl}
+          controls
+          className="w-full"
+          preload="metadata"
+        />
+      </div>
+
+      <div data-testid="waveform-controls-panel" className="space-y-4 rounded-xl border border-border bg-base-elevated p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <button type="button" onClick={() => void togglePlayback()} className="btn-primary px-4 py-2 text-xs">
               {isPlaying ? <Pause size={14} /> : <Play size={14} />}
               {isPlaying ? messages.workbench.pause : messages.workbench.play}
             </button>
-            <span className="badge border border-border bg-base-subtle text-ink-muted">
-              {localizedTrimMode} | {localizedOutputFormat}
-            </span>
+            <button
+              type="button"
+              data-testid="play-selection-from-start"
+              onClick={() => void playSelectionFromStart()}
+              className="btn-ghost px-4 py-2 text-xs"
+            >
+              <SkipBack size={14} />
+              {messages.workbench.playSelectionFromStart}
+            </button>
           </div>
+          <span className="badge border border-border bg-base-subtle text-ink-muted">
+            {localizedTrimMode} | {localizedOutputFormat}
+          </span>
+        </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="text-xs uppercase tracking-[0.16em] text-ink-faint">
-              {messages.workbench.startTime}
-              <input
-                type="number"
-                min={0}
-                max={safeDuration}
-                step={0.01}
-                value={normalizedSelection.startTime.toFixed(2)}
-                onChange={(event) => updateSelection(Number(event.target.value), normalizedSelection.endTime)}
-                className="input-surface mt-1 w-full"
-              />
-            </label>
-            <label className="text-xs uppercase tracking-[0.16em] text-ink-faint">
-              {messages.workbench.endTime}
-              <input
-                type="number"
-                min={0}
-                max={safeDuration}
-                step={0.01}
-                value={normalizedSelection.endTime.toFixed(2)}
-                onChange={(event) => updateSelection(normalizedSelection.startTime, Number(event.target.value))}
-                className="input-surface mt-1 w-full"
-              />
-            </label>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <label className="text-xs uppercase tracking-[0.16em] text-ink-faint">
+                {messages.workbench.startTime}
+                <input
+                  type="number"
+                  min={0}
+                  max={safeDuration}
+                  step={0.01}
+                  value={normalizedSelection.startTime.toFixed(2)}
+                  onChange={(event) => updateSelection(Number(event.target.value), normalizedSelection.endTime)}
+                  className="input-surface mt-1 w-full"
+                />
+              </label>
+              <label className="text-xs uppercase tracking-[0.16em] text-ink-faint">
+                {messages.workbench.endTime}
+                <input
+                  type="number"
+                  min={0}
+                  max={safeDuration}
+                  step={0.01}
+                  value={normalizedSelection.endTime.toFixed(2)}
+                  onChange={(event) => updateSelection(normalizedSelection.startTime, Number(event.target.value))}
+                  className="input-surface mt-1 w-full"
+                />
+              </label>
+            </div>
+
+            <div className="rounded-xl border border-border bg-base-subtle/60 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.horizontalZoom}</p>
+                <span className="badge border border-border bg-base-elevated text-ink-muted">x{zoom.toFixed(1)}</span>
+              </div>
+              <div className="mt-3 flex items-center gap-3">
+                <button type="button" onClick={() => updateZoom(zoom - ZOOM_STEP)} className="btn-ghost px-3 py-2 text-xs">
+                  {messages.workbench.zoomOut}
+                </button>
+                <input
+                  data-testid="waveform-zoom-slider"
+                  type="range"
+                  min={MIN_ZOOM}
+                  max={MAX_ZOOM}
+                  step={ZOOM_STEP}
+                  value={zoom}
+                  onChange={(event) => updateZoom(Number(event.target.value))}
+                  className="w-full accent-cyan-400"
+                />
+                <button type="button" onClick={() => updateZoom(zoom + ZOOM_STEP)} className="btn-ghost px-3 py-2 text-xs">
+                  {messages.workbench.zoomIn}
+                </button>
+              </div>
+            </div>
           </div>
-
-          <label className="block text-xs uppercase tracking-[0.16em] text-ink-faint">
-            {messages.workbench.zoom}
-            <input
-              type="range"
-              min={1}
-              max={4}
-              step={0.25}
-              value={zoom}
-              onChange={(event) => setZoom(Number(event.target.value))}
-              className="mt-2 w-full accent-cyan-400"
-            />
-          </label>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="card p-3">
@@ -608,13 +675,13 @@ export function AudioWaveformEditor({
               <p className="mt-2 text-sm font-semibold text-ink">{formatSeconds(outputDuration)}</p>
             </div>
           </div>
-
-          {longFile ? (
-            <div className="rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn">
-              {messages.workbench.memoryWarning}
-            </div>
-          ) : null}
         </div>
+
+        {longFile ? (
+          <div className="rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn">
+            {messages.workbench.memoryWarning}
+          </div>
+        ) : null}
       </div>
     </div>
   );

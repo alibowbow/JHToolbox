@@ -176,6 +176,7 @@ export function ToolWorkbench({ tool }: { tool: ToolDefinition }) {
   const usesPdfEditor = PDF_EDITOR_TOOLS.has(tool.id);
   const hasOptions = Boolean(tool.options?.length);
   const showOptionsPanel = hasOptions && !CUSTOM_OPTIONS_IN_PREVIEW_TOOLS.has(tool.id);
+  const showWideEditorLayout = tool.id === 'audio-cut';
   const fileOptional = usesDirectInput || OPTIONAL_FILE_TOOLS.has(tool.id);
   const acceptLabel = useMemo(
     () => (tool.accept === '*' ? (locale === 'ko' ? '모든 파일' : 'Any file') : tool.accept),
@@ -350,7 +351,12 @@ export function ToolWorkbench({ tool }: { tool: ToolDefinition }) {
   return (
     <ToolPageLayout title={localizedTool.name} description={localizedTool.description} icon={Icon} iconColor={style.icon}>
       <div className="space-y-6">
-        <div className={cx('grid grid-cols-1 gap-4', !usesDirectInput && showOptionsPanel && 'xl:grid-cols-5')}>
+        <div
+          className={cx(
+            'grid grid-cols-1 gap-4',
+            !usesDirectInput && showOptionsPanel && !showWideEditorLayout && 'xl:grid-cols-5',
+          )}
+        >
           {usesDirectInput ? (
             <section className="card p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -384,7 +390,7 @@ export function ToolWorkbench({ tool }: { tool: ToolDefinition }) {
             </section>
           ) : (
             <>
-              <section className={cx('card space-y-4 p-5', showOptionsPanel && 'xl:col-span-3')}>
+              <section className={cx('card space-y-4 p-5', showOptionsPanel && !showWideEditorLayout && 'xl:col-span-3')}>
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-ink">{messages.workbench.files}</p>
@@ -510,7 +516,7 @@ export function ToolWorkbench({ tool }: { tool: ToolDefinition }) {
               </section>
 
               {showOptionsPanel ? (
-                <section className="card p-5 xl:col-span-2">
+                <section className={cx('card p-5', !showWideEditorLayout && 'xl:col-span-2')}>
                   <p className="text-sm font-semibold text-ink">{messages.workbench.options}</p>
                   <div className="mt-4 space-y-4">
                     {(tool.options ?? []).map((option) => (
