@@ -360,6 +360,65 @@ Object.assign(koChoiceLabels, {
   Enabled: '사용',
 });
 
+Object.assign(koToolNames, {
+  'pdf-to-word': 'PDF를 Word로',
+  'pdf-to-excel': 'PDF를 Excel로',
+  'word-to-pdf': 'Word를 PDF로',
+  'powerpoint-to-pdf': 'PowerPoint를 PDF로',
+  'excel-to-pdf': 'Excel을 PDF로',
+  'html-to-pdf': 'HTML을 PDF로',
+  'edit-pdf': 'PDF 편집',
+  'pdf-sign': 'PDF 서명',
+  'pdf-repair': 'PDF 복구',
+  'pdf-compare': 'PDF 비교',
+  'pdf-to-pdfa': 'PDF를 PDF/A로',
+});
+
+Object.assign(koToolDescriptions, {
+  'pdf-to-word': 'PDF에서 읽을 수 있는 텍스트를 추출해 DOCX 문서로 변환합니다.',
+  'pdf-to-excel': 'PDF에서 읽을 수 있는 텍스트 줄을 시트별 XLSX로 정리합니다.',
+  'word-to-pdf': 'DOCX 텍스트 문서를 브라우저에서 PDF 페이지로 변환합니다.',
+  'powerpoint-to-pdf': 'PPTX 슬라이드의 텍스트를 읽어 PDF 요약본으로 변환합니다.',
+  'excel-to-pdf': 'Excel 시트 내용을 PDF 요약 페이지로 렌더링합니다.',
+  'html-to-pdf': 'HTML 파일을 브라우저 안에서 렌더링한 뒤 PDF로 저장합니다.',
+  'edit-pdf': '텍스트, 이미지, 메모, 강조 박스를 PDF 페이지 위에 추가합니다.',
+  'pdf-sign': '텍스트 또는 이미지 서명을 PDF 페이지에 시각적으로 배치합니다.',
+  'pdf-repair': '브라우저에서 열 수 있는 PDF를 다시 저장해 더 깔끔한 사본으로 만듭니다.',
+  'pdf-compare': '두 PDF의 추출 텍스트를 비교해 차이 보고서를 만듭니다.',
+  'pdf-to-pdfa': '메타데이터를 보강해 보관용 PDF/A 스타일 사본을 만듭니다. 정식 준수 검증은 포함하지 않습니다.',
+});
+
+Object.assign(koOptionLabelsByLabel, {
+  'Edit type': '편집 유형',
+  'Page number': '페이지 번호',
+  Color: '색상',
+  'Signature type': '서명 유형',
+  'Signer name': '서명자 이름',
+  'Include date': '날짜 포함',
+  'Ignore whitespace': '공백 무시',
+  Title: '제목',
+  Author: '작성자',
+  Subject: '주제',
+});
+
+Object.assign(koOptionLabelsByKey, {
+  editType: '편집 유형',
+  pageNumber: '페이지 번호',
+  signatureType: '서명 유형',
+  signerName: '서명자 이름',
+  includeDate: '날짜 포함',
+  ignoreWhitespace: '공백 무시',
+  title: '제목',
+  author: '작성자',
+  subject: '주제',
+});
+
+Object.assign(koChoiceLabels, {
+  Rectangle: '사각형',
+  Highlight: '강조',
+  Comment: '메모',
+});
+
 function getFallbackKoDescription(tool: ToolDefinition, name: string) {
   if (tool.id.includes('-to-')) {
     return `${name} 작업을 브라우저 안에서 로컬로 처리합니다.`;

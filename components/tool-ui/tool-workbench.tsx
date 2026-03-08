@@ -177,8 +177,9 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
   }
 
   const { locale, messages } = useLocale();
-  const searchParams = useSearchParams();
-  const searchParamString = searchParams.toString();
+  const rawSearchParams = useSearchParams();
+  const searchParams: SearchParamSource = rawSearchParams ?? new URLSearchParams();
+  const searchParamString = rawSearchParams?.toString() ?? '';
   const [files, setFiles] = useState<File[]>([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -27,7 +27,7 @@ export function NavigationList({
   onNavigate?: () => void;
   activeIndicatorId?: string;
 }) {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const { locale, messages } = useLocale();
 
   return (

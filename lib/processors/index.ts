@@ -20,6 +20,17 @@ const PDF_TOOLS = new Set([
   'pdf-to-png',
   'pdf-to-jpg',
   'pdf-to-webp',
+  'pdf-to-word',
+  'pdf-to-excel',
+  'word-to-pdf',
+  'powerpoint-to-pdf',
+  'excel-to-pdf',
+  'html-to-pdf',
+  'edit-pdf',
+  'pdf-sign',
+  'pdf-repair',
+  'pdf-compare',
+  'pdf-to-pdfa',
   'image-to-pdf',
 ]);
 

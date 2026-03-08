@@ -240,6 +240,48 @@ test('pdf menu lists url full page to pdf and opens the pdf route', async ({ pag
   await expect(page.getByRole('heading', { level: 2, name: 'URL Full Page to PDF' })).toBeVisible();
 });
 
+test('pdf category surfaces the newly added document workflows', async ({ page }) => {
+  await page.goto('/tools/pdf');
+
+  await expect(page.locator('a[href="/tools/pdf/pdf-to-word"]').first()).toContainText('PDF to Word');
+  await expect(page.locator('a[href="/tools/pdf/word-to-pdf"]').first()).toContainText('Word to PDF');
+  await expect(page.locator('a[href="/tools/pdf/html-to-pdf"]').first()).toContainText('HTML to PDF');
+  await expect(page.locator('a[href="/tools/pdf/edit-pdf"]').first()).toContainText('Edit PDF');
+  await expect(page.locator('a[href="/tools/pdf/pdf-compare"]').first()).toContainText('Compare PDF');
+});
+
+test('pdf compare generates a readable diff report from two uploads', async ({ page }) => {
+  await page.goto('/tools/pdf/pdf-compare');
+
+  await page.locator('input[type="file"]').setInputFiles(['tests/fixtures/sample.pdf', 'tests/fixtures/sample.pdf']);
+  await page.getByRole('button', { name: 'Run tool' }).click();
+
+  await expect(page.getByText('sample-vs-sample.txt')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText('PDF Compare Report')).toBeVisible();
+  await expect(page.getByText('Changed pages: 0')).toBeVisible();
+});
+
+test('html to pdf renders an uploaded html file without server conversion', async ({ page }) => {
+  await page.goto('/tools/pdf/html-to-pdf');
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'sample.html',
+    mimeType: 'text/html',
+    buffer: Buffer.from(`
+      <!doctype html>
+      <html>
+        <body style="font-family: Arial, sans-serif; padding: 40px; background: #f8fafc;">
+          <h1>Browser HTML export</h1>
+          <p>Local HTML should render into PDF pages.</p>
+        </body>
+      </html>
+    `),
+  });
+
+  await page.getByRole('button', { name: 'Run tool' }).click();
+  await expect(page.getByText('sample.pdf')).toBeVisible({ timeout: 60_000 });
+});
+
 test('url-based tools start from direct input without showing the upload dropzone', async ({ page }) => {
   await page.goto('/tools/pdf/url-pdf');
 

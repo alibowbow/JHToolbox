@@ -549,7 +549,8 @@ async function createScreenCameraSession(
 
 export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
   const { locale, messages } = useLocale();
-  const searchParams = useSearchParams();
+  const rawSearchParams = useSearchParams();
+  const searchParams: Pick<URLSearchParams, 'get'> = rawSearchParams ?? new URLSearchParams();
   const localizedTool = getLocalizedToolCopy(tool, locale);
   const Icon = categoryIcons[tool.category];
   const style = categoryStyles[tool.category];

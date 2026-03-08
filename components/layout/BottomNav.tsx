@@ -21,7 +21,7 @@ const items = [
 ] as const;
 
 export function BottomNav() {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const { locale, messages } = useLocale();
 
   return (
