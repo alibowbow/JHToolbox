@@ -244,7 +244,8 @@ test('url-based tools start from direct input without showing the upload dropzon
   await page.goto('/tools/pdf/url-pdf');
 
   await expect(page.getByText('Direct input')).toBeVisible();
-  await expect(page.locator('input[type="text"]').first()).toHaveValue('https://example.com');
+  await expect(page.locator('input[type="text"]').first()).toHaveValue('');
+  await expect(page.locator('input[type="text"]').first()).toHaveAttribute('placeholder', 'https://example.com');
   await expect(page.getByText(/Drag files here|Drop files here/)).toHaveCount(0);
 });
 

@@ -10,7 +10,7 @@ import { categoryIcons, categoryStyles } from '@/lib/tool-presentation';
 import { ToolDefinition } from '@/types/tool';
 
 export function ToolCard({ tool, categoryId }: { tool: ToolDefinition; categoryId?: ToolDefinition['category'] }) {
-  const { locale, messages } = useLocale();
+  const { locale } = useLocale();
   const displayCategoryId = categoryId ?? tool.category;
   const Icon = categoryIcons[displayCategoryId];
   const style = categoryStyles[displayCategoryId];
@@ -37,15 +37,6 @@ export function ToolCard({ tool, categoryId }: { tool: ToolDefinition; categoryI
             <ArrowUpRight size={14} className="text-ink-faint transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-prime" />
           </div>
           <p className="text-xs leading-relaxed text-ink-muted">{localizedTool.description}</p>
-        </div>
-
-        <div className="mt-auto flex flex-wrap gap-2">
-          {tool.tags.slice(0, 3).map((tag) => (
-            <span key={tag} className="badge border border-border bg-base-subtle text-ink-faint">
-              {tag}
-            </span>
-          ))}
-          <span className="badge border border-border bg-base-subtle text-ink-muted">{messages.common.open}</span>
         </div>
       </motion.article>
     </Link>

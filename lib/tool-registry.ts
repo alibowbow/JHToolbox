@@ -1484,7 +1484,7 @@ export const tools: ToolDefinition[] = [
     inputMode: 'url',
     browseGroups: ['capture'],
     options: [
-      { key: 'url', label: 'Target URL', type: 'text', defaultValue: 'https://example.com' },
+      { key: 'url', label: 'Target URL', type: 'text', defaultValue: '', placeholder: 'https://example.com' },
       { key: 'width', label: 'Canvas width', type: 'number', defaultValue: 1200, min: 320, max: 4096 },
       { key: 'captureFullPage', label: 'Capture full page scroll', type: 'checkbox', defaultValue: true },
     ],
@@ -1499,7 +1499,7 @@ export const tools: ToolDefinition[] = [
     inputMode: 'url',
     browseGroups: ['capture'],
     options: [
-      { key: 'url', label: 'Target URL', type: 'text', defaultValue: 'https://example.com' },
+      { key: 'url', label: 'Target URL', type: 'text', defaultValue: '', placeholder: 'https://example.com' },
       { key: 'width', label: 'Canvas width', type: 'number', defaultValue: 1200, min: 320, max: 4096 },
     ],
   },
@@ -1513,7 +1513,7 @@ export const tools: ToolDefinition[] = [
     inputMode: 'url',
     browseGroups: ['capture'],
     options: [
-      { key: 'url', label: 'Target URL', type: 'text', defaultValue: 'https://example.com' },
+      { key: 'url', label: 'Target URL', type: 'text', defaultValue: '', placeholder: 'https://example.com' },
     ],
   },
   {

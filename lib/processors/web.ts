@@ -127,7 +127,7 @@ export async function processWebTool(ctx: ProcessContext): Promise<ProcessedFile
   }
 
   if (toolId === 'url-image') {
-    const url = String(options.url ?? 'https://example.com');
+    const url = String(options.url ?? '').trim() || 'https://example.com';
     const width = Math.max(320, parseNumber(options.width, 1200));
     const captureFullPage = parseBoolean(options.captureFullPage, true);
 
@@ -145,7 +145,7 @@ export async function processWebTool(ctx: ProcessContext): Promise<ProcessedFile
   }
 
   if (toolId === 'url-pdf') {
-    const url = String(options.url ?? 'https://example.com');
+    const url = String(options.url ?? '').trim() || 'https://example.com';
     const width = Math.max(320, parseNumber(options.width, 1200));
 
     onProgress({ percent: 10, stage: 'Capturing webpage screenshot' });
@@ -169,7 +169,7 @@ export async function processWebTool(ctx: ProcessContext): Promise<ProcessedFile
   }
 
   if (toolId === 'detect-cms') {
-    const url = String(options.url ?? 'https://example.com');
+    const url = String(options.url ?? '').trim() || 'https://example.com';
     onProgress({ percent: 20, stage: 'Inspecting page HTML' });
 
     const html = await fetchHtmlForUrl(url);
