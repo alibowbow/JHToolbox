@@ -1,7 +1,7 @@
 import QRCode from 'qrcode';
 import { PDFDocument } from 'pdf-lib';
 import { ProcessContext, ProcessedFile } from '@/types/processor';
-import { parseNumber } from '@/lib/utils';
+import { parseBoolean, parseNumber } from '@/lib/utils';
 
 function blobFromBytes(bytes: Uint8Array, mimeType: string): Blob {
   return new Blob([Uint8Array.from(bytes).buffer], { type: mimeType });
@@ -41,13 +41,14 @@ function normalizeUrl(url: string) {
   return new URL(withProtocol).toString();
 }
 
-function buildScreenshotUrl(url: string, width: number) {
+function buildScreenshotUrl(url: string, width: number, captureFullPage: boolean) {
   const normalizedUrl = normalizeUrl(url);
-  return `https://image.thum.io/get/png/noanimate/width/${width}/${normalizedUrl}`;
+  const fullPageSegment = captureFullPage ? 'fullpage/' : '';
+  return `https://image.thum.io/get/png/noanimate/${fullPageSegment}width/${width}/${normalizedUrl}`;
 }
 
-async function fetchWebsiteScreenshot(url: string, width: number): Promise<Blob> {
-  const screenshotUrl = buildScreenshotUrl(url, width);
+async function fetchWebsiteScreenshot(url: string, width: number, captureFullPage: boolean): Promise<Blob> {
+  const screenshotUrl = buildScreenshotUrl(url, width, captureFullPage);
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -128,9 +129,10 @@ export async function processWebTool(ctx: ProcessContext): Promise<ProcessedFile
   if (toolId === 'url-image') {
     const url = String(options.url ?? 'https://example.com');
     const width = Math.max(320, parseNumber(options.width, 1200));
+    const captureFullPage = parseBoolean(options.captureFullPage, true);
 
     onProgress({ percent: 10, stage: 'Capturing webpage screenshot' });
-    const screenshotBlob = await fetchWebsiteScreenshot(url, width);
+    const screenshotBlob = await fetchWebsiteScreenshot(url, width, captureFullPage);
     onProgress({ percent: 85, stage: 'Preparing image download' });
 
     return [
@@ -147,7 +149,7 @@ export async function processWebTool(ctx: ProcessContext): Promise<ProcessedFile
     const width = Math.max(320, parseNumber(options.width, 1200));
 
     onProgress({ percent: 10, stage: 'Capturing webpage screenshot' });
-    const pngBlob = await fetchWebsiteScreenshot(url, width);
+    const pngBlob = await fetchWebsiteScreenshot(url, width, false);
     const pngBytes = new Uint8Array(await pngBlob.arrayBuffer());
 
     onProgress({ percent: 75, stage: 'Creating PDF capture' });

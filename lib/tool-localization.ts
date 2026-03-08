@@ -189,6 +189,7 @@ const koOptionLabelsByLabel: Record<string, string> = {
   'Size (px)': '크기 (px)',
   'Target URL': '대상 URL',
   'Canvas width': '캔버스 너비',
+  'Capture full page scroll': '전체 페이지 스크롤 포함',
 };
 
 const koOptionLabelsByKey: Record<string, string> = {
@@ -225,6 +226,7 @@ const koOptionLabelsByKey: Record<string, string> = {
   rowsPerFile: '파일당 행 수',
   content: 'QR 내용',
   url: '대상 URL',
+  captureFullPage: '전체 페이지 스크롤 포함',
 };
 
 const koChoiceLabels: Record<string, string> = {
