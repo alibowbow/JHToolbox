@@ -437,8 +437,8 @@ export const categoryCopy: Record<
 export function getCategoryCopy(locale: Locale, category: ToolCategory) {
   return (
     categoryCopy[locale][category] ?? {
-      nav: category === 'screen' ? (locale === 'ko' ? '화면 캡처' : 'Screen') : category.toUpperCase(),
-      title: category === 'screen' ? (locale === 'ko' ? '화면 캡처 도구' : 'Screen Capture Tools') : `${category} Tools`,
+      nav: category === 'screen' ? (locale === 'ko' ? '화면 녹화' : 'Screen') : category.toUpperCase(),
+      title: category === 'screen' ? (locale === 'ko' ? '화면 녹화 도구' : 'Screen Recording Tools') : `${category} Tools`,
       description:
         category === 'screen'
           ? locale === 'ko'

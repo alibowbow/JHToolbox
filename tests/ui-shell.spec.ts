@@ -50,7 +50,7 @@ test('korean locale also localizes newly added screen tools', async ({ page }) =
   await page.getByRole('button', { name: 'ko' }).click();
 
   await expect(page.getByRole('heading', { level: 2, name: '스크린샷 캡처' })).toBeVisible();
-  await expect(page.getByRole('main').getByText('화면 캡처')).toBeVisible();
+  await expect(page.getByRole('main').getByText('화면 녹화')).toBeVisible();
 });
 
 test('sidebar navigation remains stable after visiting a tool detail page', async ({ page }) => {
