@@ -813,6 +813,13 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
     try {
       setStatus('starting');
       setError(null);
+      setResult((currentResult) => {
+        if (currentResult?.previewUrl?.startsWith('blob:')) {
+          URL.revokeObjectURL(currentResult.previewUrl);
+        }
+        resultPreviewUrlRef.current = null;
+        return null;
+      });
       const outputFormat = String(options.outputFormat ?? 'wav');
       const trimMode = String(options.trimMode ?? 'keep');
       const editedResult = await trimAudioFile(audioEditorFile, {
@@ -827,20 +834,8 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
             stage: locale === 'ko' ? '편집한 오디오를 내보내는 중' : stage,
           }),
       });
-      const previewUrl = URL.createObjectURL(editedResult.blob);
-      finalizeCaptureResult(
-        {
-          ...editedResult,
-          previewUrl,
-          details: {
-            duration: `${elapsedSeconds.toFixed(1)} s`,
-            size: formatMegaBytes(editedResult.blob.size),
-            [copy.selectionMode]: trimMode === 'remove' ? copy.removeSelection : copy.keepSelection,
-            [copy.editedOutput]: outputFormat.toUpperCase(),
-          },
-        },
-        copy.audioExportReadyToast,
-      );
+      downloadBlob(editedResult.blob, editedResult.name);
+      toast.success(copy.audioExportReadyToast);
       setStatus('idle');
       setProgress({ percent: 0, stage: messages.workbench.statusIdle });
     } catch (cause) {
@@ -1151,23 +1146,6 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
                     </button>
                   </div>
 
-                  {result ? (
-                    <ResultCard
-                      fileName={result.name}
-                      fileSize={formatMegaBytes(result.blob.size)}
-                      title={copy.currentAudioOutput}
-                      onDownload={() => downloadBlob(result.blob, result.name)}
-                    >
-                      {result.previewUrl && result.mimeType.startsWith('audio/') ? (
-                        <audio src={result.previewUrl} controls className="w-full" />
-                      ) : null}
-                      {result.details ? (
-                        <pre className="overflow-auto rounded-xl border border-border bg-base-subtle p-3 text-xs text-ink">
-                          {JSON.stringify(result.details, null, 2)}
-                        </pre>
-                      ) : null}
-                    </ResultCard>
-                  ) : null}
                 </section>
               ) : (
                 <LiveAudioWaveform

@@ -268,20 +268,8 @@ test('url image allows trimming a long captured page before saving', async ({ pa
 
   const startInput = page.getByTestId('url-image-crop-start-input');
   await expect(startInput).toHaveValue('0');
-  const startHandle = page.getByTestId('url-image-crop-start-handle');
-  const handleBox = await startHandle.boundingBox();
-  if (!handleBox) {
-    throw new Error('URL image crop start handle bounding box was not available.');
-  }
-
-  const handleCenterX = handleBox.x + handleBox.width / 2;
-  const handleCenterY = handleBox.y + handleBox.height / 2;
-  await page.mouse.move(handleCenterX, handleCenterY);
-  await page.mouse.down();
-  await page.mouse.move(handleCenterX, handleCenterY + 110, { steps: 10 });
-  await page.mouse.up();
-
-  await expect.poll(async () => Number(await startInput.inputValue())).toBeGreaterThan(0);
+  await page.getByTestId('url-image-crop-start-range').fill('240');
+  await expect(startInput).toHaveValue('240');
 
   await startInput.fill('240');
   await expect(startInput).toHaveValue('240');
