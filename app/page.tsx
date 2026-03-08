@@ -106,7 +106,7 @@ export default function HomePage() {
             <br />
             <span className="text-prime">{messages.home.titleAccent}</span>
           </h1>
-          <p className="mt-4 max-w-2xl text-sm leading-relaxed text-ink-muted sm:text-base">{messages.home.description}</p>
+          <p className="hero-description mt-4 max-w-2xl text-sm leading-relaxed sm:text-base">{messages.home.description}</p>
 
           <div className="mt-6 flex flex-wrap gap-3">
             <Link href="/tools" className="btn-primary">
