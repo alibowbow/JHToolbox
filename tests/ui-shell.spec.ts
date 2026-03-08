@@ -97,10 +97,10 @@ test('audio converter quick action preset selects MP3 and keeps empty panels hid
 });
 
 test('video converter preset selects the requested output format in one workflow', async ({ page }) => {
-  await page.goto('/tools/video/video-convert?outputFormat=mov');
+  await page.goto('/tools/video/video-convert?outputFormat=gif');
 
   await expect(page.getByRole('heading', { level: 2, name: 'Video Converter' })).toBeVisible();
-  await expect(page.locator('select').first()).toHaveValue('mov');
+  await expect(page.locator('select').first()).toHaveValue('gif');
   await expect(page.getByText('Progress')).toHaveCount(0);
   await expect(page.getByText('Results')).toHaveCount(0);
 });
@@ -111,6 +111,20 @@ test('legacy video format routes redirect to the unified video converter', async
   await expect(page).toHaveURL(/\/tools\/video\/video-convert\?outputFormat=webm$/);
   await expect(page.getByRole('heading', { level: 2, name: 'Video Converter' })).toBeVisible();
   await expect(page.locator('select').first()).toHaveValue('webm');
+});
+
+test('legacy GIF and WEBP routes redirect to the unified video converter', async ({ page }) => {
+  await page.goto('/tools/video/video-to-gif');
+  await expect(page).toHaveURL(/\/tools\/video\/video-convert\?outputFormat=gif$/);
+  await expect(page.locator('select').first()).toHaveValue('gif');
+
+  await page.goto('/tools/video/gif-to-video');
+  await expect(page).toHaveURL(/\/tools\/video\/video-convert\?outputFormat=mp4$/);
+  await expect(page.locator('select').first()).toHaveValue('mp4');
+
+  await page.goto('/tools/video/video-to-webp');
+  await expect(page).toHaveURL(/\/tools\/video\/video-convert\?outputFormat=webp$/);
+  await expect(page.locator('select').first()).toHaveValue('webp');
 });
 
 test('audio cutter shows waveform editing before processing and exports a trimmed file', async ({ page }) => {

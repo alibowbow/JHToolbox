@@ -8,6 +8,9 @@ const legacyToolRedirects: Partial<Record<string, string>> = {
   'mp4-mov': '/tools/video/video-convert?outputFormat=mov',
   'mov-mp4': '/tools/video/video-convert?outputFormat=mp4',
   'avi-mp4': '/tools/video/video-convert?outputFormat=mp4',
+  'video-to-gif': '/tools/video/video-convert?outputFormat=gif',
+  'video-to-webp': '/tools/video/video-convert?outputFormat=webp',
+  'gif-to-video': '/tools/video/video-convert?outputFormat=mp4',
 };
 
 export function generateStaticParams() {

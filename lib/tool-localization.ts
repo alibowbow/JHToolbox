@@ -248,6 +248,7 @@ const koPlaceholders: Record<string, string> = {
 };
 
 Object.assign(koToolNames, {
+  'video-convert': '비디오 변환기',
   'pdf-watermark': 'PDF 워터마크',
   'pdf-redact': 'PDF 영구 가리기',
   'image-upscale': '이미지 업스케일',
@@ -279,6 +280,7 @@ Object.assign(koToolNames, {
 });
 
 Object.assign(koToolDescriptions, {
+  'video-convert': '비디오와 GIF를 MP4, WEBM, MOV, GIF, 애니메이션 WEBP 중 원하는 포맷으로 한 번에 변환합니다.',
   'pdf-watermark': 'PDF 각 페이지에 텍스트 또는 이미지 워터마크를 넣습니다.',
   'pdf-redact': '선택한 페이지 범위에 지정한 영역을 영구적으로 가립니다.',
   'image-upscale': '이미지를 더 큰 해상도로 확대합니다.',

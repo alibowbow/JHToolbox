@@ -688,6 +688,7 @@ export const tools: ToolDefinition[] = [
     tags: ['video', 'gif', 'convert'],
     browseGroups: ['popular', 'convert', 'capture', 'editor-enabled'],
     previewKind: 'video',
+    hiddenFromBrowse: true,
     options: [
       { key: 'fps', label: 'FPS', type: 'number', defaultValue: 12, min: 5, max: 30 },
       { key: 'width', label: 'Width', type: 'number', defaultValue: 480, min: 120, max: 1920 },
@@ -702,6 +703,7 @@ export const tools: ToolDefinition[] = [
     tags: ['video', 'webp', 'convert'],
     browseGroups: ['convert', 'capture', 'editor-enabled'],
     previewKind: 'video',
+    hiddenFromBrowse: true,
     options: [
       { key: 'fps', label: 'FPS', type: 'number', defaultValue: 12, min: 5, max: 30 },
       { key: 'width', label: 'Width', type: 'number', defaultValue: 640, min: 120, max: 1920 },
@@ -858,12 +860,12 @@ export const tools: ToolDefinition[] = [
     id: 'video-convert',
     name: 'Video Converter',
     category: 'video',
-    description: 'Convert MP4, WEBM, MOV, AVI, and M4V files into MP4, WEBM, or MOV in one workflow.',
-    accept: '.mp4,.webm,.mov,.avi,.m4v,.mkv',
+    description: 'Convert videos and GIFs into MP4, WEBM, MOV, GIF, or animated WEBP in one workflow.',
+    accept: '.mp4,.webm,.mov,.avi,.m4v,.mkv,.gif',
     multiple: true,
-    tags: ['video', 'convert', 'mp4', 'webm', 'mov'],
+    tags: ['video', 'gif', 'convert', 'mp4', 'webm', 'mov', 'webp'],
     browseGroups: ['popular', 'convert'],
-    previewKind: 'video',
+    previewKind: 'image',
     options: [
       {
         key: 'outputFormat',
@@ -874,8 +876,12 @@ export const tools: ToolDefinition[] = [
           { label: 'MP4', value: 'mp4' },
           { label: 'WEBM', value: 'webm' },
           { label: 'MOV', value: 'mov' },
+          { label: 'GIF', value: 'gif' },
+          { label: 'Animated WEBP', value: 'webp' },
         ],
       },
+      { key: 'fps', label: 'FPS', type: 'number', defaultValue: 12, min: 5, max: 30 },
+      { key: 'width', label: 'Width', type: 'number', defaultValue: 640, min: 120, max: 1920 },
     ],
   },
   {
@@ -902,6 +908,7 @@ export const tools: ToolDefinition[] = [
     tags: ['gif', 'video', 'convert'],
     browseGroups: ['new', 'convert'],
     previewKind: 'image',
+    hiddenFromBrowse: true,
   },
   {
     id: 'gif-speed-change',

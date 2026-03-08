@@ -22,6 +22,8 @@ type VideoFormatConfig = {
   withoutAudioArgs: string[];
 };
 
+type UnifiedVideoOutputFormat = keyof typeof VIDEO_FORMATS | 'gif' | 'webp';
+
 const AUDIO_FORMATS: Record<string, AudioFormatConfig> = {
   mp3: { ext: 'mp3', mimeType: 'audio/mpeg', codecArgs: ['-c:a', 'libmp3lame'], bitrateOptional: true },
   wav: { ext: 'wav', mimeType: 'audio/wav', codecArgs: ['-c:a', 'pcm_s16le'] },
@@ -53,11 +55,14 @@ const VIDEO_FORMATS: Record<string, VideoFormatConfig> = {
   },
 };
 
-const LEGACY_VIDEO_CONVERTER_OUTPUTS: Partial<Record<string, keyof typeof VIDEO_FORMATS>> = {
+const LEGACY_VIDEO_CONVERTER_OUTPUTS: Partial<Record<string, UnifiedVideoOutputFormat>> = {
   'mp4-webm': 'webm',
   'mp4-mov': 'mov',
   'mov-mp4': 'mp4',
   'avi-mp4': 'mp4',
+  'video-to-gif': 'gif',
+  'video-to-webp': 'webp',
+  'gif-to-video': 'mp4',
 };
 
 function blobFromBytes(bytes: Uint8Array, mimeType: string): Blob {
@@ -451,10 +456,9 @@ async function processAudioPitchChange(ctx: ProcessContext) {
   );
 }
 
-async function processVideoConvert(ctx: ProcessContext, forcedOutputFormat?: keyof typeof VIDEO_FORMATS) {
+async function processVideoConvert(ctx: ProcessContext, forcedOutputFormat?: UnifiedVideoOutputFormat) {
   const { files, options, onProgress } = ctx;
-  const outputFormat = forcedOutputFormat ?? (String(options.outputFormat ?? 'mp4').toLowerCase() as keyof typeof VIDEO_FORMATS);
-  const config = getVideoFormatConfig(outputFormat);
+  const outputFormat = forcedOutputFormat ?? (String(options.outputFormat ?? 'mp4').toLowerCase() as UnifiedVideoOutputFormat);
   const { ffmpeg, fetchFile } = await getFfmpeg((ratio) =>
     onProgress({
       percent: Math.max(5, Math.min(95, ratio * 100)),
@@ -466,22 +470,35 @@ async function processVideoConvert(ctx: ProcessContext, forcedOutputFormat?: key
   for (let index = 0; index < files.length; index += 1) {
     const file = files[index];
     const inputName = `video-convert-input-${index}.${extOf(file.name) || 'bin'}`;
-    const outputName = `video-convert-output-${index}.${config.ext}`;
+    const outputExt = outputFormat === 'gif' ? 'gif' : outputFormat === 'webp' ? 'webp' : getVideoFormatConfig(outputFormat).ext;
+    const outputMimeType = outputFormat === 'gif' ? 'image/gif' : outputFormat === 'webp' ? 'image/webp' : getVideoFormatConfig(outputFormat).mimeType;
+    const outputName = `video-convert-output-${index}.${outputExt}`;
 
     try {
       await ffmpeg.writeFile(inputName, await fetchFile(file));
-      await execWithFallback(
-        ffmpeg,
-        ['-i', inputName, ...config.withAudioArgs, outputName],
-        ['-i', inputName, ...config.withoutAudioArgs, outputName],
-      );
+      if (outputFormat === 'gif') {
+        const fps = Math.max(1, Math.min(30, parseNumber(options.fps, 12)));
+        const width = Math.max(120, Math.round(parseNumber(options.width, 640)));
+        await ffmpeg.exec(['-i', inputName, '-vf', `fps=${fps},scale=${width}:-1:flags=lanczos`, '-loop', '0', outputName]);
+      } else if (outputFormat === 'webp') {
+        const fps = Math.max(1, Math.min(30, parseNumber(options.fps, 12)));
+        const width = Math.max(120, Math.round(parseNumber(options.width, 640)));
+        await ffmpeg.exec(['-i', inputName, '-vf', `fps=${fps},scale=${width}:-1`, '-loop', '0', '-lossless', '0', outputName]);
+      } else {
+        const config = getVideoFormatConfig(outputFormat);
+        await execWithFallback(
+          ffmpeg,
+          ['-i', inputName, ...config.withAudioArgs, outputName],
+          ['-i', inputName, ...config.withoutAudioArgs, outputName],
+        );
+      }
 
       const data = await ffmpeg.readFile(outputName);
       const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
       outputFiles.push({
-        name: `${baseName(file.name)}-converted.${config.ext}`,
-        blob: blobFromBytes(bytes, config.mimeType),
-        mimeType: config.mimeType,
+        name: `${baseName(file.name)}-converted.${outputExt}`,
+        blob: blobFromBytes(bytes, outputMimeType),
+        mimeType: outputMimeType,
       });
       onProgress({ percent: ((index + 1) / files.length) * 100, stage: 'Finished file' });
     } finally {
