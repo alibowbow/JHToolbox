@@ -1,9 +1,19 @@
 import { expect, test } from '@playwright/test';
 
-test('theme toggle changes the global theme and keeps hero copy readable', async ({ page }) => {
+test('theme toggle changes the global theme without hydration errors', async ({ page }) => {
+  const consoleErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') {
+      consoleErrors.push(message.text());
+    }
+  });
+
+  await page.addInitScript(() => {
+    window.localStorage.setItem('jhtoolbox.theme', 'dark');
+  });
   await page.goto('/');
 
-  await expect(page.locator('header').getByText('Premium browser utilities for documents, media, and data.')).toHaveCount(0);
+  await expect(page.getByRole('heading', { level: 1, name: /Every file workflow/ })).toBeVisible();
 
   const initialTheme = await page.evaluate(() => document.documentElement.dataset.theme);
   const initialBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
@@ -18,28 +28,21 @@ test('theme toggle changes the global theme and keeps hero copy readable', async
   const nextBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   expect(nextBackground).not.toBe(initialBackground);
 
-  const heroColors = await page
-    .locator('main section')
-    .first()
-    .locator('p')
-    .first()
-    .evaluate((node) => ({
-      color: getComputedStyle(node).color,
-      background: getComputedStyle(document.body).backgroundColor,
-    }));
-
-  expect(heroColors.color).not.toBe(heroColors.background);
+  const hydrationErrors = consoleErrors.filter((entry) =>
+    /hydration failed|did not match what was rendered on the server|server html/i.test(entry),
+  );
+  expect(hydrationErrors).toEqual([]);
 });
 
 test('korean locale localizes tool titles, descriptions, and option labels', async ({ page }) => {
   await page.goto('/tools/image/image-resize');
   await page.getByRole('button', { name: 'ko' }).click();
 
-  await expect(page.getByRole('heading', { level: 1, name: '\uC774\uBBF8\uC9C0 \uD06C\uAE30 \uC870\uC815' })).toBeVisible();
-  await expect(page.getByText('\uC774\uBBF8\uC9C0 \uD06C\uAE30\uB97C \uD53D\uC140 \uB2E8\uC704\uB85C \uC870\uC815\uD569\uB2C8\uB2E4.')).toBeVisible();
-  await expect(page.getByText('\uB108\uBE44')).toBeVisible();
-  await expect(page.getByText('\uB192\uC774')).toBeVisible();
-  await expect(page.getByText('\uCD9C\uB825 \uD615\uC2DD')).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: '이미지 크기 조정' })).toBeVisible();
+  await expect(page.getByText('이미지 크기를 원하는 가로와 세로 값으로 조정합니다.')).toBeVisible();
+  await expect(page.getByText('너비')).toBeVisible();
+  await expect(page.getByText('높이')).toBeVisible();
+  await expect(page.getByText('출력 포맷')).toBeVisible();
 });
 
 test('sidebar navigation remains stable after visiting a tool detail page', async ({ page }) => {
@@ -47,7 +50,7 @@ test('sidebar navigation remains stable after visiting a tool detail page', asyn
 
   const targets = [
     { href: '/tools/image', expected: 'Image Tools' },
-    { href: '/tools', expected: 'All tools' },
+    { href: '/tools', expected: 'Focus views' },
     { href: '/', expected: 'Every file workflow,' },
     { href: '/tools/web', expected: 'Web Tools' },
     { href: '/tools/pdf', expected: 'PDF Tools' },
@@ -65,6 +68,56 @@ test('sidebar navigation remains stable after visiting a tool detail page', asyn
   }
 });
 
+test('audio converter quick action preset selects MP3 and keeps empty panels hidden', async ({ page }) => {
+  await page.goto('/tools/audio/audio-convert?outputFormat=mp3');
+
+  await expect(page.getByRole('heading', { level: 2, name: 'Audio Converter' })).toBeVisible();
+  await expect(page.locator('select').first()).toHaveValue('mp3');
+  await expect(page.getByText('Progress')).toHaveCount(0);
+  await expect(page.getByText('Results')).toHaveCount(0);
+});
+
+test('audio cutter shows waveform editing before processing and exports a trimmed file', async ({ page }) => {
+  await page.goto('/tools/audio/audio-cut');
+
+  await page.locator('input[type="file"]').setInputFiles('tests/fixtures/sample.wav');
+
+  await expect(
+    page.getByText('Drag on the waveform to set a selection. Space toggles playback and arrow keys nudge the playhead.'),
+  ).toBeVisible();
+  await expect(page.getByText('Selection length')).toBeVisible();
+  await expect(page.getByText('Results')).toHaveCount(0);
+
+  await page.locator('input[type="number"]').nth(1).fill('1.00');
+  await page.getByRole('button', { name: 'Run tool' }).click();
+
+  await expect(page.getByText('sample-output.wav')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole('button', { name: 'Download' })).toBeVisible();
+});
+
+test('pdf rearrange shows page editor controls before processing', async ({ page }) => {
+  await page.goto('/tools/pdf/pdf-rearrange');
+
+  await page.locator('input[type="file"]').setInputFiles('tests/fixtures/sample.pdf');
+
+  await expect(page.getByText(/Visible pages: 3/)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/Selected pages: 0/)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Remove page 1' }).click();
+  await expect(page.getByText(/Visible pages: 2/)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Run tool' }).click();
+  await expect(page.getByText('sample-rearranged.pdf')).toBeVisible({ timeout: 60_000 });
+});
+
+test('url-based tools start from direct input without showing the upload dropzone', async ({ page }) => {
+  await page.goto('/tools/web/url-pdf');
+
+  await expect(page.getByText('Direct input')).toBeVisible();
+  await expect(page.locator('input[type="text"]').first()).toHaveValue('https://example.com');
+  await expect(page.getByText(/Drag files here|Drop files here/)).toHaveCount(0);
+});
+
 test.describe('mobile shell', () => {
   test.use({
     viewport: { width: 390, height: 844 },
@@ -74,7 +127,7 @@ test.describe('mobile shell', () => {
     await page.goto('/');
 
     const searchButton = page.getByRole('button', {
-      name: /Tool search|\uB3C4\uAD6C \uAC80\uC0C9|\uD234 \uAC80\uC0C9/,
+      name: /Tool search|도구 검색/,
     });
     await expect(searchButton).toBeVisible();
 

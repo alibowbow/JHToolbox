@@ -11,6 +11,38 @@ function parseList(input: string): number[] {
     .map((item) => Math.floor(item));
 }
 
+function parseMergePlan(input: string, fileCount: number): Array<{ fileIndex: number; pageIndex: number }> {
+  try {
+    const raw = JSON.parse(input);
+    if (!Array.isArray(raw)) {
+      return [];
+    }
+
+    return raw
+      .map((entry) => {
+        if (
+          !entry ||
+          typeof entry !== 'object' ||
+          !('fileIndex' in entry) ||
+          !('pageIndex' in entry)
+        ) {
+          return null;
+        }
+
+        const fileIndex = Number(entry.fileIndex);
+        const pageIndex = Number(entry.pageIndex);
+        if (!Number.isInteger(fileIndex) || !Number.isInteger(pageIndex) || fileIndex < 0 || fileIndex >= fileCount || pageIndex < 0) {
+          return null;
+        }
+
+        return { fileIndex, pageIndex };
+      })
+      .filter((entry): entry is { fileIndex: number; pageIndex: number } => entry !== null);
+  } catch {
+    return [];
+  }
+}
+
 function blobFromBytes(bytes: Uint8Array, mimeType: string): Blob {
   return new Blob([Uint8Array.from(bytes).buffer], { type: mimeType });
 }
@@ -88,12 +120,29 @@ export async function processPdfTool(ctx: ProcessContext): Promise<ProcessedFile
 
   if (toolId === 'pdf-merge') {
     const merged = await PDFDocument.create();
+    const mergePlan = parseMergePlan(String(options.mergePlan ?? ''), files.length);
 
-    for (let index = 0; index < files.length; index += 1) {
-      onProgress({ percent: (index / files.length) * 100, stage: 'Merging PDF files' });
-      const sourceDocument = await PDFDocument.load(await files[index].arrayBuffer());
-      const pages = await merged.copyPages(sourceDocument, sourceDocument.getPageIndices());
-      pages.forEach((page) => merged.addPage(page));
+    if (mergePlan.length > 0) {
+      const sourceDocuments = await Promise.all(files.map(async (file) => await PDFDocument.load(await file.arrayBuffer())));
+
+      for (let index = 0; index < mergePlan.length; index += 1) {
+        const { fileIndex, pageIndex } = mergePlan[index];
+        const sourceDocument = sourceDocuments[fileIndex];
+        if (pageIndex >= sourceDocument.getPageCount()) {
+          continue;
+        }
+
+        onProgress({ percent: (index / mergePlan.length) * 100, stage: 'Merging PDF files' });
+        const [page] = await merged.copyPages(sourceDocument, [pageIndex]);
+        merged.addPage(page);
+      }
+    } else {
+      for (let index = 0; index < files.length; index += 1) {
+        onProgress({ percent: (index / files.length) * 100, stage: 'Merging PDF files' });
+        const sourceDocument = await PDFDocument.load(await files[index].arrayBuffer());
+        const pages = await merged.copyPages(sourceDocument, sourceDocument.getPageIndices());
+        pages.forEach((page) => merged.addPage(page));
+      }
     }
 
     const bytes = await merged.save({ useObjectStreams: true });
@@ -134,11 +183,15 @@ export async function processPdfTool(ctx: ProcessContext): Promise<ProcessedFile
     const sourceDocument = await PDFDocument.load(await source.arrayBuffer());
     const pageCount = sourceDocument.getPageCount();
 
-    const parsedOrder = parseList(orderRaw)
+    const parsedOrder = Array.from(
+      new Set(
+        parseList(orderRaw)
       .map((value) => value - 1)
-      .filter((value) => value >= 0 && value < pageCount);
+          .filter((value) => value >= 0 && value < pageCount),
+      ),
+    );
     const fallbackOrder = Array.from({ length: pageCount }, (_, index) => index);
-    const finalOrder = parsedOrder.length === pageCount ? parsedOrder : fallbackOrder;
+    const finalOrder = parsedOrder.length > 0 ? parsedOrder : fallbackOrder;
 
     const output = await PDFDocument.create();
     const copiedPages = await output.copyPages(sourceDocument, finalOrder);

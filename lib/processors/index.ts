@@ -64,6 +64,8 @@ const MEDIA_TOOLS = new Set([
   'aac-mp3',
   'webm-mp3',
   'mp4-wav',
+  'audio-convert',
+  'audio-cut',
 ]);
 
 const DATA_TOOLS = new Set([
@@ -106,5 +108,5 @@ export async function runTool(ctx: ProcessContext): Promise<ProcessedFile[]> {
     return await processWebTool(ctx);
   }
 
-  throw new Error('지원되지 않는 도구입니다.');
+  throw new Error('Unsupported tool.');
 }

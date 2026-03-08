@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import { ToolWorkbench } from '@/components/tool-ui/tool-workbench';
 import { categories, getToolById } from '@/lib/tool-registry';
@@ -17,5 +18,9 @@ export default function ToolPage({ params }: { params: { category: string; tool:
     notFound();
   }
 
-  return <ToolWorkbench tool={tool} />;
+  return (
+    <Suspense fallback={null}>
+      <ToolWorkbench tool={tool} />
+    </Suspense>
+  );
 }

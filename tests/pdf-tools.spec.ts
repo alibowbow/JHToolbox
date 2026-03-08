@@ -25,5 +25,6 @@ test('ocr pdf-to-text extracts text from the sample PDF', async ({ page }) => {
   await page.getByRole('button', { name: 'Run tool' }).click();
 
   await expect(page.getByText('sample.txt')).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator('pre').first()).toContainText('Hello PDF', { timeout: 30_000 });
+  await expect(page.locator('pre').first()).toContainText('Sample PDF Page 1', { timeout: 30_000 });
+  await expect(page.locator('pre').first()).toContainText('Sample PDF Page 3', { timeout: 30_000 });
 });

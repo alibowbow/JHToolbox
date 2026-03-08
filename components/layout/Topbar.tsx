@@ -9,12 +9,13 @@ import { useLocale } from '@/components/providers/locale-provider';
 import { getCategoryCopy } from '@/lib/i18n';
 import { getLocalizedToolCopy } from '@/lib/tool-localization';
 import { categoryIcons, categoryStyles } from '@/lib/tool-presentation';
-import { tools } from '@/lib/tool-registry';
+import { getBrowsableTools } from '@/lib/tool-registry';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { LocaleToggle } from '@/components/ui/LocaleToggle';
 
 export function Topbar() {
   const { locale, messages } = useLocale();
+  const browseTools = useMemo(() => getBrowsableTools(), []);
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -46,10 +47,10 @@ export function Topbar() {
   const searchResults = useMemo(() => {
     const normalizedQuery = deferredQuery.trim().toLowerCase();
     if (!normalizedQuery) {
-      return tools.slice(0, 10);
+      return browseTools.slice(0, 10);
     }
 
-    return tools
+    return browseTools
       .filter((tool) => {
         const categoryLabel = getCategoryCopy(locale, tool.category).nav.toLowerCase();
         const localizedTool = getLocalizedToolCopy(tool, locale);
@@ -63,7 +64,7 @@ export function Topbar() {
         );
       })
       .slice(0, 12);
-  }, [deferredQuery, locale]);
+  }, [browseTools, deferredQuery, locale]);
 
   return (
     <>
@@ -128,7 +129,7 @@ export function Topbar() {
                   type="button"
                   onClick={() => setMenuOpen(false)}
                   className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-base-elevated text-ink-muted"
-                  aria-label="Close menu"
+                  aria-label={messages.common.close}
                 >
                   <X size={18} />
                 </button>

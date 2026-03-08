@@ -10,7 +10,7 @@ export async function getFfmpeg(onProgress?: (ratio: number) => void) {
     ffmpegLoadPromise = (async () => {
       const ffmpegMod: any = await import('@ffmpeg/ffmpeg');
       const utilMod: any = await import('@ffmpeg/util');
-      const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm';
+      const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.9/dist/umd';
 
       const ffmpeg = new ffmpegMod.FFmpeg();
       ffmpeg.on('progress', ({ progress }: { progress: number }) => {

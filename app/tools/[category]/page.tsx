@@ -12,7 +12,7 @@ export default function CategoryPage({ params }: { params: { category: string } 
     notFound();
   }
 
-  const items = getToolsByCategory(category.id);
+  const items = getToolsByCategory(category.id, { includeHidden: false });
 
   return <CategoryPageContent category={category} items={items} />;
 }

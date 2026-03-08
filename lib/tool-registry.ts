@@ -9,6 +9,8 @@ export const tools: ToolDefinition[] = [
     accept: '.pdf',
     multiple: true,
     tags: ['pdf', 'merge', 'combine'],
+    browseGroups: ['popular', 'merge', 'editor-enabled'],
+    previewKind: 'pdf-merge',
   },
   {
     id: 'pdf-split',
@@ -25,6 +27,8 @@ export const tools: ToolDefinition[] = [
     description: 'Reorder PDF pages by page number.',
     accept: '.pdf',
     tags: ['pdf', 'reorder'],
+    browseGroups: ['merge', 'editor-enabled'],
+    previewKind: 'pdf-merge',
     options: [
       {
         key: 'order',
@@ -63,6 +67,7 @@ export const tools: ToolDefinition[] = [
     description: 'Remove selected pages from a PDF.',
     accept: '.pdf',
     tags: ['pdf', 'delete'],
+    browseGroups: ['trim'],
     options: [
       {
         key: 'pages',
@@ -113,6 +118,7 @@ export const tools: ToolDefinition[] = [
     description: 'Re-save a PDF with compact object streams.',
     accept: '.pdf',
     tags: ['pdf', 'compress'],
+    browseGroups: ['compress'],
   },
   {
     id: 'pdf-to-png',
@@ -176,6 +182,8 @@ export const tools: ToolDefinition[] = [
     description: 'Resize images to a target width and height.',
     accept: 'image/*',
     tags: ['image', 'resize'],
+    browseGroups: ['editor-enabled'],
+    previewKind: 'image',
     options: [
       { key: 'width', label: 'Width', type: 'number', defaultValue: 1280, min: 16 },
       { key: 'height', label: 'Height', type: 'number', defaultValue: 720, min: 16 },
@@ -199,6 +207,8 @@ export const tools: ToolDefinition[] = [
     description: 'Reduce image file size with quality control.',
     accept: 'image/*',
     tags: ['image', 'compress'],
+    browseGroups: ['popular', 'compress', 'editor-enabled'],
+    previewKind: 'image',
     options: [
       {
         key: 'quality',
@@ -229,6 +239,8 @@ export const tools: ToolDefinition[] = [
     description: 'Crop images to an exact rectangle.',
     accept: 'image/*',
     tags: ['image', 'crop'],
+    browseGroups: ['editor-enabled', 'trim'],
+    previewKind: 'image',
     options: [
       { key: 'x', label: 'X', type: 'number', defaultValue: 0, min: 0 },
       { key: 'y', label: 'Y', type: 'number', defaultValue: 0, min: 0 },
@@ -347,22 +359,26 @@ export const tools: ToolDefinition[] = [
   },
   {
     id: 'image-background-transparent',
-    name: 'Background Transparent',
+    name: 'Remove White Background',
     category: 'image',
-    description: 'Make near-white background pixels transparent.',
+    description: 'Turn near-white backgrounds transparent.',
     accept: 'image/*',
     tags: ['image', 'transparent', 'mask'],
+    browseGroups: ['editor-enabled'],
+    previewKind: 'image',
     options: [
       { key: 'threshold', label: 'White threshold', type: 'number', defaultValue: 235, min: 0, max: 255 },
     ],
   },
   {
     id: 'image-blur-background',
-    name: 'Blur Background',
+    name: 'Blur Image',
     category: 'image',
-    description: 'Apply a blur effect to the full image.',
+    description: 'Apply a blur effect across the full image.',
     accept: 'image/*',
     tags: ['image', 'blur'],
+    browseGroups: ['editor-enabled'],
+    previewKind: 'image',
     options: [
       { key: 'radius', label: 'Blur radius', type: 'number', defaultValue: 8, min: 1, max: 30 },
     ],
@@ -490,6 +506,8 @@ export const tools: ToolDefinition[] = [
     description: 'Convert videos to animated GIFs.',
     accept: 'video/*',
     tags: ['video', 'gif', 'convert'],
+    browseGroups: ['popular', 'convert', 'capture', 'editor-enabled'],
+    previewKind: 'video',
     options: [
       { key: 'fps', label: 'FPS', type: 'number', defaultValue: 12, min: 5, max: 30 },
       { key: 'width', label: 'Width', type: 'number', defaultValue: 480, min: 120, max: 1920 },
@@ -502,6 +520,8 @@ export const tools: ToolDefinition[] = [
     description: 'Convert videos to animated WEBP files.',
     accept: 'video/*',
     tags: ['video', 'webp', 'convert'],
+    browseGroups: ['convert', 'capture', 'editor-enabled'],
+    previewKind: 'video',
     options: [
       { key: 'fps', label: 'FPS', type: 'number', defaultValue: 12, min: 5, max: 30 },
       { key: 'width', label: 'Width', type: 'number', defaultValue: 640, min: 120, max: 1920 },
@@ -530,6 +550,8 @@ export const tools: ToolDefinition[] = [
     description: 'Compress video with CRF-based quality control.',
     accept: 'video/*',
     tags: ['video', 'compress'],
+    browseGroups: ['compress'],
+    previewKind: 'video',
     options: [
       { key: 'crf', label: 'CRF (lower = better quality)', type: 'number', defaultValue: 28, min: 18, max: 40 },
     ],
@@ -567,12 +589,104 @@ export const tools: ToolDefinition[] = [
     tags: ['avi', 'mp4', 'convert'],
   },
   {
+    id: 'audio-convert',
+    name: 'Audio Converter',
+    category: 'audio',
+    description: 'Convert audio files to MP3, WAV, M4A, or AAC in one workflow.',
+    accept: '.mp3,.wav,.m4a,.aac,.webm,.mp4,.ogg,.flac',
+    multiple: true,
+    tags: ['audio', 'convert', 'mp3', 'wav', 'm4a', 'aac'],
+    browseGroups: ['popular', 'convert'],
+    previewKind: 'audio',
+    options: [
+      {
+        key: 'outputFormat',
+        label: 'Output format',
+        type: 'select',
+        defaultValue: 'mp3',
+        options: [
+          { label: 'MP3', value: 'mp3' },
+          { label: 'WAV', value: 'wav' },
+          { label: 'M4A', value: 'm4a' },
+          { label: 'AAC', value: 'aac' },
+        ],
+      },
+      {
+        key: 'bitrate',
+        label: 'Bitrate',
+        type: 'select',
+        defaultValue: '192k',
+        options: [
+          { label: '128 kbps', value: '128k' },
+          { label: '192 kbps', value: '192k' },
+          { label: '256 kbps', value: '256k' },
+        ],
+      },
+      {
+        key: 'sampleRate',
+        label: 'Sample rate',
+        type: 'select',
+        defaultValue: 'keep',
+        options: [
+          { label: 'Keep original', value: 'keep' },
+          { label: '44.1 kHz', value: '44100' },
+          { label: '48 kHz', value: '48000' },
+        ],
+      },
+      {
+        key: 'channels',
+        label: 'Channels',
+        type: 'select',
+        defaultValue: 'keep',
+        options: [
+          { label: 'Keep original', value: 'keep' },
+          { label: 'Mono', value: '1' },
+          { label: 'Stereo', value: '2' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'audio-cut',
+    name: 'Audio Cutter',
+    category: 'audio',
+    description: 'Trim audio with a waveform editor and export the selected result.',
+    accept: '.mp3,.wav,.m4a,.aac,.webm,.ogg,.flac',
+    tags: ['audio', 'trim', 'cut', 'waveform'],
+    browseGroups: ['popular', 'new', 'trim', 'editor-enabled'],
+    previewKind: 'audio-editor',
+    options: [
+      {
+        key: 'trimMode',
+        label: 'Selection mode',
+        type: 'select',
+        defaultValue: 'keep',
+        options: [
+          { label: 'Keep selection', value: 'keep' },
+          { label: 'Remove selection', value: 'remove' },
+        ],
+      },
+      {
+        key: 'outputFormat',
+        label: 'Output format',
+        type: 'select',
+        defaultValue: 'keep',
+        options: [
+          { label: 'Keep original', value: 'keep' },
+          { label: 'MP3', value: 'mp3' },
+          { label: 'WAV', value: 'wav' },
+        ],
+      },
+    ],
+  },
+  {
     id: 'm4a-mp3',
     name: 'M4A to MP3',
     category: 'audio',
     description: 'Convert M4A audio files to MP3.',
     accept: '.m4a',
     tags: ['audio', 'm4a', 'mp3'],
+    hiddenFromBrowse: true,
   },
   {
     id: 'm4a-wav',
@@ -581,6 +695,7 @@ export const tools: ToolDefinition[] = [
     description: 'Convert M4A audio files to WAV.',
     accept: '.m4a',
     tags: ['audio', 'm4a', 'wav'],
+    hiddenFromBrowse: true,
   },
   {
     id: 'aac-mp3',
@@ -589,6 +704,7 @@ export const tools: ToolDefinition[] = [
     description: 'Convert AAC audio files to MP3.',
     accept: '.aac',
     tags: ['audio', 'aac', 'mp3'],
+    hiddenFromBrowse: true,
   },
   {
     id: 'webm-mp3',
@@ -597,6 +713,7 @@ export const tools: ToolDefinition[] = [
     description: 'Convert WEBM audio files to MP3.',
     accept: '.webm',
     tags: ['audio', 'webm', 'mp3'],
+    hiddenFromBrowse: true,
   },
   {
     id: 'mp4-wav',
@@ -605,6 +722,7 @@ export const tools: ToolDefinition[] = [
     description: 'Extract WAV audio from MP4 files.',
     accept: '.mp4',
     tags: ['audio', 'mp4', 'wav'],
+    hiddenFromBrowse: true,
   },
   {
     id: 'csv-json',
@@ -681,6 +799,7 @@ export const tools: ToolDefinition[] = [
     accept: '*',
     multiple: true,
     tags: ['zip', 'compress'],
+    browseGroups: ['compress'],
   },
   {
     id: 'extract-zip',
@@ -697,6 +816,8 @@ export const tools: ToolDefinition[] = [
     description: 'Generate a QR code from text or a URL.',
     accept: '*',
     tags: ['qr', 'web'],
+    inputMode: 'url',
+    browseGroups: ['capture'],
     options: [
       { key: 'content', label: 'QR content', type: 'text', defaultValue: 'https://example.com' },
       { key: 'size', label: 'Size (px)', type: 'number', defaultValue: 320, min: 64, max: 2048 },
@@ -709,6 +830,8 @@ export const tools: ToolDefinition[] = [
     description: 'Capture readable HTML from a URL into an image.',
     accept: '*',
     tags: ['url', 'screenshot', 'image'],
+    inputMode: 'url',
+    browseGroups: ['capture'],
     options: [
       { key: 'url', label: 'Target URL', type: 'text', defaultValue: 'https://example.com' },
       { key: 'width', label: 'Canvas width', type: 'number', defaultValue: 1200, min: 320, max: 4096 },
@@ -721,6 +844,8 @@ export const tools: ToolDefinition[] = [
     description: 'Capture readable HTML from a URL into a PDF.',
     accept: '*',
     tags: ['url', 'pdf', 'web'],
+    inputMode: 'url',
+    browseGroups: ['capture'],
     options: [
       { key: 'url', label: 'Target URL', type: 'text', defaultValue: 'https://example.com' },
       { key: 'width', label: 'Canvas width', type: 'number', defaultValue: 1200, min: 320, max: 4096 },
@@ -733,6 +858,8 @@ export const tools: ToolDefinition[] = [
     description: 'Inspect HTML for common CMS fingerprints.',
     accept: '*',
     tags: ['cms', 'web', 'detect'],
+    inputMode: 'url',
+    browseGroups: ['capture'],
     options: [
       { key: 'url', label: 'Target URL', type: 'text', defaultValue: 'https://example.com' },
     ],
@@ -823,8 +950,8 @@ export const categories: ToolCategoryDefinition[] = [
   {
     id: 'audio',
     label: 'Audio Tools',
-    description: 'Convert between popular audio formats.',
-    tools: ['m4a-mp3', 'm4a-wav', 'aac-mp3', 'webm-mp3', 'mp4-wav'],
+    description: 'Convert and edit audio with a browser-first workflow.',
+    tools: ['audio-convert', 'audio-cut', 'm4a-mp3', 'm4a-wav', 'aac-mp3', 'webm-mp3', 'mp4-wav'],
   },
   {
     id: 'file',
@@ -852,11 +979,24 @@ export const categories: ToolCategoryDefinition[] = [
 ];
 
 const toolById = new Map(tools.map((tool) => [tool.id, tool]));
+const quickStartToolIds = ['pdf-merge', 'image-compress', 'audio-convert', 'video-to-gif', 'url-pdf'] as const;
 
 export function getToolById(toolId: string): ToolDefinition | undefined {
   return toolById.get(toolId);
 }
 
-export function getToolsByCategory(categoryId: string): ToolDefinition[] {
-  return tools.filter((tool) => tool.category === categoryId);
+export function getToolsByCategory(categoryId: string, { includeHidden = true }: { includeHidden?: boolean } = {}): ToolDefinition[] {
+  return tools.filter((tool) => tool.category === categoryId && (includeHidden || !tool.hiddenFromBrowse));
+}
+
+export function getBrowsableTools(): ToolDefinition[] {
+  return tools.filter((tool) => !tool.hiddenFromBrowse);
+}
+
+export function getToolsByBrowseGroup(group: NonNullable<ToolDefinition['browseGroups']>[number]): ToolDefinition[] {
+  return getBrowsableTools().filter((tool) => tool.browseGroups?.includes(group));
+}
+
+export function getQuickStartTools(): ToolDefinition[] {
+  return quickStartToolIds.map((toolId) => getToolById(toolId)).filter((tool): tool is ToolDefinition => Boolean(tool));
 }

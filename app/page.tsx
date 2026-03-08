@@ -2,15 +2,14 @@
 
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { ArrowRight, ChevronDown } from 'lucide-react';
+import { ArrowRight, ChevronDown, FileText, Image as ImageIcon, Music2, Video } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { ToolCard } from '@/components/tool-card';
 import { useLocale } from '@/components/providers/locale-provider';
 import { formatToolCount, getCategoryCopy } from '@/lib/i18n';
-import { getLocalizedToolCopy } from '@/lib/tool-localization';
 import { categoryIcons, categoryStyles } from '@/lib/tool-presentation';
 import { getRecentTools } from '@/lib/recent-tools';
-import { categories, tools } from '@/lib/tool-registry';
+import { categories, getBrowsableTools, getToolById, getToolsByBrowseGroup, getToolsByCategory } from '@/lib/tool-registry';
 import { ToolDefinition } from '@/types/tool';
 
 function isToolDefinition(tool: ToolDefinition | undefined): tool is ToolDefinition {
@@ -27,23 +26,65 @@ const itemVariants = {
   show: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 320, damping: 30 } },
 };
 
-const quickLaunchIds = ['pdf-merge', 'image-resize', 'ocr-image-to-text', 'qr-generator'] as const;
-
 export default function HomePage() {
   const { locale, messages } = useLocale();
   const [recentIds, setRecentIds] = useState<string[]>([]);
+  const browseTools = useMemo(() => getBrowsableTools(), []);
+  const popularTools = useMemo(() => getToolsByBrowseGroup('popular').slice(0, 6), []);
 
   useEffect(() => {
     setRecentIds(getRecentTools());
   }, []);
 
   const recentTools = useMemo(
-    () => recentIds.map((id) => tools.find((tool) => tool.id === id)).filter(isToolDefinition),
+    () => recentIds.map((id) => getToolById(id)).filter(isToolDefinition),
     [recentIds],
   );
-  const quickLaunchTools = useMemo(
-    () => quickLaunchIds.map((id) => tools.find((tool) => tool.id === id)).filter(isToolDefinition),
-    [],
+  const collectionTools = recentTools.length > 0 ? recentTools : popularTools;
+  const collectionTitle = recentTools.length > 0 ? messages.home.recentTitle : messages.home.popularTitle;
+  const collectionDescription =
+    recentTools.length > 0 ? messages.home.recentDescription : messages.home.popularDescription;
+
+  const quickActions = useMemo(
+    () => [
+      {
+        href: '/tools/pdf/pdf-merge',
+        icon: FileText,
+        title: locale === 'ko' ? 'PDF 병합' : 'PDF Merge',
+        description: locale === 'ko' ? '페이지 순서를 확인하고 바로 병합합니다.' : 'Preview order and merge immediately.',
+      },
+      {
+        href: '/tools/image/image-compress',
+        icon: ImageIcon,
+        title: locale === 'ko' ? '이미지 압축' : 'Image Compress',
+        description: locale === 'ko' ? '용량을 줄이기 전에 품질을 먼저 고릅니다.' : 'Choose quality before you shrink file size.',
+      },
+      {
+        href: '/tools/audio/audio-convert?outputFormat=mp3',
+        icon: Music2,
+        title: locale === 'ko' ? 'WAV 또는 오디오를 MP3로' : 'WAV or audio to MP3',
+        description: locale === 'ko' ? '통합 변환기에서 MP3를 미리 선택한 상태로 시작합니다.' : 'Open the unified converter with MP3 preselected.',
+      },
+      {
+        href: '/tools/audio/audio-convert?outputFormat=wav',
+        icon: Music2,
+        title: locale === 'ko' ? 'MP3 또는 오디오를 WAV로' : 'MP3 or audio to WAV',
+        description: locale === 'ko' ? '통합 변환기에서 WAV를 미리 선택한 상태로 시작합니다.' : 'Start the converter with WAV preselected.',
+      },
+      {
+        href: '/tools/audio/audio-cut',
+        icon: Music2,
+        title: locale === 'ko' ? '오디오 자르기' : 'Audio Cutter',
+        description: locale === 'ko' ? '파형을 보며 필요한 구간만 남기거나 제거합니다.' : 'Trim from a waveform editor before export.',
+      },
+      {
+        href: '/tools/video/video-to-gif',
+        icon: Video,
+        title: locale === 'ko' ? '비디오를 GIF로' : 'Video to GIF',
+        description: locale === 'ko' ? '실행 전에 흐름을 보고 GIF로 바로 내보냅니다.' : 'Preview first, then export as GIF.',
+      },
+    ],
+    [locale],
   );
 
   return (
@@ -65,7 +106,7 @@ export default function HomePage() {
             <br />
             <span className="text-prime">{messages.home.titleAccent}</span>
           </h1>
-          <p className="mt-4 max-w-2xl text-sm leading-relaxed text-ink-muted sm:text-[1rem]">{messages.home.description}</p>
+          <p className="mt-4 max-w-2xl text-sm leading-relaxed text-ink-muted sm:text-base">{messages.home.description}</p>
 
           <div className="mt-6 flex flex-wrap gap-3">
             <Link href="/tools" className="btn-primary">
@@ -77,27 +118,43 @@ export default function HomePage() {
               <ChevronDown size={16} />
             </a>
           </div>
-
-          <div className="mt-6 flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium uppercase tracking-[0.18em] text-ink-faint">
-              {locale === 'ko' ? '빠른 실행' : 'Quick launch'}
-            </span>
-            {quickLaunchTools.map((tool) => {
-              const localizedTool = getLocalizedToolCopy(tool, locale);
-
-              return (
-                <Link
-                  key={tool.id}
-                  href={`/tools/${tool.category}/${tool.id}`}
-                  className="badge border border-border bg-base-elevated/80 text-ink-muted transition-colors hover:border-prime/30 hover:text-ink"
-                >
-                  {localizedTool.name}
-                </Link>
-              );
-            })}
-          </div>
         </div>
       </motion.section>
+
+      <section className="space-y-4">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{messages.home.quickLaunchLabel}</h2>
+            <p className="mt-1 text-sm text-ink-muted">{messages.home.popularDescription}</p>
+          </div>
+          <span className="badge border border-border bg-base-subtle text-ink-muted">{formatToolCount(locale, quickActions.length)}</span>
+        </div>
+
+        <motion.div
+          variants={containerVariants}
+          initial="hidden"
+          animate="show"
+          className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3"
+        >
+          {quickActions.map(({ href, icon: Icon, title, description }) => (
+            <motion.div key={href} variants={itemVariants}>
+              <Link href={href}>
+                <div className="card group h-full border border-border p-5 transition-all hover:-translate-y-0.5 hover:border-border-bright">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-base-subtle text-prime">
+                    <Icon size={20} />
+                  </div>
+                  <p className="mt-4 text-base font-semibold text-ink">{title}</p>
+                  <p className="mt-1 text-sm leading-relaxed text-ink-muted">{description}</p>
+                  <div className="mt-4 flex items-center gap-1 text-xs font-medium text-ink-faint transition-colors group-hover:text-prime">
+                    {messages.home.startNow}
+                    <ArrowRight size={12} className="transition-transform group-hover:translate-x-0.5" />
+                  </div>
+                </div>
+              </Link>
+            </motion.div>
+          ))}
+        </motion.div>
+      </section>
 
       <section className="space-y-4">
         <div className="flex items-end justify-between gap-3">
@@ -105,7 +162,7 @@ export default function HomePage() {
             <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{messages.home.categoriesTitle}</h2>
             <p className="mt-1 text-sm text-ink-muted">{messages.appTagline}</p>
           </div>
-          <span className="badge border border-border bg-base-subtle text-ink-muted">{formatToolCount(locale, tools.length)}</span>
+          <span className="badge border border-border bg-base-subtle text-ink-muted">{formatToolCount(locale, browseTools.length)}</span>
         </div>
 
         <motion.div
@@ -128,10 +185,10 @@ export default function HomePage() {
                         <Icon size={20} />
                       </div>
                       <span className="badge border border-border bg-base-subtle text-ink-muted">
-                        {formatToolCount(locale, category.tools.length)}
+                        {formatToolCount(locale, getToolsByCategory(category.id, { includeHidden: false }).length)}
                       </span>
                     </div>
-                    <p className="mt-4 text-[1rem] font-semibold text-ink">{copy.nav}</p>
+                    <p className="mt-4 text-base font-semibold text-ink">{copy.nav}</p>
                     <p className="mt-1 text-sm leading-relaxed text-ink-muted">{copy.shortDescription}</p>
                     <div className="mt-4 flex items-center gap-1 text-xs font-medium text-ink-faint transition-colors group-hover:text-prime">
                       {messages.home.openCategory}
@@ -148,19 +205,19 @@ export default function HomePage() {
       <section id="recent-tools" className="space-y-4">
         <div className="flex items-end justify-between gap-3">
           <div>
-            <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{messages.home.recentTitle}</h2>
-            <p className="mt-1 text-sm text-ink-muted">{messages.directory.description}</p>
+            <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{collectionTitle}</h2>
+            <p className="mt-1 text-sm text-ink-muted">{collectionDescription}</p>
           </div>
-          {recentTools.length > 0 ? (
-            <span className="badge border border-border bg-base-subtle text-ink-muted">{formatToolCount(locale, recentTools.length)}</span>
+          {collectionTools.length > 0 ? (
+            <span className="badge border border-border bg-base-subtle text-ink-muted">{formatToolCount(locale, collectionTools.length)}</span>
           ) : null}
         </div>
 
-        {recentTools.length === 0 ? (
-          <div className="card p-5 text-sm text-ink-muted">{messages.home.recentEmpty}</div>
+        {collectionTools.length === 0 ? (
+          <div className="card p-5 text-sm text-ink-muted">{messages.home.popularDescription}</div>
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {recentTools.map((tool) => (
+            {collectionTools.map((tool) => (
               <ToolCard key={tool.id} tool={tool} />
             ))}
           </div>
