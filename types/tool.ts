@@ -1,8 +1,8 @@
-export type ToolCategory = 'pdf' | 'image' | 'ocr' | 'video' | 'audio' | 'file' | 'web';
+export type ToolCategory = 'pdf' | 'image' | 'ocr' | 'video' | 'audio' | 'file' | 'web' | 'screen';
 
 export type ToolOptionType = 'number' | 'text' | 'select' | 'checkbox' | 'range' | 'color';
 export type ToolBrowseGroup = 'popular' | 'new' | 'editor-enabled' | 'convert' | 'trim' | 'compress' | 'merge' | 'capture';
-export type ToolInputMode = 'file' | 'url';
+export type ToolInputMode = 'file' | 'url' | 'capture';
 export type ToolPreviewKind = 'none' | 'image' | 'audio' | 'video' | 'pdf-merge' | 'audio-editor';
 
 export interface ToolOption {

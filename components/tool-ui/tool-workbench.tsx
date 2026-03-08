@@ -7,6 +7,7 @@ import { useSearchParams } from 'next/navigation';
 import { ToolPageLayout } from '@/components/ToolPageLayout';
 import { useLocale } from '@/components/providers/locale-provider';
 import { AudioWaveformEditor } from '@/components/ui/AudioWaveformEditor';
+import { BrowserCaptureWorkbench } from '@/components/tool-ui/browser-capture-workbench';
 import { PdfPageEditor, PdfEditorPage } from '@/components/ui/PdfPageEditor';
 import { DropZone } from '@/components/ui/DropZone';
 import { ProgressBar } from '@/components/ui/ProgressBar';
@@ -170,6 +171,10 @@ function renderField(
 }
 
 export function ToolWorkbench({ tool }: { tool: ToolDefinition }) {
+  if (tool.inputMode === 'capture') {
+    return <BrowserCaptureWorkbench tool={tool} />;
+  }
+
   const { locale, messages } = useLocale();
   const searchParams = useSearchParams();
   const searchParamString = searchParams.toString();

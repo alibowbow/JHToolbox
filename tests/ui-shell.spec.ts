@@ -184,6 +184,15 @@ test('url-based tools start from direct input without showing the upload dropzon
   await expect(page.getByText(/Drag files here|Drop files here/)).toHaveCount(0);
 });
 
+test('screen capture tools render the browser capture workbench without a file dropzone', async ({ page }) => {
+  await page.goto('/tools/screen/screenshot-capture');
+
+  await expect(page.getByText('Screenshot source')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Capture screenshot' })).toBeVisible();
+  await expect(page.getByText('Capture notes')).toBeVisible();
+  await expect(page.getByText(/Drag files here|Drop files here/)).toHaveCount(0);
+});
+
 test.describe('mobile shell', () => {
   test.use({
     viewport: { width: 390, height: 844 },

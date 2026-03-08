@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Archive, FileText, Globe, Home, Image, Layers3, Music, ScanSearch, Video } from 'lucide-react';
+import { Archive, FileText, Globe, Home, Image, Layers3, Monitor, Music, ScanSearch, Video } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { getCategoryCopy } from '@/lib/i18n';
 import { useLocale } from '@/components/providers/locale-provider';
@@ -15,6 +15,7 @@ const navItems = [
   { href: '/tools/ocr', key: 'ocr', icon: ScanSearch, iconClass: 'text-violet-300', dotClass: 'bg-violet-400' },
   { href: '/tools/video', key: 'video', icon: Video, iconClass: 'text-orange-300', dotClass: 'bg-orange-400' },
   { href: '/tools/audio', key: 'audio', icon: Music, iconClass: 'text-emerald-300', dotClass: 'bg-emerald-400' },
+  { href: '/tools/screen', key: 'screen', icon: Monitor, iconClass: 'text-fuchsia-300', dotClass: 'bg-fuchsia-400' },
   { href: '/tools/file', key: 'file', icon: Archive, iconClass: 'text-amber-300', dotClass: 'bg-amber-400' },
   { href: '/tools/web', key: 'web', icon: Globe, iconClass: 'text-cyan-300', dotClass: 'bg-cyan-400' },
 ] as const;

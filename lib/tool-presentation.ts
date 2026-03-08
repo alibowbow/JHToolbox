@@ -1,4 +1,4 @@
-import { Archive, FileAudio2, FileImage, FileSearch2, FileText, FileVideo2, Globe, LucideIcon } from 'lucide-react';
+import { Archive, FileAudio2, FileImage, FileSearch2, FileText, FileVideo2, Globe, LucideIcon, Monitor } from 'lucide-react';
 import { ToolCategory } from '@/types/tool';
 
 export const categoryIcons: Record<ToolCategory, LucideIcon> = {
@@ -9,6 +9,7 @@ export const categoryIcons: Record<ToolCategory, LucideIcon> = {
   audio: FileAudio2,
   file: Archive,
   web: Globe,
+  screen: Monitor,
 };
 
 export const categoryStyles: Record<
@@ -77,5 +78,13 @@ export const categoryStyles: Record<
     border: 'hover:border-cyan-400/30',
     gradient: 'from-cyan-500/14 via-cyan-500/4 to-transparent',
     badge: 'border-cyan-400/20 bg-cyan-500/10 text-cyan-300',
+  },
+  screen: {
+    icon: 'text-fuchsia-300',
+    iconBg: 'bg-fuchsia-500/10',
+    dot: 'bg-fuchsia-400',
+    border: 'hover:border-fuchsia-400/30',
+    gradient: 'from-fuchsia-500/14 via-fuchsia-500/4 to-transparent',
+    badge: 'border-fuchsia-400/20 bg-fuchsia-500/10 text-fuchsia-300',
   },
 };
