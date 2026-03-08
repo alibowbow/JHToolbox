@@ -94,50 +94,65 @@ test('audio cutter shows waveform editing before processing and exports a trimme
   const waveformWidth = await waveformScrollArea.evaluate((element) => Math.round(element.getBoundingClientRect().width));
   expect(waveformWidth).toBeGreaterThan(600);
 
-  await page.getByTestId('waveform-zoom-slider').evaluate((element) => {
-    const slider = element as HTMLInputElement;
-    slider.value = '8';
-    slider.dispatchEvent(new Event('input', { bubbles: true }));
-    slider.dispatchEvent(new Event('change', { bubbles: true }));
+  await page.locator('select').first().selectOption('remove');
+  await page.locator('input[type="number"]').first().fill('0.20');
+  await page.locator('input[type="number"]').nth(1).fill('0.60');
+  await expect(page.getByTestId('waveform-start-handle')).toBeVisible();
+  await expect(page.getByTestId('waveform-end-handle')).toBeVisible();
+
+  const endHandle = page.getByTestId('waveform-end-handle');
+  const endHandleBox = await endHandle.boundingBox();
+  if (!endHandleBox) {
+    throw new Error('Waveform end handle bounding box was not available.');
+  }
+
+  const endHandleCenterX = endHandleBox.x + endHandleBox.width / 2;
+  const endHandleCenterY = endHandleBox.y + endHandleBox.height / 2;
+  await page.mouse.move(endHandleCenterX, endHandleCenterY);
+  await page.mouse.down();
+  await page.mouse.move(endHandleCenterX + 42, endHandleCenterY, { steps: 8 });
+  await page.mouse.up();
+  expect(Number(await page.locator('input[type="number"]').nth(1).inputValue())).toBeGreaterThan(0.6);
+
+  const previewAudio = page.getByTestId('waveform-preview-audio');
+  const playheadHandle = page.getByTestId('waveform-playhead-handle');
+  const playheadBox = await playheadHandle.boundingBox();
+  const scrollAreaBox = await waveformScrollArea.boundingBox();
+  if (!playheadBox || !scrollAreaBox) {
+    throw new Error('Waveform playhead drag targets were not available.');
+  }
+
+  const playheadStartX = playheadBox.x + playheadBox.width / 2;
+  const playheadY = playheadBox.y + playheadBox.height / 2;
+  const playheadTargetX = scrollAreaBox.x + scrollAreaBox.width * 0.85;
+  await page.mouse.move(playheadStartX, playheadY);
+  await page.mouse.down();
+  await page.mouse.move(playheadTargetX, playheadY, { steps: 12 });
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+
+  const freePreviewState = await previewAudio.evaluate((element) => {
+    const audio = element as HTMLAudioElement;
+    return { currentTime: audio.currentTime, paused: audio.paused };
   });
+  expect(freePreviewState.currentTime).toBeGreaterThan(1.2);
+  expect(freePreviewState.paused).toBe(false);
+  await page.getByRole('button', { name: 'Pause' }).click();
+
+  await page.getByTestId('play-selection-from-start').click();
+  await page.waitForTimeout(150);
+  const restartedTime = await previewAudio.evaluate((element) => (element as HTMLAudioElement).currentTime);
+  expect(restartedTime).toBeGreaterThanOrEqual(0.2);
+  expect(restartedTime).toBeLessThan(0.5);
+  await page.getByRole('button', { name: 'Pause' }).click();
+
+  await page.getByRole('button', { name: 'Zoom in' }).click();
+  await page.getByRole('button', { name: 'Zoom in' }).click();
   const zoomedMetrics = await waveformScrollArea.evaluate((element) => ({
     clientWidth: element.clientWidth,
     scrollWidth: element.scrollWidth,
   }));
   expect(zoomedMetrics.scrollWidth).toBeGreaterThan(zoomedMetrics.clientWidth);
-
-  await page.locator('select').first().selectOption('remove');
-  await page.locator('input[type="number"]').first().fill('0.20');
-  await page.locator('input[type="number"]').nth(1).fill('0.60');
-
-  const previewAudio = page.getByTestId('waveform-preview-audio');
-  await previewAudio.evaluate((element) => {
-    const audio = element as HTMLAudioElement;
-    audio.currentTime = 0.8;
-    audio.dispatchEvent(new Event('seeking'));
-  });
-  await expect
-    .poll(() => previewAudio.evaluate((element) => Number((element as HTMLAudioElement).currentTime.toFixed(2))))
-    .toBeCloseTo(0.6, 1);
-
-  await previewAudio.evaluate((element) => {
-    const audio = element as HTMLAudioElement;
-    audio.currentTime = 0.05;
-    audio.dispatchEvent(new Event('seeking'));
-  });
-  await expect
-    .poll(() => previewAudio.evaluate((element) => Number((element as HTMLAudioElement).currentTime.toFixed(2))))
-    .toBeCloseTo(0.2, 1);
-
-  await previewAudio.evaluate((element) => {
-    (element as HTMLAudioElement).currentTime = 0.55;
-  });
-  await page.getByTestId('play-selection-from-start').click();
-  await page.waitForTimeout(150);
-  const restartedTime = await previewAudio.evaluate((element) => (element as HTMLAudioElement).currentTime);
-  expect(restartedTime).toBeGreaterThanOrEqual(0.2);
-  expect(restartedTime).toBeLessThan(0.4);
-  await page.getByRole('button', { name: 'Pause' }).click();
 
   await page.locator('input[type="number"]').nth(1).fill('1.00');
   await page.getByRole('button', { name: 'Run tool' }).click();

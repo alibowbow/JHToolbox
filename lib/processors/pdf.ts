@@ -47,6 +47,20 @@ function blobFromBytes(bytes: Uint8Array, mimeType: string): Blob {
   return new Blob([Uint8Array.from(bytes).buffer], { type: mimeType });
 }
 
+function parseColor(color: string) {
+  const normalized = color.replace('#', '').trim();
+  const expanded = normalized.length === 3 ? normalized.split('').map((chunk) => `${chunk}${chunk}`).join('') : normalized;
+
+  if (!/^[\da-fA-F]{6}$/.test(expanded)) {
+    return rgb(0, 0, 0);
+  }
+
+  const red = Number.parseInt(expanded.slice(0, 2), 16) / 255;
+  const green = Number.parseInt(expanded.slice(2, 4), 16) / 255;
+  const blue = Number.parseInt(expanded.slice(4, 6), 16) / 255;
+  return rgb(red, green, blue);
+}
+
 async function canvasBlob(canvas: HTMLCanvasElement, mimeType: string, quality = 0.92): Promise<Blob> {
   return await new Promise((resolve, reject) => {
     canvas.toBlob(
@@ -113,6 +127,14 @@ async function anyImageToPngBlob(file: File): Promise<Blob> {
   canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
   bitmap.close();
   return await canvasBlob(canvas, 'image/png', 1);
+}
+
+function resolvePdfInputs(files: File[]) {
+  return files.filter((file) => file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'));
+}
+
+function resolvePdfWatermarkImage(files: File[]) {
+  return files.find((file) => file.type.startsWith('image/'));
 }
 
 export async function processPdfTool(ctx: ProcessContext): Promise<ProcessedFile[]> {
@@ -267,6 +289,127 @@ export async function processPdfTool(ctx: ProcessContext): Promise<ProcessedFile
     return [
       {
         name: `${baseName(source.name)}-numbered.pdf`,
+        blob: blobFromBytes(bytes, 'application/pdf'),
+        mimeType: 'application/pdf',
+      },
+    ];
+  }
+
+  if (toolId === 'pdf-watermark') {
+    const pdfFiles = resolvePdfInputs(files);
+    const watermarkType = String(options.watermarkType ?? 'text');
+    const opacity = Math.max(0.05, Math.min(1, parseNumber(options.opacity, 0.2)));
+    const rotation = parseNumber(options.rotation, -24);
+    const scale = Math.max(0.05, Math.min(1, parseNumber(options.scale, 0.24)));
+    const fontSize = parseNumber(options.fontSize, 32);
+    const text = String(options.text ?? 'JH Toolbox').trim() || 'JH Toolbox';
+
+    if (!pdfFiles.length) {
+      throw new Error('Add at least one PDF file to watermark.');
+    }
+
+    let watermarkImageBytes: Uint8Array | null = null;
+    let watermarkImageType: 'png' | 'jpg' | null = null;
+
+    if (watermarkType === 'image') {
+      const watermarkFile = resolvePdfWatermarkImage(files);
+      if (!watermarkFile) {
+        throw new Error('Add a watermark image along with the PDF file.');
+      }
+
+      if (watermarkFile.type === 'image/jpeg' || watermarkFile.type === 'image/jpg') {
+        watermarkImageBytes = new Uint8Array(await watermarkFile.arrayBuffer());
+        watermarkImageType = 'jpg';
+      } else {
+        const pngBlob = await anyImageToPngBlob(watermarkFile);
+        watermarkImageBytes = new Uint8Array(await pngBlob.arrayBuffer());
+        watermarkImageType = 'png';
+      }
+    }
+
+    const outputFiles: ProcessedFile[] = [];
+    for (let fileIndex = 0; fileIndex < pdfFiles.length; fileIndex += 1) {
+      const source = pdfFiles[fileIndex];
+      onProgress({ percent: (fileIndex / pdfFiles.length) * 100, stage: 'Applying watermark' });
+      const documentHandle = await PDFDocument.load(await source.arrayBuffer());
+
+      const embeddedWatermark =
+        watermarkImageBytes && watermarkImageType === 'jpg'
+          ? await documentHandle.embedJpg(watermarkImageBytes)
+          : watermarkImageBytes && watermarkImageType === 'png'
+            ? await documentHandle.embedPng(watermarkImageBytes)
+            : null;
+
+      documentHandle.getPages().forEach((page) => {
+        const { width, height } = page.getSize();
+
+        if (embeddedWatermark) {
+          const targetWidth = Math.max(48, width * scale);
+          const targetHeight = (targetWidth / embeddedWatermark.width) * embeddedWatermark.height;
+          page.drawImage(embeddedWatermark, {
+            x: Math.max(0, width - targetWidth - 24),
+            y: Math.max(0, 24),
+            width: Math.min(targetWidth, width),
+            height: Math.min(targetHeight, height),
+            opacity,
+            rotate: pdfDegrees(rotation),
+          });
+          return;
+        }
+
+        page.drawText(text, {
+          x: Math.max(24, width * 0.5 - text.length * fontSize * 0.28),
+          y: height * 0.5,
+          size: fontSize,
+          color: rgb(0.12, 0.12, 0.12),
+          opacity,
+          rotate: pdfDegrees(rotation),
+        });
+      });
+
+      const bytes = await documentHandle.save({ useObjectStreams: true });
+      outputFiles.push({
+        name: `${baseName(source.name)}-watermarked.pdf`,
+        blob: blobFromBytes(bytes, 'application/pdf'),
+        mimeType: 'application/pdf',
+      });
+    }
+
+    return outputFiles;
+  }
+
+  if (toolId === 'pdf-redact') {
+    const source = files[0];
+    const pageStart = Math.max(1, Math.floor(parseNumber(options.pageStart, 1)));
+    const pageEnd = Math.max(pageStart, Math.floor(parseNumber(options.pageEnd, pageStart)));
+    const x = Math.max(0, parseNumber(options.x, 40));
+    const y = Math.max(0, parseNumber(options.y, 40));
+    const width = Math.max(1, parseNumber(options.width, 240));
+    const height = Math.max(1, parseNumber(options.height, 48));
+    const color = parseColor(String(options.color ?? '#000000'));
+
+    const documentHandle = await PDFDocument.load(await source.arrayBuffer());
+    documentHandle.getPages().forEach((page, index) => {
+      const pageNumber = index + 1;
+      if (pageNumber < pageStart || pageNumber > pageEnd) {
+        return;
+      }
+
+      page.drawRectangle({
+        x,
+        y,
+        width,
+        height,
+        color,
+        borderColor: color,
+        borderWidth: 0,
+      });
+    });
+
+    const bytes = await documentHandle.save({ useObjectStreams: true });
+    return [
+      {
+        name: `${baseName(source.name)}-redacted.pdf`,
         blob: blobFromBytes(bytes, 'application/pdf'),
         mimeType: 'application/pdf',
       },

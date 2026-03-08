@@ -112,6 +112,7 @@ async function addTextWithFabricFallback(
   color: string,
   x: number,
   y: number,
+  opacity = 1,
 ): Promise<void> {
   try {
     const fabricAny: any = await import('fabric');
@@ -124,7 +125,7 @@ async function addTextWithFabricFallback(
       top: 0,
     });
     staticCanvas.add(bg);
-    const txt = new fabricAny.Text(text, { left: x, top: y, fill: color, fontSize });
+    const txt = new fabricAny.Text(text, { left: x, top: y, fill: color, fontSize, opacity });
     staticCanvas.add(txt);
     staticCanvas.renderAll();
 
@@ -139,9 +140,149 @@ async function addTextWithFabricFallback(
     if (!ctx) {
       return;
     }
+    ctx.save();
+    ctx.globalAlpha = opacity;
     ctx.fillStyle = color;
     ctx.font = `${fontSize}px sans-serif`;
     ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+}
+
+function clampByte(value: number) {
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function getCornerBackgroundColor(data: Uint8ClampedArray, width: number, height: number) {
+  const sampleSize = Math.max(2, Math.floor(Math.min(width, height) * 0.04));
+  const corners = [
+    { startX: 0, startY: 0 },
+    { startX: width - sampleSize, startY: 0 },
+    { startX: 0, startY: height - sampleSize },
+    { startX: width - sampleSize, startY: height - sampleSize },
+  ];
+
+  let red = 0;
+  let green = 0;
+  let blue = 0;
+  let count = 0;
+
+  corners.forEach(({ startX, startY }) => {
+    for (let y = startY; y < startY + sampleSize; y += 1) {
+      for (let x = startX; x < startX + sampleSize; x += 1) {
+        const index = (y * width + x) * 4;
+        red += data[index];
+        green += data[index + 1];
+        blue += data[index + 2];
+        count += 1;
+      }
+    }
+  });
+
+  return {
+    red: red / Math.max(count, 1),
+    green: green / Math.max(count, 1),
+    blue: blue / Math.max(count, 1),
+  };
+}
+
+function colorDistance(red: number, green: number, blue: number, background: { red: number; green: number; blue: number }) {
+  return Math.sqrt(
+    (red - background.red) ** 2 +
+      (green - background.green) ** 2 +
+      (blue - background.blue) ** 2,
+  );
+}
+
+function extractPaletteColors(
+  source: Uint8ClampedArray,
+  colorCount: number,
+): Array<{ hex: string; rgb: [number, number, number]; pixels: number }> {
+  const buckets = new Map<string, { red: number; green: number; blue: number; pixels: number }>();
+
+  for (let index = 0; index < source.length; index += 16) {
+    const alpha = source[index + 3];
+    if (alpha < 100) {
+      continue;
+    }
+
+    const red = source[index];
+    const green = source[index + 1];
+    const blue = source[index + 2];
+    const bucketKey = `${red >> 4}-${green >> 4}-${blue >> 4}`;
+    const bucket = buckets.get(bucketKey) ?? { red: 0, green: 0, blue: 0, pixels: 0 };
+    bucket.red += red;
+    bucket.green += green;
+    bucket.blue += blue;
+    bucket.pixels += 1;
+    buckets.set(bucketKey, bucket);
+  }
+
+  return Array.from(buckets.values())
+    .sort((left, right) => right.pixels - left.pixels)
+    .slice(0, colorCount)
+    .map((bucket) => {
+      const red = clampByte(bucket.red / bucket.pixels);
+      const green = clampByte(bucket.green / bucket.pixels);
+      const blue = clampByte(bucket.blue / bucket.pixels);
+      return {
+        hex: `#${[red, green, blue].map((value) => value.toString(16).padStart(2, '0')).join('')}`,
+        rgb: [red, green, blue] as [number, number, number],
+        pixels: bucket.pixels,
+      };
+    });
+}
+
+async function createPalettePreview(colors: Array<{ hex: string; rgb: [number, number, number] }>, originalName: string) {
+  const swatchWidth = 160;
+  const swatchHeight = 120;
+  const paletteCanvas = canvas(colors.length * swatchWidth, swatchHeight);
+  const context = paletteCanvas.getContext('2d');
+
+  if (!context) {
+    throw new Error('Palette canvas unavailable.');
+  }
+
+  colors.forEach((color, index) => {
+    const [red, green, blue] = color.rgb;
+    context.fillStyle = `rgb(${red}, ${green}, ${blue})`;
+    context.fillRect(index * swatchWidth, 0, swatchWidth, swatchHeight);
+    context.fillStyle = red * 0.299 + green * 0.587 + blue * 0.114 > 150 ? '#111827' : '#f8fafc';
+    context.font = '16px sans-serif';
+    context.fillText(color.hex.toUpperCase(), index * swatchWidth + 14, swatchHeight - 18);
+  });
+
+  return {
+    name: `${baseName(originalName)}-palette.png`,
+    blob: await canvasBlob(paletteCanvas, 'image/png', 1),
+    mimeType: 'image/png',
+  } satisfies ProcessedFile;
+}
+
+function applySharpen(source: ImageData, amount: number) {
+  const { width, height, data } = source;
+  const original = new Uint8ClampedArray(data);
+  const strength = Math.max(0, Math.min(1, amount));
+  const kernel = [0, -1, 0, -1, 5, -1, 0, -1, 0];
+
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      for (let channel = 0; channel < 3; channel += 1) {
+        let value = 0;
+        let kernelIndex = 0;
+
+        for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+          for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+            const pixelIndex = ((y + offsetY) * width + (x + offsetX)) * 4 + channel;
+            value += original[pixelIndex] * kernel[kernelIndex];
+            kernelIndex += 1;
+          }
+        }
+
+        const targetIndex = (y * width + x) * 4 + channel;
+        data[targetIndex] = clampByte(original[targetIndex] + (value - original[targetIndex]) * strength * 0.2);
+      }
+    }
   }
 }
 
@@ -287,7 +428,7 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
   }
 
   if (toolId === 'image-add-text') {
-    const text = String(options.text ?? 'TinyWow Tools');
+    const text = String(options.text ?? 'JH Toolbox');
     const fontSize = parseNumber(options.fontSize, 42);
     const color = String(options.color ?? '#ffffff');
     const x = parseNumber(options.x, 20);
@@ -447,7 +588,7 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
   }
 
   if (toolId === 'image-background-transparent') {
-    const threshold = Math.max(0, Math.min(255, parseNumber(options.threshold, 235)));
+    const threshold = Math.max(5, Math.min(180, parseNumber(options.threshold, 42)));
     const out: ProcessedFile[] = [];
 
     for (let index = 0; index < files.length; index += 1) {
@@ -460,9 +601,19 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
 
       const imageData = ctx2d.getImageData(0, 0, c.width, c.height);
       const data = imageData.data;
+      const background = getCornerBackgroundColor(data, c.width, c.height);
+      const hardCutoff = threshold * 0.7;
+      const softCutoff = threshold * 1.6;
       for (let i = 0; i < data.length; i += 4) {
-        if (data[i] >= threshold && data[i + 1] >= threshold && data[i + 2] >= threshold) {
+        const distance = colorDistance(data[i], data[i + 1], data[i + 2], background);
+        if (distance <= hardCutoff) {
           data[i + 3] = 0;
+          continue;
+        }
+
+        if (distance < softCutoff) {
+          const ratio = (distance - hardCutoff) / Math.max(softCutoff - hardCutoff, 1);
+          data[i + 3] = clampByte(255 * ratio);
         }
       }
       ctx2d.putImageData(imageData, 0, 0);
@@ -486,6 +637,165 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
       ctx2d.filter = 'none';
       bmp.close();
       out.push(await exportCanvas(c, files[index].name, 'image/png', 1));
+    }
+
+    return out;
+  }
+
+  if (toolId === 'image-upscale') {
+    const scale = Math.max(2, parseNumber(options.scale, 2));
+    const mimeType = getOutputMime(options, 'image/png');
+    const out: ProcessedFile[] = [];
+
+    for (let index = 0; index < files.length; index += 1) {
+      const bitmap = await toBitmap(files[index]);
+      onProgress({ percent: (index / files.length) * 100, stage: 'Upscaling image' });
+      out.push(await resizeWithPica(files[index], bitmap.width * scale, bitmap.height * scale, mimeType));
+      bitmap.close();
+    }
+
+    return out;
+  }
+
+  if (toolId === 'image-watermark') {
+    const watermarkType = String(options.watermarkType ?? 'text');
+    const text = String(options.text ?? 'JH Toolbox');
+    const fontSize = parseNumber(options.fontSize, 42);
+    const color = String(options.color ?? '#ffffff');
+    const opacity = Math.max(0.05, Math.min(1, parseNumber(options.opacity, 0.5)));
+    const scale = Math.max(0.08, Math.min(1, parseNumber(options.scale, 0.24)));
+    const x = parseNumber(options.x, 20);
+    const y = parseNumber(options.y, 20);
+    const out: ProcessedFile[] = [];
+
+    let baseFiles = files;
+    let watermarkBitmap: ImageBitmap | null = null;
+
+    if (watermarkType === 'image') {
+      if (files.length < 2) {
+        throw new Error('Add one base image and one watermark image.');
+      }
+
+      const watermarkFile = files[files.length - 1];
+      baseFiles = files.slice(0, -1);
+      watermarkBitmap = await toBitmap(watermarkFile);
+    }
+
+    try {
+      for (let index = 0; index < baseFiles.length; index += 1) {
+        onProgress({ percent: (index / baseFiles.length) * 100, stage: 'Applying watermark' });
+        const bitmap = await toBitmap(baseFiles[index]);
+        const c = canvas(bitmap.width, bitmap.height);
+        const ctx2d = c.getContext('2d')!;
+        ctx2d.drawImage(bitmap, 0, 0);
+        bitmap.close();
+
+        if (watermarkBitmap) {
+          ctx2d.save();
+          ctx2d.globalAlpha = opacity;
+          const targetWidth = Math.max(32, watermarkBitmap.width * scale);
+          const targetHeight = (targetWidth / watermarkBitmap.width) * watermarkBitmap.height;
+          ctx2d.drawImage(watermarkBitmap, x, y, targetWidth, targetHeight);
+          ctx2d.restore();
+        } else {
+          await addTextWithFabricFallback(c, text, fontSize, color, x, y + fontSize, opacity);
+        }
+
+        out.push(await exportCanvas(c, baseFiles[index].name, 'image/png', 1));
+      }
+    } finally {
+      watermarkBitmap?.close();
+    }
+
+    return out;
+  }
+
+  if (toolId === 'image-color-palette-extract') {
+    const colorCount = Math.max(3, Math.min(12, parseNumber(options.count, 6)));
+    const out: ProcessedFile[] = [];
+
+    for (let index = 0; index < files.length; index += 1) {
+      onProgress({ percent: (index / files.length) * 100, stage: 'Extracting palette' });
+      const bitmap = await toBitmap(files[index]);
+      const c = canvas(bitmap.width, bitmap.height);
+      const ctx2d = c.getContext('2d')!;
+      ctx2d.drawImage(bitmap, 0, 0);
+      bitmap.close();
+
+      const imageData = ctx2d.getImageData(0, 0, c.width, c.height);
+      const colors = extractPaletteColors(imageData.data, colorCount);
+      const dominant = colors.map((colorInfo) => colorInfo.hex).join(', ');
+      const palettePreview = await createPalettePreview(colors, files[index].name);
+      const paletteJson = JSON.stringify(
+        {
+          file: files[index].name,
+          colors: colors.map((colorInfo) => ({
+            hex: colorInfo.hex,
+            rgb: colorInfo.rgb,
+            pixels: colorInfo.pixels,
+          })),
+        },
+        null,
+        2,
+      );
+
+      out.push({
+        ...palettePreview,
+        metadata: {
+          dominantColors: dominant,
+        },
+      });
+      out.push({
+        name: `${baseName(files[index].name)}-palette.json`,
+        blob: new Blob([paletteJson], { type: 'application/json' }),
+        mimeType: 'application/json',
+        textContent: paletteJson,
+        metadata: {
+          dominantColors: dominant,
+        },
+      });
+    }
+
+    return out;
+  }
+
+  if (toolId === 'image-auto-enhance') {
+    const strength = Math.max(0.1, Math.min(1.5, parseNumber(options.strength, 0.75)));
+    const mimeType = getOutputMime(options, 'image/jpeg');
+    const out: ProcessedFile[] = [];
+
+    for (let index = 0; index < files.length; index += 1) {
+      onProgress({ percent: (index / files.length) * 100, stage: 'Enhancing image' });
+      const bitmap = await toBitmap(files[index]);
+      const c = canvas(bitmap.width, bitmap.height);
+      const ctx2d = c.getContext('2d')!;
+
+      const analysisCanvas = canvas(bitmap.width, bitmap.height);
+      const analysisCtx = analysisCanvas.getContext('2d')!;
+      analysisCtx.drawImage(bitmap, 0, 0);
+      const pixels = analysisCtx.getImageData(0, 0, analysisCanvas.width, analysisCanvas.height).data;
+      let luminanceTotal = 0;
+      let sampleCount = 0;
+
+      for (let pixelIndex = 0; pixelIndex < pixels.length; pixelIndex += 32) {
+        luminanceTotal += pixels[pixelIndex] * 0.2126 + pixels[pixelIndex + 1] * 0.7152 + pixels[pixelIndex + 2] * 0.0722;
+        sampleCount += 1;
+      }
+
+      const averageLuminance = luminanceTotal / Math.max(sampleCount, 1);
+      const brightness = 100 + ((128 - averageLuminance) / 128) * 20 * strength;
+      const contrast = 100 + 24 * strength;
+      const saturate = 100 + 10 * strength;
+
+      ctx2d.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%)`;
+      ctx2d.drawImage(bitmap, 0, 0);
+      ctx2d.filter = 'none';
+      bitmap.close();
+
+      const enhanced = ctx2d.getImageData(0, 0, c.width, c.height);
+      applySharpen(enhanced, strength);
+      ctx2d.putImageData(enhanced, 0, 0);
+      out.push(await exportCanvas(c, files[index].name, mimeType, 0.92));
     }
 
     return out;

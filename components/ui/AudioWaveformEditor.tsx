@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pause, Play, SkipBack } from 'lucide-react';
+import { GripVertical, Pause, Play, SkipBack } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { getLocalizedChoiceLabel } from '@/lib/tool-localization';
 
@@ -20,7 +20,8 @@ interface AudioWaveformEditorProps {
   onChange: (nextValues: { startTime?: number; endTime?: number }) => void;
 }
 
-type DragMode = 'start' | 'end' | 'range';
+type DragMode = 'start' | 'end' | 'range' | 'playhead';
+type PlaybackMode = 'selection' | 'free';
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -96,6 +97,8 @@ export function AudioWaveformEditor({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const onChangeRef = useRef(onChange);
+  const playbackModeRef = useRef<PlaybackMode>('selection');
+  const programmaticSeekRef = useRef(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -126,6 +129,10 @@ export function AudioWaveformEditor({
   const localizedOutputFormat =
     outputFormat === 'keep' ? getLocalizedChoiceLabel('Keep original', locale) : outputFormat.toUpperCase();
 
+  const setPlaybackMode = (nextMode: PlaybackMode) => {
+    playbackModeRef.current = nextMode;
+  };
+
   const scrollTimeIntoView = (time: number) => {
     const scrollContainer = scrollRef.current;
     if (!scrollContainer || canvasWidth <= scrollContainer.clientWidth || safeDuration <= 0) {
@@ -147,6 +154,23 @@ export function AudioWaveformEditor({
 
   const updateZoom = (nextZoom: number) => {
     setZoom(clamp(Number(nextZoom.toFixed(2)), MIN_ZOOM, MAX_ZOOM));
+  };
+
+  const seekToTime = (nextTime: number, nextMode?: PlaybackMode) => {
+    const clampedTime = clamp(nextTime, 0, safeDuration);
+    const audio = audioRef.current;
+
+    if (nextMode) {
+      setPlaybackMode(nextMode);
+    }
+
+    if (audio) {
+      programmaticSeekRef.current = true;
+      audio.currentTime = clampedTime;
+    }
+
+    setCurrentTime(clampedTime);
+    return clampedTime;
   };
 
   useEffect(() => {
@@ -275,6 +299,10 @@ export function AudioWaveformEditor({
     }
 
     const syncToSelection = () => {
+      if (playbackModeRef.current !== 'selection') {
+        return;
+      }
+
       const outsideSelection =
         audio.currentTime < normalizedSelection.startTime || audio.currentTime > normalizedSelection.endTime;
 
@@ -284,8 +312,7 @@ export function AudioWaveformEditor({
 
       const nextTime = clamp(audio.currentTime, normalizedSelection.startTime, normalizedSelection.endTime);
 
-      audio.currentTime = nextTime;
-      setCurrentTime(nextTime);
+      seekToTime(nextTime, 'selection');
     };
 
     const onLoadedMetadata = () => {
@@ -299,24 +326,34 @@ export function AudioWaveformEditor({
     const onTimeUpdate = () => {
       setCurrentTime(audio.currentTime);
 
-      if (audio.currentTime >= normalizedSelection.endTime) {
+      if (playbackModeRef.current === 'selection' && audio.currentTime >= normalizedSelection.endTime) {
         audio.pause();
-        audio.currentTime = normalizedSelection.endTime;
-        setCurrentTime(normalizedSelection.endTime);
+        seekToTime(normalizedSelection.endTime, 'selection');
         setIsPlaying(false);
       }
     };
 
     const onPlay = () => {
-      if (audio.currentTime < normalizedSelection.startTime || audio.currentTime >= normalizedSelection.endTime) {
-        audio.currentTime = normalizedSelection.startTime;
-        setCurrentTime(normalizedSelection.startTime);
+      if (
+        playbackModeRef.current === 'selection' &&
+        (audio.currentTime < normalizedSelection.startTime || audio.currentTime >= normalizedSelection.endTime)
+      ) {
+        seekToTime(normalizedSelection.startTime, 'selection');
       }
 
       setIsPlaying(true);
     };
     const onPause = () => setIsPlaying(false);
-    const onSeeking = () => syncToSelection();
+    const onSeeking = () => {
+      if (programmaticSeekRef.current) {
+        programmaticSeekRef.current = false;
+        setCurrentTime(audio.currentTime);
+        return;
+      }
+
+      setPlaybackMode('free');
+      setCurrentTime(audio.currentTime);
+    };
 
     audio.addEventListener('loadedmetadata', onLoadedMetadata);
     audio.addEventListener('timeupdate', onTimeUpdate);
@@ -339,6 +376,10 @@ export function AudioWaveformEditor({
       return;
     }
 
+    if (playbackModeRef.current !== 'selection') {
+      return;
+    }
+
     const outsideSelection =
       audio.currentTime < normalizedSelection.startTime || audio.currentTime >= normalizedSelection.endTime;
 
@@ -346,8 +387,7 @@ export function AudioWaveformEditor({
       return;
     }
 
-    audio.currentTime = normalizedSelection.startTime;
-    setCurrentTime(normalizedSelection.startTime);
+    seekToTime(normalizedSelection.startTime, 'selection');
   }, [normalizedSelection.endTime, normalizedSelection.startTime]);
 
   useEffect(() => {
@@ -366,9 +406,11 @@ export function AudioWaveformEditor({
       if (event.code === 'Space') {
         event.preventDefault();
         if (audio.paused) {
-          if (audio.currentTime < normalizedSelection.startTime || audio.currentTime >= normalizedSelection.endTime) {
-            audio.currentTime = normalizedSelection.startTime;
-            setCurrentTime(normalizedSelection.startTime);
+          if (
+            playbackModeRef.current === 'selection' &&
+            (audio.currentTime < normalizedSelection.startTime || audio.currentTime >= normalizedSelection.endTime)
+          ) {
+            seekToTime(normalizedSelection.startTime, 'selection');
           }
           void audio.play();
         } else {
@@ -378,22 +420,16 @@ export function AudioWaveformEditor({
 
       if (event.key === 'ArrowLeft') {
         event.preventDefault();
-        audio.currentTime = clamp(
-          audio.currentTime - 0.25,
-          normalizedSelection.startTime,
-          normalizedSelection.endTime,
-        );
-        setCurrentTime(audio.currentTime);
+        const rangeStart = playbackModeRef.current === 'selection' ? normalizedSelection.startTime : 0;
+        const rangeEnd = playbackModeRef.current === 'selection' ? normalizedSelection.endTime : safeDuration;
+        seekToTime(clamp(audio.currentTime - 0.25, rangeStart, rangeEnd));
       }
 
       if (event.key === 'ArrowRight') {
         event.preventDefault();
-        audio.currentTime = clamp(
-          audio.currentTime + 0.25,
-          normalizedSelection.startTime,
-          normalizedSelection.endTime,
-        );
-        setCurrentTime(audio.currentTime);
+        const rangeStart = playbackModeRef.current === 'selection' ? normalizedSelection.startTime : 0;
+        const rangeEnd = playbackModeRef.current === 'selection' ? normalizedSelection.endTime : safeDuration;
+        seekToTime(clamp(audio.currentTime + 0.25, rangeStart, rangeEnd));
       }
     };
 
@@ -423,20 +459,29 @@ export function AudioWaveformEditor({
     }
 
     const time = getTimeFromClientX(event.clientX);
+    const dragHandle = (event.target as HTMLElement).closest<HTMLElement>('[data-drag-handle]')?.dataset.dragHandle as
+      | DragMode
+      | undefined;
     const pixelX = (time / safeDuration) * canvasWidth;
     const startX = startPercent * canvasWidth;
     const endX = endPercent * canvasWidth;
     const handleThreshold = 12;
-    let mode: DragMode = 'range';
+    let mode: DragMode = dragHandle ?? 'range';
 
-    if (Math.abs(pixelX - startX) <= handleThreshold) {
+    if (!dragHandle && Math.abs(pixelX - startX) <= handleThreshold) {
       mode = 'start';
-    } else if (Math.abs(pixelX - endX) <= handleThreshold) {
+    } else if (!dragHandle && Math.abs(pixelX - endX) <= handleThreshold) {
       mode = 'end';
     }
 
     setDragState({ mode, anchor: time });
     event.currentTarget.setPointerCapture(event.pointerId);
+
+    if (mode === 'playhead') {
+      audioRef.current?.pause();
+      seekToTime(time, 'free');
+      return;
+    }
 
     if (mode === 'range') {
       updateSelection(time, time + MIN_SELECTION_SECONDS);
@@ -463,6 +508,51 @@ export function AudioWaveformEditor({
     updateSelection(dragState.anchor, time);
   };
 
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragState) {
+      return;
+    }
+
+    setDragState(null);
+  };
+
+  const handlePlayheadPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+
+    const time = getTimeFromClientX(event.clientX);
+    setDragState({ mode: 'playhead', anchor: time });
+    event.currentTarget.setPointerCapture(event.pointerId);
+    audioRef.current?.pause();
+    seekToTime(time, 'free');
+  };
+
+  const handlePlayheadPointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (dragState?.mode !== 'playhead') {
+      return;
+    }
+
+    event.stopPropagation();
+    seekToTime(getTimeFromClientX(event.clientX), 'free');
+  };
+
+  const handlePlayheadPointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (dragState?.mode !== 'playhead') {
+      return;
+    }
+
+    event.stopPropagation();
+
+    const releasedTime = getTimeFromClientX(event.clientX);
+    seekToTime(releasedTime, 'free');
+    scrollTimeIntoView(releasedTime);
+    setDragState(null);
+
+    const playPromise = audioRef.current?.play();
+    if (playPromise) {
+      void playPromise.catch(() => undefined);
+    }
+  };
+
   const togglePlayback = async () => {
     const audio = audioRef.current;
     if (!audio) {
@@ -470,9 +560,11 @@ export function AudioWaveformEditor({
     }
 
     if (audio.paused) {
-      if (audio.currentTime < normalizedSelection.startTime || audio.currentTime >= normalizedSelection.endTime) {
-        audio.currentTime = normalizedSelection.startTime;
-        setCurrentTime(normalizedSelection.startTime);
+      if (
+        playbackModeRef.current === 'selection' &&
+        (audio.currentTime < normalizedSelection.startTime || audio.currentTime >= normalizedSelection.endTime)
+      ) {
+        seekToTime(normalizedSelection.startTime, 'selection');
       }
       await audio.play();
       return;
@@ -487,8 +579,7 @@ export function AudioWaveformEditor({
       return;
     }
 
-    audio.currentTime = normalizedSelection.startTime;
-    setCurrentTime(normalizedSelection.startTime);
+    seekToTime(normalizedSelection.startTime, 'selection');
     scrollTimeIntoView(normalizedSelection.startTime);
     await audio.play();
   };
@@ -513,12 +604,46 @@ export function AudioWaveformEditor({
             style={{ width: `${canvasWidth}px` }}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
-            onPointerUp={() => setDragState(null)}
+            onPointerUp={handlePointerUp}
             onPointerCancel={() => setDragState(null)}
           >
             <canvas ref={canvasRef} className="absolute inset-0 h-full w-full cursor-crosshair" />
             {peaks.length > 0 ? (
               <>
+                <button
+                  type="button"
+                  aria-label={messages.workbench.startTime}
+                  data-testid="waveform-start-handle"
+                  data-drag-handle="start"
+                  className="absolute top-1/2 z-20 flex h-11 w-7 -translate-x-1/2 -translate-y-1/2 touch-none items-center justify-center rounded-full border border-prime/80 bg-base-elevated/95 text-prime shadow-[0_0_18px_rgba(0,179,214,0.24)] cursor-ew-resize"
+                  style={{ left: `${startPercent * 100}%` }}
+                >
+                  <GripVertical size={14} />
+                </button>
+                <button
+                  type="button"
+                  aria-label={messages.workbench.endTime}
+                  data-testid="waveform-end-handle"
+                  data-drag-handle="end"
+                  className="absolute top-1/2 z-20 flex h-11 w-7 -translate-x-1/2 -translate-y-1/2 touch-none items-center justify-center rounded-full border border-prime/80 bg-base-elevated/95 text-prime shadow-[0_0_18px_rgba(0,179,214,0.24)] cursor-ew-resize"
+                  style={{ left: `${endPercent * 100}%` }}
+                >
+                  <GripVertical size={14} />
+                </button>
+                <button
+                  type="button"
+                  aria-label={messages.workbench.play}
+                  data-testid="waveform-playhead-handle"
+                  data-drag-handle="playhead"
+                  onPointerDown={handlePlayheadPointerDown}
+                  onPointerMove={handlePlayheadPointerMove}
+                  onPointerUp={handlePlayheadPointerUp}
+                  onPointerCancel={() => setDragState(null)}
+                  className="absolute top-3 z-20 flex h-8 w-8 -translate-x-1/2 touch-none items-center justify-center rounded-full border border-accent/60 bg-base-elevated/95 text-accent shadow-[0_0_18px_rgba(134,196,52,0.22)] cursor-ew-resize"
+                  style={{ left: `${playheadPercent * 100}%` }}
+                >
+                  <Play size={12} />
+                </button>
                 <div
                   aria-hidden="true"
                   data-testid="waveform-selection-mask-start"
