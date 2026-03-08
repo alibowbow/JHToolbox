@@ -56,7 +56,10 @@ const captureCopy = {
     liveCaptureIdleDescription: 'Start capture to see the live preview before exporting the recording.',
     startCapture: 'Start capture',
     stopCapture: 'Stop capture',
+    startRecording: 'Start recording',
+    stopRecording: 'Stop recording',
     captureScreenshot: 'Capture screenshot',
+    resetSession: 'Start over',
     captureNotes: 'Capture notes',
     permissionNote: 'Browser permissions are requested only when capture starts.',
     screenAudioNote: 'Screen audio depends on browser and operating system support.',
@@ -77,6 +80,7 @@ const captureCopy = {
     waveformEditorDescription: 'Review the master WAV recording, adjust the selection, then export WAV or MP3.',
     exportEditedAudio: 'Export edited audio',
     masterRecordingReady: 'Master recording ready',
+    currentAudioOutput: 'Current output',
     recordingReadyToast: 'The recording is ready in the waveform editor.',
     audioExportReadyToast: 'The edited recording is ready to download.',
     screenshotReadyToast: 'The screenshot is ready.',
@@ -108,7 +112,10 @@ const captureCopy = {
     liveCaptureIdleDescription: '캡처를 시작하면 저장 전에 실시간 미리보기가 여기에 표시됩니다.',
     startCapture: '캡처 시작',
     stopCapture: '캡처 중지',
+    startRecording: '녹음 시작',
+    stopRecording: '녹음 중지',
     captureScreenshot: '스크린샷 캡처',
+    resetSession: '처음부터 다시',
     captureNotes: '캡처 안내',
     permissionNote: '권한 요청은 캡처를 시작할 때만 브라우저에서 표시됩니다.',
     screenAudioNote: '화면 오디오는 브라우저와 운영체제 지원 여부에 따라 달라집니다.',
@@ -129,6 +136,7 @@ const captureCopy = {
     waveformEditorDescription: '마스터 WAV 녹음을 확인하고, 구간을 조정한 뒤 WAV 또는 MP3로 내보내세요.',
     exportEditedAudio: '편집한 오디오 저장',
     masterRecordingReady: '마스터 녹음 준비 완료',
+    currentAudioOutput: '현재 출력',
     recordingReadyToast: '녹음이 파형 편집기에 준비되었습니다.',
     audioExportReadyToast: '편집한 녹음 파일이 준비되었습니다.',
     screenshotReadyToast: '스크린샷이 준비되었습니다.',
@@ -1047,6 +1055,8 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
   const audioOutputFormat = String(options.outputFormat ?? 'wav');
   const trimMode = String(options.trimMode ?? 'keep');
   const audioResultIsEdited = Boolean(result?.details && Object.prototype.hasOwnProperty.call(result.details, copy.selectionMode));
+  const audioResultTitle = audioResultIsEdited ? messages.workbench.success : copy.masterRecordingReady;
+  const showStandaloneResults = Boolean(result) && !isAudioRecorder;
 
   return (
     <ToolPageLayout title={localizedTool.name} description={localizedTool.description} icon={Icon} iconColor={style.icon}>
@@ -1106,16 +1116,16 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
               ) : status === 'recording' ? (
                 <button type="button" onClick={stopRecording} className="btn-primary">
                   <CircleStop size={16} />
-                  {copy.stopCapture}
+                  {isAudioRecorder ? copy.stopRecording : copy.stopCapture}
                 </button>
               ) : (
                 <button type="button" onClick={() => void startRecording()} disabled={!isCaptureAvailable || status === 'starting'} className="btn-primary disabled:cursor-not-allowed disabled:opacity-60">
                   {status === 'starting' ? <LoaderCircle size={16} className="animate-spin" /> : <Play size={16} />}
-                  {copy.startCapture}
+                  {isAudioRecorder ? copy.startRecording : copy.startCapture}
                 </button>
               )}
 
-              {result ? (
+              {result && !isAudioRecorder ? (
                 <button type="button" onClick={() => downloadBlob(result.blob, result.name)} className="btn-ghost">
                   <Download size={16} />
                   {messages.workbench.download}
@@ -1124,7 +1134,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
 
               <button type="button" onClick={resetSession} className="btn-ghost">
                 <RefreshCw size={16} />
-                {messages.workbench.retry}
+                {copy.resetSession}
               </button>
             </div>
           </div>
@@ -1186,13 +1196,28 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
                 {status === 'starting' ? <LoaderCircle size={16} className="animate-spin" /> : <Scissors size={16} />}
                 {copy.exportEditedAudio}
               </button>
-              {result ? (
-                <button type="button" onClick={() => downloadBlob(result.blob, result.name)} className="btn-ghost">
-                  <Download size={16} />
-                  {messages.workbench.download}
-                </button>
-              ) : null}
             </div>
+
+            {result ? (
+              <div className="space-y-3">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">{copy.currentAudioOutput}</p>
+                <ResultCard
+                  fileName={result.name}
+                  fileSize={formatMegaBytes(result.blob.size)}
+                  title={audioResultTitle}
+                  onDownload={() => downloadBlob(result.blob, result.name)}
+                >
+                  {result.previewUrl && result.mimeType.startsWith('audio/') ? (
+                    <audio src={result.previewUrl} controls className="w-full" />
+                  ) : null}
+                  {result.details ? (
+                    <pre className="overflow-auto rounded-xl border border-border bg-base-subtle p-3 text-xs text-ink">
+                      {JSON.stringify(result.details, null, 2)}
+                    </pre>
+                  ) : null}
+                </ResultCard>
+              </div>
+            ) : null}
           </section>
         ) : null}
 
@@ -1209,14 +1234,14 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
           </section>
         ) : null}
 
-        {result ? (
+        {showStandaloneResults && result ? (
           <Tabs tabs={resultTabs}>
             {() => (
               <div className="space-y-4">
                 <ResultCard
                   fileName={result.name}
                   fileSize={formatMegaBytes(result.blob.size)}
-                  title={isAudioRecorder ? (audioResultIsEdited ? messages.workbench.success : copy.masterRecordingReady) : messages.workbench.success}
+                  title={messages.workbench.success}
                   onDownload={() => downloadBlob(result.blob, result.name)}
                 />
 
