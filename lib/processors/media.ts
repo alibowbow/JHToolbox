@@ -15,6 +15,13 @@ type AudioFormatConfig = {
   bitrateOptional?: boolean;
 };
 
+type VideoFormatConfig = {
+  ext: string;
+  mimeType: string;
+  withAudioArgs: string[];
+  withoutAudioArgs: string[];
+};
+
 const AUDIO_FORMATS: Record<string, AudioFormatConfig> = {
   mp3: { ext: 'mp3', mimeType: 'audio/mpeg', codecArgs: ['-c:a', 'libmp3lame'], bitrateOptional: true },
   wav: { ext: 'wav', mimeType: 'audio/wav', codecArgs: ['-c:a', 'pcm_s16le'] },
@@ -23,6 +30,34 @@ const AUDIO_FORMATS: Record<string, AudioFormatConfig> = {
   ogg: { ext: 'ogg', mimeType: 'audio/ogg', codecArgs: ['-c:a', 'libvorbis'], bitrateOptional: true },
   webm: { ext: 'webm', mimeType: 'audio/webm', codecArgs: ['-c:a', 'libopus'], bitrateOptional: true },
   flac: { ext: 'flac', mimeType: 'audio/flac', codecArgs: ['-c:a', 'flac'] },
+};
+
+const VIDEO_FORMATS: Record<string, VideoFormatConfig> = {
+  mp4: {
+    ext: 'mp4',
+    mimeType: 'video/mp4',
+    withAudioArgs: ['-c:v', 'libx264', '-crf', '23', '-preset', 'medium', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-movflags', 'faststart'],
+    withoutAudioArgs: ['-c:v', 'libx264', '-crf', '23', '-preset', 'medium', '-pix_fmt', 'yuv420p', '-an', '-movflags', 'faststart'],
+  },
+  webm: {
+    ext: 'webm',
+    mimeType: 'video/webm',
+    withAudioArgs: ['-c:v', 'libvpx-vp9', '-crf', '36', '-b:v', '0', '-row-mt', '1', '-c:a', 'libopus'],
+    withoutAudioArgs: ['-c:v', 'libvpx-vp9', '-crf', '36', '-b:v', '0', '-row-mt', '1', '-an'],
+  },
+  mov: {
+    ext: 'mov',
+    mimeType: 'video/quicktime',
+    withAudioArgs: ['-c:v', 'libx264', '-crf', '23', '-preset', 'medium', '-pix_fmt', 'yuv420p', '-c:a', 'aac'],
+    withoutAudioArgs: ['-c:v', 'libx264', '-crf', '23', '-preset', 'medium', '-pix_fmt', 'yuv420p', '-an'],
+  },
+};
+
+const LEGACY_VIDEO_CONVERTER_OUTPUTS: Partial<Record<string, keyof typeof VIDEO_FORMATS>> = {
+  'mp4-webm': 'webm',
+  'mp4-mov': 'mov',
+  'mov-mp4': 'mp4',
+  'avi-mp4': 'mp4',
 };
 
 function blobFromBytes(bytes: Uint8Array, mimeType: string): Blob {
@@ -80,6 +115,11 @@ function getAudioEncodingArgs(
   }
 
   return { config, args };
+}
+
+function getVideoFormatConfig(format: string) {
+  const requestedFormat = format.toLowerCase();
+  return VIDEO_FORMATS[requestedFormat] ?? VIDEO_FORMATS.mp4;
 }
 
 function buildTempoFilter(speed: number) {
@@ -409,6 +449,47 @@ async function processAudioPitchChange(ctx: ProcessContext) {
       };
     },
   );
+}
+
+async function processVideoConvert(ctx: ProcessContext, forcedOutputFormat?: keyof typeof VIDEO_FORMATS) {
+  const { files, options, onProgress } = ctx;
+  const outputFormat = forcedOutputFormat ?? (String(options.outputFormat ?? 'mp4').toLowerCase() as keyof typeof VIDEO_FORMATS);
+  const config = getVideoFormatConfig(outputFormat);
+  const { ffmpeg, fetchFile } = await getFfmpeg((ratio) =>
+    onProgress({
+      percent: Math.max(5, Math.min(95, ratio * 100)),
+      stage: 'Converting video',
+    }),
+  );
+
+  const outputFiles: ProcessedFile[] = [];
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index];
+    const inputName = `video-convert-input-${index}.${extOf(file.name) || 'bin'}`;
+    const outputName = `video-convert-output-${index}.${config.ext}`;
+
+    try {
+      await ffmpeg.writeFile(inputName, await fetchFile(file));
+      await execWithFallback(
+        ffmpeg,
+        ['-i', inputName, ...config.withAudioArgs, outputName],
+        ['-i', inputName, ...config.withoutAudioArgs, outputName],
+      );
+
+      const data = await ffmpeg.readFile(outputName);
+      const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+      outputFiles.push({
+        name: `${baseName(file.name)}-converted.${config.ext}`,
+        blob: blobFromBytes(bytes, config.mimeType),
+        mimeType: config.mimeType,
+      });
+      onProgress({ percent: ((index + 1) / files.length) * 100, stage: 'Finished file' });
+    } finally {
+      await Promise.allSettled([ffmpeg.deleteFile(inputName), ffmpeg.deleteFile(outputName)]);
+    }
+  }
+
+  return outputFiles;
 }
 
 async function processVideoSpeedChange(ctx: ProcessContext) {
@@ -839,6 +920,12 @@ const presets: Record<string, MediaPreset> = {
 
 export async function processMediaTool(ctx: ProcessContext): Promise<ProcessedFile[]> {
   const { toolId, files, options, onProgress } = ctx;
+
+  const legacyVideoOutputFormat = LEGACY_VIDEO_CONVERTER_OUTPUTS[toolId];
+
+  if (toolId === 'video-convert' || legacyVideoOutputFormat) {
+    return await processVideoConvert(ctx, legacyVideoOutputFormat);
+  }
 
   if (toolId === 'video-thumbnail-generator') {
     return await processVideoThumbnail(ctx);

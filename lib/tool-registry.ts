@@ -855,6 +855,30 @@ export const tools: ToolDefinition[] = [
     ],
   },
   {
+    id: 'video-convert',
+    name: 'Video Converter',
+    category: 'video',
+    description: 'Convert MP4, WEBM, MOV, AVI, and M4V files into MP4, WEBM, or MOV in one workflow.',
+    accept: '.mp4,.webm,.mov,.avi,.m4v,.mkv',
+    multiple: true,
+    tags: ['video', 'convert', 'mp4', 'webm', 'mov'],
+    browseGroups: ['popular', 'convert'],
+    previewKind: 'video',
+    options: [
+      {
+        key: 'outputFormat',
+        label: 'Output format',
+        type: 'select',
+        defaultValue: 'mp4',
+        options: [
+          { label: 'MP4', value: 'mp4' },
+          { label: 'WEBM', value: 'webm' },
+          { label: 'MOV', value: 'mov' },
+        ],
+      },
+    ],
+  },
+  {
     id: 'images-to-gif',
     name: 'Images to GIF',
     category: 'video',
@@ -931,6 +955,7 @@ export const tools: ToolDefinition[] = [
     description: 'Convert MP4 videos to WEBM.',
     accept: '.mp4',
     tags: ['mp4', 'webm', 'convert'],
+    hiddenFromBrowse: true,
   },
   {
     id: 'mp4-mov',
@@ -939,6 +964,7 @@ export const tools: ToolDefinition[] = [
     description: 'Convert MP4 videos to MOV.',
     accept: '.mp4',
     tags: ['mp4', 'mov', 'convert'],
+    hiddenFromBrowse: true,
   },
   {
     id: 'mov-mp4',
@@ -947,6 +973,7 @@ export const tools: ToolDefinition[] = [
     description: 'Convert MOV videos to MP4.',
     accept: '.mov',
     tags: ['mov', 'mp4', 'convert'],
+    hiddenFromBrowse: true,
   },
   {
     id: 'avi-mp4',
@@ -955,6 +982,7 @@ export const tools: ToolDefinition[] = [
     description: 'Convert AVI videos to MP4.',
     accept: '.avi',
     tags: ['avi', 'mp4', 'convert'],
+    hiddenFromBrowse: true,
   },
   {
     id: 'audio-convert',
@@ -1541,6 +1569,7 @@ export const categories: ToolCategoryDefinition[] = [
       'mute-video',
       'extract-audio',
       'video-compress',
+      'video-convert',
       'video-speed-change',
       'video-crop',
       'video-resize',

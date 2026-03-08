@@ -20,7 +20,13 @@ const navItems = [
   { href: '/tools/web', key: 'web', icon: Globe, iconClass: 'text-cyan-300', dotClass: 'bg-cyan-400' },
 ] as const;
 
-export function NavigationList({ onNavigate }: { onNavigate?: () => void }) {
+export function NavigationList({
+  onNavigate,
+  activeIndicatorId = 'sidebar-active',
+}: {
+  onNavigate?: () => void;
+  activeIndicatorId?: string;
+}) {
   const pathname = usePathname();
   const { locale, messages } = useLocale();
 
@@ -42,7 +48,7 @@ export function NavigationList({ onNavigate }: { onNavigate?: () => void }) {
             >
               {active ? (
                 <motion.div
-                  layoutId="sidebar-active"
+                  layoutId={activeIndicatorId}
                   className="absolute inset-0 rounded-xl bg-base-elevated"
                   style={{ zIndex: -1 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 40 }}

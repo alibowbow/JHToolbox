@@ -61,6 +61,7 @@ const MEDIA_TOOLS = new Set([
   'mute-video',
   'extract-audio',
   'video-compress',
+  'video-convert',
   'video-speed-change',
   'video-crop',
   'video-resize',

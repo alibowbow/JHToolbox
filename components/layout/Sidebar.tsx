@@ -15,7 +15,7 @@ export function Sidebar() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 py-4">
-        <NavigationList />
+        <NavigationList activeIndicatorId="sidebar-desktop-active" />
       </div>
 
       <div className="border-t border-border px-5 py-4">

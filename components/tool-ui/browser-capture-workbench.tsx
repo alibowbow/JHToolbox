@@ -129,8 +129,8 @@ function renderField(
 function pickSupportedMimeType(kind: 'video' | 'audio') {
   const candidates =
     kind === 'video'
-      ? ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
-      : ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
+      ? ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4']
+      : ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4;codecs=mp4a.40.2', 'audio/mp4'];
 
   if (typeof MediaRecorder === 'undefined') {
     return '';
@@ -152,7 +152,96 @@ function mimeTypeToExtension(mimeType: string) {
     return 'ogg';
   }
 
-  return 'webm';
+  if (mimeType.includes('mpeg')) {
+    return 'mp3';
+  }
+
+  if (mimeType.includes('wav')) {
+    return 'wav';
+  }
+
+  if (mimeType.includes('aac')) {
+    return 'aac';
+  }
+
+  if (mimeType.includes('quicktime')) {
+    return 'mov';
+  }
+
+  if (mimeType.includes('mp4')) {
+    return mimeType.startsWith('audio/') ? 'm4a' : 'mp4';
+  }
+
+  if (mimeType.includes('webm')) {
+    return 'webm';
+  }
+
+  return 'bin';
+}
+
+type BrowserCaptureKind = 'display' | 'user-media';
+
+type DisplayMediaOptions = DisplayMediaStreamOptions & {
+  monitorTypeSurfaces?: 'include' | 'exclude';
+  preferCurrentTab?: boolean;
+  selfBrowserSurface?: 'include' | 'exclude';
+  surfaceSwitching?: 'include' | 'exclude';
+  systemAudio?: 'include' | 'exclude';
+};
+
+function createDisplayMediaOptions(includeAudio: boolean): DisplayMediaOptions {
+  return {
+    video: {
+      frameRate: { ideal: 30, max: 30 },
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+    },
+    audio: includeAudio,
+    preferCurrentTab: true,
+    selfBrowserSurface: 'include',
+    surfaceSwitching: 'include',
+    monitorTypeSurfaces: 'include',
+    systemAudio: includeAudio ? 'include' : 'exclude',
+  };
+}
+
+function isRecoverableDisplayAudioError(cause: unknown) {
+  return cause instanceof DOMException && ['NotFoundError', 'OverconstrainedError', 'TypeError'].includes(cause.name);
+}
+
+async function getDisplayCaptureStream(includeAudio: boolean) {
+  try {
+    return await navigator.mediaDevices.getDisplayMedia(createDisplayMediaOptions(includeAudio));
+  } catch (cause) {
+    if (includeAudio && isRecoverableDisplayAudioError(cause)) {
+      return await navigator.mediaDevices.getDisplayMedia(createDisplayMediaOptions(false));
+    }
+
+    throw cause;
+  }
+}
+
+function detectMobileViewport() {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return false;
+  }
+
+  const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false;
+  const touchPoints = navigator.maxTouchPoints > 0;
+  const userAgent = navigator.userAgent.toLowerCase();
+  return coarsePointer || touchPoints || /android|iphone|ipad|ipod/.test(userAgent);
+}
+
+function getCaptureCapability(kind: BrowserCaptureKind) {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
+    return false;
+  }
+
+  if (kind === 'display') {
+    return typeof navigator.mediaDevices.getDisplayMedia === 'function';
+  }
+
+  return typeof navigator.mediaDevices.getUserMedia === 'function';
 }
 
 async function waitForVideoReady(video: HTMLVideoElement) {
@@ -211,10 +300,7 @@ function combineStreams(streams: Array<MediaStream | null | undefined>) {
 }
 
 async function captureStillFromDisplay(mimeType: string): Promise<CaptureResult> {
-  const displayStream = await navigator.mediaDevices.getDisplayMedia({
-    video: { frameRate: 30 },
-    audio: false,
-  });
+  const displayStream = await getDisplayCaptureStream(false);
 
   try {
     const video = document.createElement('video');
@@ -254,10 +340,7 @@ async function captureStillFromDisplay(mimeType: string): Promise<CaptureResult>
 async function createScreenCameraSession(
   options: Record<string, string | number | boolean>,
 ): Promise<CaptureSession> {
-  const displayStream = await navigator.mediaDevices.getDisplayMedia({
-    video: { frameRate: 30 },
-    audio: true,
-  });
+  const displayStream = await getDisplayCaptureStream(true);
   const cameraStream = await navigator.mediaDevices.getUserMedia({
     video: {
       width: { ideal: 1280 },
@@ -356,6 +439,28 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
   const Icon = categoryIcons[tool.category];
   const style = categoryStyles[tool.category];
   const category = getCategoryCopy(locale, tool.category);
+  const captureKind: BrowserCaptureKind = tool.id === 'webcam-recorder' || tool.id === 'audio-recorder' ? 'user-media' : 'display';
+  const isMobileDevice = useMemo(() => detectMobileViewport(), []);
+  const captureSupported = useMemo(() => getCaptureCapability(captureKind), [captureKind]);
+  const mediaRecorderSupported = typeof MediaRecorder !== 'undefined';
+  const isCaptureAvailable = captureSupported && mediaRecorderSupported;
+  const capabilityMessage = useMemo(() => {
+    if (isCaptureAvailable) {
+      return null;
+    }
+
+    if (!captureSupported) {
+      if (captureKind === 'display') {
+        return isMobileDevice
+          ? 'This mobile browser does not expose screen sharing. Use a Chromium-based mobile browser that supports screen capture, or switch to desktop.'
+          : 'This browser does not expose screen capture APIs.';
+      }
+
+      return 'This browser does not expose camera or microphone capture APIs.';
+    }
+
+    return 'This browser does not support MediaRecorder for local capture.';
+  }, [captureKind, captureSupported, isCaptureAvailable, isMobileDevice]);
   const [options, setOptions] = useState<Record<string, string | number | boolean>>(() => getInitialOptions(tool, searchParams));
   const [status, setStatus] = useState<CaptureStatus>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -470,8 +575,8 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
   };
 
   const startRecording = async () => {
-    if (!navigator.mediaDevices || typeof MediaRecorder === 'undefined') {
-      const message = 'This browser does not support in-browser recording APIs.';
+    if (!isCaptureAvailable || !navigator.mediaDevices || typeof MediaRecorder === 'undefined') {
+      const message = capabilityMessage ?? 'This browser does not support in-browser recording APIs.';
       setError(message);
       setStatus('error');
       toast.error(message);
@@ -492,7 +597,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
       const includeMic = Boolean(options.includeMicrophone ?? true);
 
       if (tool.id === 'screen-recorder') {
-        const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: false });
+        const displayStream = await getDisplayCaptureStream(false);
         session = {
           recordStream: displayStream,
           previewStream: displayStream,
@@ -500,7 +605,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
           cleanup: () => stopTracks(displayStream),
         };
       } else if (tool.id === 'screen-audio-recorder') {
-        const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: true });
+        const displayStream = await getDisplayCaptureStream(true);
         session = {
           recordStream: displayStream,
           previewStream: displayStream,
@@ -508,7 +613,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
           cleanup: () => stopTracks(displayStream),
         };
       } else if (tool.id === 'screen-mic-recorder') {
-        const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: false });
+        const displayStream = await getDisplayCaptureStream(false);
         const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
         const mergedStream = combineStreams([displayStream, micStream]);
         session = {
@@ -566,7 +671,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
       };
 
       recorder.onstop = () => {
-        const outputMimeType = recorder.mimeType || (tool.id === 'audio-recorder' ? 'audio/webm' : 'video/webm');
+        const outputMimeType = recorder.mimeType || mimeType || pickSupportedMimeType(tool.id === 'audio-recorder' ? 'audio' : 'video') || (tool.id === 'audio-recorder' ? 'audio/webm' : 'video/webm');
         const blob = new Blob(chunksRef.current, { type: outputMimeType });
         finalizeRecording(blob, outputMimeType);
       };
@@ -600,6 +705,14 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
   };
 
   const takeScreenshot = async () => {
+    if (!isCaptureAvailable) {
+      const message = capabilityMessage ?? 'This browser does not support screen capture.';
+      setError(message);
+      setStatus('error');
+      toast.error(message);
+      return;
+    }
+
     try {
       setStatus('starting');
       setError(null);
@@ -634,6 +747,9 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
           : error ?? messages.workbench.statusIdle;
 
   const resultTabs = [{ id: 'result', label: messages.workbench.results }];
+  const mobileGuidance = isMobileDevice
+    ? 'On supported mobile browsers, choose This Tab or the shared screen option when the browser opens the capture picker.'
+    : 'On desktop browsers, use the system picker to choose a screen, app window, or browser tab.';
 
   return (
     <ToolPageLayout title={localizedTool.name} description={localizedTool.description} icon={Icon} iconColor={style.icon}>
@@ -651,6 +767,12 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
               </div>
               <span className={`badge border ${style.badge}`}>{category.nav}</span>
             </div>
+
+            {capabilityMessage ? (
+              <div className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn">
+                {capabilityMessage}
+              </div>
+            ) : null}
 
             {tool.id === 'audio-recorder' ? (
               <div className="rounded-xl border border-border bg-base-elevated p-5">
@@ -691,7 +813,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
 
             <div className="flex flex-wrap gap-3">
               {tool.id === 'screenshot-capture' ? (
-                <button type="button" onClick={() => void takeScreenshot()} className="btn-primary">
+                <button type="button" onClick={() => void takeScreenshot()} disabled={!isCaptureAvailable || status === 'starting'} className="btn-primary disabled:cursor-not-allowed disabled:opacity-60">
                   {status === 'starting' ? <LoaderCircle size={16} className="animate-spin" /> : <Monitor size={16} />}
                   Capture screenshot
                 </button>
@@ -701,7 +823,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
                   Stop capture
                 </button>
               ) : (
-                <button type="button" onClick={() => void startRecording()} className="btn-primary">
+                <button type="button" onClick={() => void startRecording()} disabled={!isCaptureAvailable || status === 'starting'} className="btn-primary disabled:cursor-not-allowed disabled:opacity-60">
                   {status === 'starting' ? <LoaderCircle size={16} className="animate-spin" /> : <Play size={16} />}
                   Start capture
                 </button>
@@ -771,6 +893,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
               <ul className="mt-3 space-y-2 text-sm text-ink-muted">
                 <li>Browser permissions are requested only when capture starts.</li>
                 <li>Screen audio depends on browser and operating system support.</li>
+                <li>{mobileGuidance}</li>
                 <li>Everything stays local to this browser tab until you download it.</li>
               </ul>
             </section>

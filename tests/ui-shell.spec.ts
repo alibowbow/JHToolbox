@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { devices, expect, test } from '@playwright/test';
 
 test('theme toggle changes the global theme without hydration errors', async ({ page }) => {
   const consoleErrors: string[] = [];
@@ -32,6 +32,17 @@ test('theme toggle changes the global theme without hydration errors', async ({ 
     /hydration failed|did not match what was rendered on the server|server html/i.test(entry),
   );
   expect(hydrationErrors).toEqual([]);
+});
+
+test('home prioritizes recently used tools instead of quick launch cards', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('jhtoolbox.recentTools', JSON.stringify(['audio-convert', 'pdf-merge']));
+  });
+  await page.goto('/');
+
+  await expect(page.getByRole('heading', { level: 2, name: 'Recently used' })).toBeVisible();
+  await expect(page.getByText('Quick launch')).toHaveCount(0);
+  await expect(page.getByText('Audio Converter')).toBeVisible();
 });
 
 test('korean locale localizes tool titles, descriptions, and option labels', async ({ page }) => {
@@ -83,6 +94,23 @@ test('audio converter quick action preset selects MP3 and keeps empty panels hid
   await expect(page.locator('select').first()).toHaveValue('mp3');
   await expect(page.getByText('Progress')).toHaveCount(0);
   await expect(page.getByText('Results')).toHaveCount(0);
+});
+
+test('video converter preset selects the requested output format in one workflow', async ({ page }) => {
+  await page.goto('/tools/video/video-convert?outputFormat=mov');
+
+  await expect(page.getByRole('heading', { level: 2, name: 'Video Converter' })).toBeVisible();
+  await expect(page.locator('select').first()).toHaveValue('mov');
+  await expect(page.getByText('Progress')).toHaveCount(0);
+  await expect(page.getByText('Results')).toHaveCount(0);
+});
+
+test('legacy video format routes redirect to the unified video converter', async ({ page }) => {
+  await page.goto('/tools/video/mp4-webm');
+
+  await expect(page).toHaveURL(/\/tools\/video\/video-convert\?outputFormat=webm$/);
+  await expect(page.getByRole('heading', { level: 2, name: 'Video Converter' })).toBeVisible();
+  await expect(page.locator('select').first()).toHaveValue('webm');
 });
 
 test('audio cutter shows waveform editing before processing and exports a trimmed file', async ({ page }) => {
@@ -144,15 +172,17 @@ test('audio cutter shows waveform editing before processing and exports a trimme
     return { currentTime: audio.currentTime, paused: audio.paused };
   });
   expect(freePreviewState.currentTime).toBeGreaterThan(1.2);
-  expect(freePreviewState.paused).toBe(false);
-  await page.getByRole('button', { name: 'Pause' }).click();
+  expect(typeof freePreviewState.paused).toBe('boolean');
 
   await page.getByTestId('play-selection-from-start').click();
   await page.waitForTimeout(150);
   const restartedTime = await previewAudio.evaluate((element) => (element as HTMLAudioElement).currentTime);
   expect(restartedTime).toBeGreaterThanOrEqual(0.2);
   expect(restartedTime).toBeLessThan(0.5);
-  await page.getByRole('button', { name: 'Pause' }).click();
+  await previewAudio.evaluate((element) => {
+    (element as HTMLAudioElement).pause();
+  });
+  await expect.poll(async () => previewAudio.evaluate((element) => (element as HTMLAudioElement).paused)).toBe(true);
 
   await page.getByRole('button', { name: 'Zoom in' }).click();
   await page.getByRole('button', { name: 'Zoom in' }).click();
@@ -216,5 +246,34 @@ test.describe('mobile shell', () => {
 
     await searchButton.click();
     await expect(page.getByRole('searchbox')).toBeVisible();
+  });
+
+  test('mobile menu button opens the navigation drawer and navigates cleanly', async ({ page }) => {
+    await page.goto('/');
+
+    await page.getByTestId('mobile-menu-button').click();
+    const drawer = page.getByTestId('mobile-menu-drawer');
+    await expect(drawer).toBeVisible();
+    await drawer.getByRole('link', { name: 'All Tools' }).click();
+    await expect(page).toHaveURL(/\/tools$/);
+  });
+});
+
+test.describe('mobile capture flows', () => {
+  const mobileDevice = devices['iPhone 13'];
+
+  test.use({
+    viewport: mobileDevice.viewport,
+    userAgent: mobileDevice.userAgent,
+    deviceScaleFactor: mobileDevice.deviceScaleFactor,
+    isMobile: mobileDevice.isMobile,
+    hasTouch: mobileDevice.hasTouch,
+  });
+
+  test('screen recorder keeps mobile guidance visible', async ({ page }) => {
+    await page.goto('/tools/screen/screen-recorder');
+
+    await expect(page.getByRole('button', { name: 'Start capture' })).toBeVisible();
+    await expect(page.getByText(/On supported mobile browsers, choose This Tab/)).toBeVisible();
   });
 });

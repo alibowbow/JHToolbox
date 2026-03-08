@@ -44,6 +44,20 @@ export function Topbar() {
     }
   }, [searchOpen]);
 
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+
+    if (menuOpen || searchOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = previousOverflow;
+    }
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [menuOpen, searchOpen]);
+
   const searchResults = useMemo(() => {
     const normalizedQuery = deferredQuery.trim().toLowerCase();
     if (!normalizedQuery) {
@@ -72,7 +86,11 @@ export function Topbar() {
         <div className="flex items-center">
           <button
             type="button"
-            onClick={() => setMenuOpen(true)}
+            onClick={() => {
+              setSearchOpen(false);
+              setMenuOpen(true);
+            }}
+            data-testid="mobile-menu-button"
             className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-base-elevated text-ink-muted transition-colors hover:text-ink md:hidden"
             aria-label={messages.topbar.menu}
           >
@@ -83,7 +101,10 @@ export function Topbar() {
         <div className="flex min-w-0 items-center gap-2">
           <button
             type="button"
-            onClick={() => setSearchOpen(true)}
+            onClick={() => {
+              setMenuOpen(false);
+              setSearchOpen(true);
+            }}
             className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-base-elevated text-ink-muted transition-colors hover:border-border-bright hover:text-ink sm:hidden"
             aria-label={messages.topbar.searchLabel}
           >
@@ -91,7 +112,10 @@ export function Topbar() {
           </button>
           <button
             type="button"
-            onClick={() => setSearchOpen(true)}
+            onClick={() => {
+              setMenuOpen(false);
+              setSearchOpen(true);
+            }}
             className="group hidden min-w-0 items-center gap-2 rounded-xl border border-border bg-base-elevated px-3 py-2 text-sm text-ink-muted transition-colors hover:border-border-bright hover:text-ink sm:inline-flex sm:w-56 lg:w-72"
           >
             <Search size={14} className="shrink-0 text-ink-faint transition-colors group-hover:text-prime" />
@@ -118,7 +142,8 @@ export function Topbar() {
               initial={{ x: -24, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -24, opacity: 0 }}
-              className="h-full w-72 border-r border-border bg-base-subtle px-4 py-4"
+              data-testid="mobile-menu-drawer"
+              className="pointer-events-auto h-full w-72 border-r border-border bg-base-subtle px-4 py-4 shadow-card"
               onClick={(event) => event.stopPropagation()}
             >
               <div className="mb-6 flex items-center justify-between">
@@ -134,7 +159,7 @@ export function Topbar() {
                   <X size={18} />
                 </button>
               </div>
-              <NavigationList onNavigate={() => setMenuOpen(false)} />
+              <NavigationList onNavigate={() => setMenuOpen(false)} activeIndicatorId="sidebar-mobile-active" />
             </motion.div>
           </motion.div>
         ) : null}
