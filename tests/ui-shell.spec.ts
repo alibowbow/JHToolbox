@@ -298,8 +298,8 @@ test('audio recorder exposes waveform-first export options', async ({ page }) =>
   await expect(page.getByRole('button', { name: 'Start recording' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Start capture' })).toHaveCount(0);
   await expect(page.getByText('Progress')).toHaveCount(0);
-  await expect(page.locator('select').first()).toHaveValue('keep');
-  await expect(page.locator('select').nth(1)).toHaveValue('wav');
+  await expect(page.getByText('Options')).toHaveCount(0);
+  await expect(page.locator('select')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Export edited audio' })).toHaveCount(0);
 });
 

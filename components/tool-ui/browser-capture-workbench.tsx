@@ -1104,7 +1104,11 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
   return (
     <ToolPageLayout title={localizedTool.name} description={localizedTool.description} icon={Icon} iconColor={style.icon}>
       <div className="space-y-6">
-        <section className="card grid grid-cols-1 gap-4 p-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
+        <section
+          className={`card grid grid-cols-1 gap-4 p-5 ${
+            isAudioRecorder ? '' : 'xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]'
+          }`}
+        >
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -1133,13 +1137,31 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
                     file={audioEditorFile}
                     previewUrl={audioEditorPreviewUrl}
                     trimMode={trimMode}
-                    outputFormat={audioOutputFormat}
                     startTime={Number(options.startTime ?? 0)}
                     endTime={Number(options.endTime ?? 0)}
                     onChange={(nextValues) => setOptions((currentOptions) => ({ ...currentOptions, ...nextValues }))}
                   />
 
-                  <div className="flex flex-wrap gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-2 rounded-xl border border-border bg-base-subtle p-1">
+                      {(['wav', 'mp3'] as const).map((format) => {
+                        const active = audioOutputFormat === format;
+                        return (
+                          <button
+                            key={format}
+                            type="button"
+                            onClick={() => setOptions((currentOptions) => ({ ...currentOptions, outputFormat: format }))}
+                            className={
+                              active
+                                ? 'btn-primary px-3 py-2 text-xs'
+                                : 'btn-ghost border-0 px-3 py-2 text-xs'
+                            }
+                          >
+                            {format.toUpperCase()}
+                          </button>
+                        );
+                      })}
+                    </div>
                     <button type="button" onClick={() => void exportEditedAudio()} disabled={status === 'starting' || status === 'recording'} className="btn-primary disabled:cursor-not-allowed disabled:opacity-60">
                       {status === 'starting' ? <LoaderCircle size={16} className="animate-spin" /> : <Scissors size={16} />}
                       {copy.exportEditedAudio}
@@ -1210,34 +1232,36 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
             </div>
           </div>
 
-          <div className="space-y-4">
-            <section className="rounded-xl border border-border bg-base-elevated p-4">
-              <p className="text-sm font-semibold text-ink">{messages.workbench.options}</p>
-              {tool.options?.length ? (
-                <div className="mt-4 space-y-4">
-                  {tool.options.map((option) => (
-                    <div key={option.key}>
-                      <label className="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">{getLocalizedOptionLabel(option, locale)}</label>
-                      {renderField(option, options[option.key], locale, (key, nextValue) =>
-                        setOptions((currentOptions) => ({ ...currentOptions, [key]: nextValue }))
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-2 text-sm text-ink-muted">{messages.workbench.noOptions}</p>
-              )}
-            </section>
+          {!isAudioRecorder ? (
+            <div className="space-y-4">
+              <section className="rounded-xl border border-border bg-base-elevated p-4">
+                <p className="text-sm font-semibold text-ink">{messages.workbench.options}</p>
+                {tool.options?.length ? (
+                  <div className="mt-4 space-y-4">
+                    {tool.options.map((option) => (
+                      <div key={option.key}>
+                        <label className="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">{getLocalizedOptionLabel(option, locale)}</label>
+                        {renderField(option, options[option.key], locale, (key, nextValue) =>
+                          setOptions((currentOptions) => ({ ...currentOptions, [key]: nextValue }))
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-ink-muted">{messages.workbench.noOptions}</p>
+                )}
+              </section>
 
-            <section className="rounded-xl border border-border bg-base-elevated p-4">
-              <p className="text-sm font-semibold text-ink">{copy.captureNotes}</p>
-              <ul className="mt-3 space-y-2 text-sm text-ink-muted">
-                {captureNotes.map((note) => (
-                  <li key={note}>{note}</li>
-                ))}
-              </ul>
-            </section>
-          </div>
+              <section className="rounded-xl border border-border bg-base-elevated p-4">
+                <p className="text-sm font-semibold text-ink">{copy.captureNotes}</p>
+                <ul className="mt-3 space-y-2 text-sm text-ink-muted">
+                  {captureNotes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              </section>
+            </div>
+          ) : null}
         </section>
 
         {showProgress ? (

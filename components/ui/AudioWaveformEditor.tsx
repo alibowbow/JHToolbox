@@ -14,10 +14,9 @@ interface AudioWaveformEditorProps {
   file: File;
   previewUrl: string;
   trimMode: string;
-  outputFormat: string;
   startTime: number;
   endTime: number;
-  onChange: (nextValues: { startTime?: number; endTime?: number }) => void;
+  onChange: (nextValues: { startTime?: number; endTime?: number; trimMode?: string }) => void;
 }
 
 type DragMode = 'start' | 'end' | 'range' | 'playhead';
@@ -87,7 +86,6 @@ export function AudioWaveformEditor({
   file,
   previewUrl,
   trimMode,
-  outputFormat,
   startTime,
   endTime,
   onChange,
@@ -122,13 +120,6 @@ export function AudioWaveformEditor({
   const endPercent = safeDuration ? normalizedSelection.endTime / safeDuration : 0;
   const selectionWidthPercent = Math.max((endPercent - startPercent) * 100, 0.5);
   const playheadPercent = safeDuration ? clamp(currentTime / safeDuration, 0, 1) : 0;
-  const localizedTrimMode = getLocalizedChoiceLabel(
-    trimMode === 'remove' ? 'Remove selection' : 'Keep selection',
-    locale,
-  );
-  const localizedOutputFormat =
-    outputFormat === 'keep' ? getLocalizedChoiceLabel('Keep original', locale) : outputFormat.toUpperCase();
-
   const setPlaybackMode = (nextMode: PlaybackMode) => {
     playbackModeRef.current = nextMode;
   };
@@ -722,9 +713,28 @@ export function AudioWaveformEditor({
               {messages.workbench.playSelectionFromStart}
             </button>
           </div>
-          <span className="badge border border-border bg-base-subtle text-ink-muted">
-            {localizedTrimMode} | {localizedOutputFormat}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { id: 'keep', label: getLocalizedChoiceLabel('Keep selection', locale) },
+              { id: 'remove', label: getLocalizedChoiceLabel('Remove selection', locale) },
+            ].map((mode) => {
+              const active = trimMode === mode.id;
+              return (
+                <button
+                  key={mode.id}
+                  type="button"
+                  onClick={() => onChangeRef.current({ trimMode: mode.id })}
+                  className={
+                    active
+                      ? 'btn-primary px-3 py-2 text-xs'
+                      : 'btn-ghost px-3 py-2 text-xs'
+                  }
+                >
+                  {mode.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">

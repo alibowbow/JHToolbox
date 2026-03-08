@@ -12,6 +12,7 @@ import { PdfPageEditor, PdfEditorPage } from '@/components/ui/PdfPageEditor';
 import { DropZone } from '@/components/ui/DropZone';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { ResultCard } from '@/components/ui/ResultCard';
+import { UrlImageCropper } from '@/components/ui/UrlImageCropper';
 import { Tabs } from '@/components/ui/Tabs';
 import { toast } from '@/components/ui/Toast';
 import { formatMegaBytes, getCategoryCopy } from '@/lib/i18n';
@@ -495,7 +496,6 @@ export function ToolWorkbench({ tool }: { tool: ToolDefinition }) {
                         file={files[0]}
                         previewUrl={inputPreviewUrl}
                         trimMode={trimMode}
-                        outputFormat={outputFormat}
                         startTime={Number(options.startTime ?? 0)}
                         endTime={Number(options.endTime ?? 0)}
                         onChange={(nextValues) =>
@@ -643,10 +643,17 @@ export function ToolWorkbench({ tool }: { tool: ToolDefinition }) {
                           fileName={result.name}
                           fileSize={formatMegaBytes(result.blob.size)}
                           title={messages.workbench.success}
-                          actionLabel={messages.workbench.download}
+                          actionLabel={
+                            tool.id === 'url-image' && result.previewUrl && result.mimeType.startsWith('image/')
+                              ? messages.workbench.downloadOriginal
+                              : messages.workbench.download
+                          }
                           onDownload={() => downloadBlob(result.blob, result.name)}
                         >
-                          {result.previewUrl && result.mimeType.startsWith('image/') ? (
+                          {tool.id === 'url-image' && result.previewUrl && result.mimeType.startsWith('image/') ? (
+                            <UrlImageCropper fileName={result.name} outputMimeType={result.mimeType} previewUrl={result.previewUrl} />
+                          ) : null}
+                          {tool.id !== 'url-image' && result.previewUrl && result.mimeType.startsWith('image/') ? (
                             <img src={result.previewUrl} alt={result.name} className="max-h-80 w-full rounded-xl object-contain" />
                           ) : null}
                           {result.previewUrl && result.mimeType.startsWith('video/') ? (
