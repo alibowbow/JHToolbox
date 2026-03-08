@@ -149,11 +149,4 @@
       linear-gradient(180deg, rgb(var(--color-base-elevated) / 0.98), rgb(var(--color-base-elevated) / 0.92));
   }
 
-  .hero-description {
-    color: rgb(var(--color-ink) / 0.78);
-  }
-
-  html.dark .hero-description {
-    color: rgb(var(--color-ink) / 0.84);
-  }
 }
