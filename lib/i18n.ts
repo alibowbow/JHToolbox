@@ -437,14 +437,20 @@ export const categoryCopy: Record<
 export function getCategoryCopy(locale: Locale, category: ToolCategory) {
   return (
     categoryCopy[locale][category] ?? {
-      nav: category === 'screen' ? 'Screen' : category.toUpperCase(),
-      title: category === 'screen' ? 'Screen Capture Tools' : `${category} Tools`,
+      nav: category === 'screen' ? (locale === 'ko' ? '화면 캡처' : 'Screen') : category.toUpperCase(),
+      title: category === 'screen' ? (locale === 'ko' ? '화면 캡처 도구' : 'Screen Capture Tools') : `${category} Tools`,
       description:
         category === 'screen'
-          ? 'Record screens, webcams, and microphones directly in the browser.'
+          ? locale === 'ko'
+            ? '브라우저에서 화면, 웹캠, 마이크를 바로 녹화합니다.'
+            : 'Record screens, webcams, and microphones directly in the browser.'
           : 'Browser-side tools for this category.',
       shortDescription:
-        category === 'screen' ? 'Record screens, webcams, and audio.' : 'Browser-side workflow tools.',
+        category === 'screen'
+          ? locale === 'ko'
+            ? '화면, 웹캠, 오디오 녹화'
+            : 'Record screens, webcams, and audio.'
+          : 'Browser-side workflow tools.',
     }
   );
 }

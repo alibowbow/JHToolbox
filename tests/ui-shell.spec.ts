@@ -45,6 +45,14 @@ test('korean locale localizes tool titles, descriptions, and option labels', asy
   await expect(page.getByText('출력 포맷')).toBeVisible();
 });
 
+test('korean locale also localizes newly added screen tools', async ({ page }) => {
+  await page.goto('/tools/screen/screenshot-capture');
+  await page.getByRole('button', { name: 'ko' }).click();
+
+  await expect(page.getByRole('heading', { level: 2, name: '스크린샷 캡처' })).toBeVisible();
+  await expect(page.getByRole('main').getByText('화면 캡처')).toBeVisible();
+});
+
 test('sidebar navigation remains stable after visiting a tool detail page', async ({ page }) => {
   await page.goto('/tools/pdf/pdf-merge');
 
