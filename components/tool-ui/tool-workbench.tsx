@@ -32,7 +32,7 @@ import { ToolDefinition, ToolOption } from '@/types/tool';
 
 const OPTIONAL_FILE_TOOLS = new Set(['qr-generator', 'url-image', 'url-pdf', 'detect-cms']);
 const PDF_EDITOR_TOOLS = new Set(['pdf-merge', 'pdf-rearrange']);
-const CUSTOM_OPTIONS_IN_PREVIEW_TOOLS = new Set(['pdf-rearrange']);
+const CUSTOM_OPTIONS_IN_PREVIEW_TOOLS = new Set(['pdf-rearrange', 'image-crop']);
 
 type SearchParamSource = Pick<URLSearchParams, 'get'>;
 type ToolOptionValues = Record<string, string | number | boolean>;

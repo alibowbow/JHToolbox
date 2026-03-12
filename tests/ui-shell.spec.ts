@@ -367,9 +367,8 @@ test('image crop supports fixed ratios and freeform drag editing before processi
   }
   expect(freeformBox.width).toBeLessThan(stageBox.width);
   expect(freeformBox.height).toBeLessThan(stageBox.height);
-
-  await expect(page.locator('input[type="number"]').nth(2)).not.toHaveValue('1200');
-  await expect(page.locator('input[type="number"]').nth(3)).not.toHaveValue('800');
+  await expect(page.getByText('Options')).toHaveCount(0);
+  await expect(page.locator('input[type="number"]')).toHaveCount(0);
 });
 test('url-based tools start from direct input without showing the upload dropzone', async ({ page }) => {
   await page.goto('/tools/pdf/url-pdf');
