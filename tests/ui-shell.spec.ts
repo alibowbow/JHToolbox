@@ -299,6 +299,71 @@ test('image resize presets fill both width and height together', async ({ page }
   await expect(page.locator('input[type="number"]').nth(1)).toHaveValue('1920');
 });
 
+test('tool options can save, reapply, and reset a preset', async ({ page }) => {
+  await page.goto('/tools/image/image-resize');
+
+  const widthInput = page.locator('input[type="number"]').first();
+  const heightInput = page.locator('input[type="number"]').nth(1);
+
+  await widthInput.fill('777');
+  await heightInput.fill('555');
+
+  await page.getByTestId('tool-save-preset').click();
+
+  await widthInput.fill('320');
+  await heightInput.fill('240');
+
+  await page.getByTestId('tool-apply-preset').click();
+  await expect(widthInput).toHaveValue('777');
+  await expect(heightInput).toHaveValue('555');
+
+  await page.getByTestId('tool-reset-options').click();
+  await expect(widthInput).toHaveValue('1280');
+  await expect(heightInput).toHaveValue('720');
+});
+
+test('tool options restore the last successful run settings on revisit', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      'jhtoolbox.toolOptionMemory',
+      JSON.stringify({
+        'image-resize': {
+          lastRun: { width: 640, height: 360, format: 'image/webp' },
+        },
+      }),
+    );
+  });
+
+  await page.goto('/tools/image/image-resize');
+
+  await expect(page.locator('input[type="number"]').first()).toHaveValue('640');
+  await expect(page.locator('input[type="number"]').nth(1)).toHaveValue('360');
+  await expect(page.locator('select').first()).toHaveValue('image/webp');
+  await expect(page.getByTestId('tool-option-memory-restored')).toBeVisible();
+});
+
+test('image tools show a before and after comparison for single-image results', async ({ page }) => {
+  await page.goto('/tools/image/image-resize');
+
+  const samplePng = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAACAAAAAYCAYAAACbU/80AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAN9SURBVEhLDc4hC7aIAQBgf45pyfQmk8kwhANZcMUywxAGcsErlhmGMJAFVywzDGEgX3DFciaT6U0m/8jdE57+BOEff/z2ByI+xCSkZOQUlFTUNLR09AyMTMwsrGzsHJxc3Hx5eAnCnwSI+BCTkJKRU1BSUdPQ0tEzMDIxs7CysXNwcnHz5eElCP8kQMSHmISUjJyCkoqahpaOnoGRiZmFlY2dg5OLmy8PL0H4ZwEiPsQkpGTkFJRU1DS0dPQMjEzMLKxs7BycXNx8eXgJwlKAiA8xCSkZOQUlFTUNLR09AyMTMwsrGzsHJxc3Xx5egvAvAkR8iElIycgpKKmoaWjp6BkYmZhZWNnYOTi5uPny8BKEfxUg4kNMQkpGTkFJRU1DS0fPwMjEzMLKxs7BycXNl4eXIPybABEfYhJSMnIKSipqGlo6egZGJmYWVjZ2Dk4ubr48vAThzwJEfIhJSMnIKSipqGlo6egZGJmYWVjZ2Dk4ubj58vAShL8IEPEhJiElI6egpKKmoaWjZ2BkYmZhZWPn4OTi5svDSxB2AkR8iElIycgpKKmoaWjp6BkYmZhZWNnYOTi5uPny8BKEfxcg4kNMQkpGTkFJRU1DS0fPwMjEzMLKxs7BycXNl4eXIPyHABEfYhJSMnIKSipqGlo6egZGJmYWVjZ2Dk4ubr48vAThPwWI+BCTkJKRU1BSUdPQ0tEzMDIxs7CysXNwcnHz5eElCP8lQMSHmISUjJyCkoqahpaOnoGRiZmFlY2dg5OLmy8PL0H4bwEiPsQkpGTkFJRU1DS0dPQMjEzMLKxs7BycXNx8eXgJwlmAiA8xCSkZOQUlFTUNLR09AyMTMwsrGzsHJxc3Xx5egvA/AkR8iElIycgpKKmoaWjp6BkYmZhZWNnYOTi5uPny8BKE/xUg4kNMQkpGTkFJRU1DS0fPwMjEzMLKxs7BycXNl4eXIPyfABEfYhJSMnIKSipqGlo6egZGJmYWVjZ2Dk4ubr48vAThDwEiPsQkpGTkFJRU1DS0dPQMjEzMLKxs7BycXNx8eXgJwv8LEPEhJiElI6egpKKmoaWjZ2BkYmZhZWPn4OTi5svDSxAeAkR8iElIycgpKKmoaWjp6BkYmZhZWNnYOTi5uPny8BKEvwoQ8SEmISUjp6CkoqahpaNnYGRiZmFlY+fg5OLmy8P764/ffgeL3ET5fTaOFgAAAABJRU5ErkJggg==',
+    'base64',
+  );
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'compare-source.png',
+    mimeType: 'image/png',
+    buffer: samplePng,
+  });
+
+  await page.getByRole('button', { name: 'Run tool' }).click();
+
+  await expect(page.getByTestId('before-after-compare')).toBeVisible({ timeout: 60_000 });
+  const slider = page.getByTestId('before-after-compare-slider');
+  await slider.fill('72');
+  await expect(slider).toHaveValue('72');
+});
+
 test('image crop supports fixed ratios and freeform drag editing before processing', async ({ page }) => {
   await page.goto('/tools/image/image-crop');
 

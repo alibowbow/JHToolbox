@@ -7,6 +7,7 @@ import { useSearchParams } from 'next/navigation';
 import { ToolPageLayout } from '@/components/ToolPageLayout';
 import { useLocale } from '@/components/providers/locale-provider';
 import { AudioWaveformEditor } from '@/components/ui/AudioWaveformEditor';
+import { BeforeAfterImageCompare } from '@/components/ui/BeforeAfterImageCompare';
 import { BrowserCaptureWorkbench } from '@/components/tool-ui/browser-capture-workbench';
 import { PdfPageEditor, PdfEditorPage } from '@/components/ui/PdfPageEditor';
 import { DropZone } from '@/components/ui/DropZone';
@@ -23,6 +24,15 @@ import {
   getLocalizedPlaceholder,
   getLocalizedToolCopy,
 } from '@/lib/tool-localization';
+import {
+  clearPresetToolOptions,
+  getLastRunToolOptions,
+  getPresetToolOptions,
+  hasLastRunToolOptions,
+  hasPresetToolOptions,
+  saveLastRunToolOptions,
+  savePresetToolOptions,
+} from '@/lib/tool-option-memory';
 import { runTool } from '@/lib/processors';
 import { categoryIcons, categoryStyles } from '@/lib/tool-presentation';
 import { pushRecentTool } from '@/lib/recent-tools';
@@ -33,6 +43,14 @@ import { ToolDefinition, ToolOption } from '@/types/tool';
 const OPTIONAL_FILE_TOOLS = new Set(['qr-generator', 'url-image', 'url-pdf', 'detect-cms']);
 const PDF_EDITOR_TOOLS = new Set(['pdf-merge', 'pdf-rearrange']);
 const CUSTOM_OPTIONS_IN_PREVIEW_TOOLS = new Set(['pdf-rearrange', 'image-crop']);
+const IMAGE_COMPARE_EXCLUDED_TOOL_IDS = new Set([
+  'image-crop',
+  'image-split',
+  'image-combine',
+  'image-collage',
+  'image-color-palette-extract',
+  'url-image',
+]);
 
 type SearchParamSource = Pick<URLSearchParams, 'get'>;
 type ToolOptionValues = Record<string, string | number | boolean>;
@@ -243,8 +261,12 @@ function getDefaults(tool: ToolDefinition): Record<string, string | number | boo
 function getInitialOptions(
   tool: ToolDefinition,
   searchParams: SearchParamSource,
+  restoredOptions?: Record<string, string | number | boolean> | null,
 ): Record<string, string | number | boolean> {
   const defaults = getDefaults(tool);
+  if (restoredOptions) {
+    Object.assign(defaults, restoredOptions);
+  }
 
   for (const option of tool.options ?? []) {
     const paramValue = searchParams.get(option.key);
@@ -266,6 +288,10 @@ function getInitialOptions(
   }
 
   return defaults;
+}
+
+function hasSearchParamOverrides(tool: ToolDefinition, searchParams: SearchParamSource) {
+  return (tool.options ?? []).some((option) => searchParams.get(option.key) !== null);
 }
 
 function moveFileItem(files: File[], fromIndex: number, toIndex: number) {
@@ -445,15 +471,20 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
   });
   const [results, setResults] = useState<ProcessedFile[]>([]);
   const [inputPreviewUrl, setInputPreviewUrl] = useState<string | null>(null);
+  const [savedPresetAvailable, setSavedPresetAvailable] = useState(false);
+  const [lastRunAvailable, setLastRunAvailable] = useState(false);
+  const [restoredFromLastRun, setRestoredFromLastRun] = useState(false);
 
   const displayCategoryId = categoryId ?? tool.category;
   const Icon = categoryIcons[displayCategoryId];
   const style = categoryStyles[displayCategoryId];
   const category = getCategoryCopy(locale, displayCategoryId);
   const localizedTool = getLocalizedToolCopy(tool, locale);
+  const toolOptions = tool.options ?? [];
   const usesDirectInput = tool.inputMode === 'url';
   const usesPdfEditor = PDF_EDITOR_TOOLS.has(tool.id);
-  const hasOptions = Boolean(tool.options?.length);
+  const hasOptions = toolOptions.length > 0;
+  const supportsOptionMemory = hasOptions && !CUSTOM_OPTIONS_IN_PREVIEW_TOOLS.has(tool.id);
   const showOptionsPanel = hasOptions && !CUSTOM_OPTIONS_IN_PREVIEW_TOOLS.has(tool.id);
   const showWideEditorLayout = tool.id === 'audio-cut';
   const fileOptional = usesDirectInput || OPTIONAL_FILE_TOOLS.has(tool.id);
@@ -477,14 +508,32 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
     height: Number(options.height ?? 0),
   };
 
+  const syncOptionMemoryAvailability = () => {
+    if (!supportsOptionMemory) {
+      setSavedPresetAvailable(false);
+      setLastRunAvailable(false);
+      return;
+    }
+
+    setSavedPresetAvailable(hasPresetToolOptions(tool.id));
+    setLastRunAvailable(hasLastRunToolOptions(tool.id));
+  };
+
   useEffect(() => {
-    setOptions(getInitialOptions(tool, searchParams));
+    const restoredOptions =
+      supportsOptionMemory && !hasSearchParamOverrides(tool, searchParams)
+        ? getLastRunToolOptions(tool.id, toolOptions)
+        : null;
+
+    setOptions(getInitialOptions(tool, searchParams, restoredOptions));
     setFiles([]);
     setResults([]);
     setError(null);
     setInputPreviewUrl(null);
     setProgress({ percent: 0, stage: messages.workbench.statusIdle });
-  }, [messages.workbench.statusIdle, searchParamString, searchParams, tool.id]);
+    setRestoredFromLastRun(Boolean(restoredOptions));
+    syncOptionMemoryAvailability();
+  }, [messages.workbench.statusIdle, searchParamString, searchParams, supportsOptionMemory, tool, tool.id]);
 
   useEffect(() => {
     if (!running && !results.length && !error) {
@@ -547,6 +596,62 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
     });
   };
 
+  const updateOptionValue = (key: string, nextValue: string | number | boolean) => {
+    setOptions((currentOptions) => ({
+      ...currentOptions,
+      [key]: nextValue,
+    }));
+  };
+
+  const savePreset = () => {
+    if (!supportsOptionMemory) {
+      return;
+    }
+
+    savePresetToolOptions(tool.id, toolOptions, options);
+    syncOptionMemoryAvailability();
+    toast.success(messages.workbench.presetSaved);
+  };
+
+  const applyPreset = () => {
+    const presetOptions = getPresetToolOptions(tool.id, toolOptions);
+    if (!presetOptions) {
+      toast.error(messages.workbench.missingPreset);
+      return;
+    }
+
+    setOptions({
+      ...getDefaults(tool),
+      ...presetOptions,
+    });
+    setRestoredFromLastRun(false);
+  };
+
+  const clearPreset = () => {
+    clearPresetToolOptions(tool.id);
+    syncOptionMemoryAvailability();
+    toast.success(messages.workbench.presetCleared);
+  };
+
+  const restoreLastRun = () => {
+    const lastRunOptions = getLastRunToolOptions(tool.id, toolOptions);
+    if (!lastRunOptions) {
+      toast.error(messages.workbench.missingLastRun);
+      return;
+    }
+
+    setOptions({
+      ...getDefaults(tool),
+      ...lastRunOptions,
+    });
+    setRestoredFromLastRun(true);
+  };
+
+  const resetOptionsToDefaults = () => {
+    setOptions(getInitialOptions(tool, searchParams));
+    setRestoredFromLastRun(false);
+  };
+
   const onProcess = async () => {
     if (!files.length && !fileOptional) {
       setError(messages.workbench.addFileError);
@@ -600,6 +705,10 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
 
       setResults(filesWithPreview);
       setProgress({ percent: 100, stage: messages.workbench.statusDone });
+      if (supportsOptionMemory) {
+        saveLastRunToolOptions(tool.id, toolOptions, options);
+        syncOptionMemoryAvailability();
+      }
       pushRecentTool(tool.id);
       toast.success(messages.workbench.success);
     } catch (cause) {
@@ -641,6 +750,78 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
   };
 
   const progressStatus = error ? 'error' : results.length ? 'done' : running ? 'running' : 'idle';
+  const optionMemoryPanel = supportsOptionMemory ? (
+    <div className="rounded-xl border border-border bg-base-subtle/70 p-3" data-testid="tool-option-memory-panel">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-faint">
+            {messages.workbench.settingsMemoryTitle}
+          </p>
+          <p className="mt-1 text-xs text-ink-muted">{messages.workbench.settingsMemoryDescription}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {savedPresetAvailable ? (
+            <span className="badge border border-prime/30 bg-prime/10 text-prime">{messages.workbench.savedPresetReady}</span>
+          ) : null}
+          {lastRunAvailable ? (
+            <span className="badge border border-border bg-base-elevated text-ink-muted">{messages.workbench.lastRunReady}</span>
+          ) : null}
+        </div>
+      </div>
+      {restoredFromLastRun ? (
+        <p className="mt-3 text-xs text-ok" data-testid="tool-option-memory-restored">
+          {messages.workbench.restoredFromLastRun}
+        </p>
+      ) : null}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={savePreset}
+          disabled={running}
+          className="btn-ghost px-3 py-2 text-xs"
+          data-testid="tool-save-preset"
+        >
+          {messages.workbench.savePreset}
+        </button>
+        <button
+          type="button"
+          onClick={applyPreset}
+          disabled={!savedPresetAvailable || running}
+          className="btn-ghost px-3 py-2 text-xs"
+          data-testid="tool-apply-preset"
+        >
+          {messages.workbench.applyPreset}
+        </button>
+        <button
+          type="button"
+          onClick={clearPreset}
+          disabled={!savedPresetAvailable || running}
+          className="btn-ghost px-3 py-2 text-xs"
+          data-testid="tool-clear-preset"
+        >
+          {messages.workbench.clearPreset}
+        </button>
+        <button
+          type="button"
+          onClick={restoreLastRun}
+          disabled={!lastRunAvailable || running}
+          className="btn-ghost px-3 py-2 text-xs"
+          data-testid="tool-restore-last-run"
+        >
+          {messages.workbench.restoreLastRun}
+        </button>
+        <button
+          type="button"
+          onClick={resetOptionsToDefaults}
+          disabled={running}
+          className="btn-ghost px-3 py-2 text-xs"
+          data-testid="tool-reset-options"
+        >
+          {messages.workbench.resetOptions}
+        </button>
+      </div>
+    </div>
+  ) : null;
 
   return (
     <ToolPageLayout title={localizedTool.name} description={localizedTool.description} icon={Icon} iconColor={style.icon}>
@@ -662,22 +843,11 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
               </div>
 
               <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                {(tool.options ?? []).map((option, optionIndex, allOptions) =>
-                  renderOptionField(
-                    tool,
-                    option,
-                    optionIndex,
-                    allOptions,
-                    options,
-                    locale,
-                    (key, nextValue) =>
-                      setOptions((currentOptions) => ({
-                        ...currentOptions,
-                        [key]: nextValue,
-                      })),
-                  ),
+                {toolOptions.map((option, optionIndex, allOptions) =>
+                  renderOptionField(tool, option, optionIndex, allOptions, options, locale, updateOptionValue),
                 )}
               </div>
+              {optionMemoryPanel ? <div className="mt-4">{optionMemoryPanel}</div> : null}
 
               <button type="button" disabled={running} onClick={onProcess} className="btn-primary mt-5 w-full justify-center lg:w-auto">
                 {running ? <LoaderCircle size={18} className="animate-spin" /> : <Play size={18} />}
@@ -825,21 +995,10 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
               {showOptionsPanel ? (
                 <section className={cx('card p-5', !showWideEditorLayout && 'xl:col-span-2')}>
                   <p className="text-sm font-semibold text-ink">{messages.workbench.options}</p>
+                  {optionMemoryPanel ? <div className="mt-4">{optionMemoryPanel}</div> : null}
                   <div className="mt-4 space-y-4">
-                    {(tool.options ?? []).map((option, optionIndex, allOptions) =>
-                      renderOptionField(
-                        tool,
-                        option,
-                        optionIndex,
-                        allOptions,
-                        options,
-                        locale,
-                        (key, nextValue) =>
-                          setOptions((currentOptions) => ({
-                            ...currentOptions,
-                            [key]: nextValue,
-                          })),
-                      ),
+                    {toolOptions.map((option, optionIndex, allOptions) =>
+                      renderOptionField(tool, option, optionIndex, allOptions, options, locale, updateOptionValue),
                     )}
                   </div>
 
@@ -914,57 +1073,80 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
 
                   {results.length > 0 ? (
                     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                      {results.map((result) => (
-                        <ResultCard
-                          key={result.name}
-                          fileName={result.name}
-                          fileSize={formatMegaBytes(result.blob.size)}
-                          title={messages.workbench.success}
-                          actionLabel={
-                            tool.id === 'url-image' && result.previewUrl && result.mimeType.startsWith('image/')
-                              ? messages.workbench.downloadOriginal
-                              : messages.workbench.download
-                          }
-                          onDownload={() => downloadBlob(result.blob, result.name)}
-                        >
-                          {tool.id === 'url-image' && result.previewUrl && result.mimeType.startsWith('image/') ? (
-                            <UrlImageCropper fileName={result.name} outputMimeType={result.mimeType} previewUrl={result.previewUrl} />
-                          ) : null}
-                          {tool.id !== 'url-image' && result.previewUrl && result.mimeType.startsWith('image/') ? (
-                            <img src={result.previewUrl} alt={result.name} className="max-h-80 w-full rounded-xl object-contain" />
-                          ) : null}
-                          {result.previewUrl && result.mimeType.startsWith('video/') ? (
-                            <video src={result.previewUrl} controls className="max-h-80 w-full rounded-xl" />
-                          ) : null}
-                          {result.previewUrl && result.mimeType.startsWith('audio/') ? (
-                            <audio src={result.previewUrl} controls className="w-full" />
-                          ) : null}
-                          {result.textContent ? (
-                            <div className="space-y-3">
-                              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-base-subtle/70 px-3 py-2">
-                                <p className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.extractedText}</p>
-                                <button
-                                  type="button"
-                                  data-testid="result-copy-text"
-                                  onClick={() => void onCopyResultText(result.textContent ?? '')}
-                                  className="btn-ghost px-3 py-2 text-xs"
-                                >
-                                  <Copy size={14} />
-                                  {messages.workbench.copyText}
-                                </button>
+                      {results.map((result, index) => {
+                        const showImageCompare =
+                          index === 0 &&
+                          Boolean(inputPreviewUrl) &&
+                          files.length === 1 &&
+                          results.length === 1 &&
+                          Boolean(files[0]?.type.startsWith('image/')) &&
+                          Boolean(result.previewUrl) &&
+                          result.mimeType.startsWith('image/') &&
+                          !IMAGE_COMPARE_EXCLUDED_TOOL_IDS.has(tool.id);
+
+                        return (
+                          <ResultCard
+                            key={result.name}
+                            fileName={result.name}
+                            fileSize={formatMegaBytes(result.blob.size)}
+                            title={messages.workbench.success}
+                            actionLabel={
+                              tool.id === 'url-image' && result.previewUrl && result.mimeType.startsWith('image/')
+                                ? messages.workbench.downloadOriginal
+                                : messages.workbench.download
+                            }
+                            onDownload={() => downloadBlob(result.blob, result.name)}
+                          >
+                            {tool.id === 'url-image' && result.previewUrl && result.mimeType.startsWith('image/') ? (
+                              <UrlImageCropper fileName={result.name} outputMimeType={result.mimeType} previewUrl={result.previewUrl} />
+                            ) : null}
+                            {showImageCompare && inputPreviewUrl && result.previewUrl ? (
+                              <BeforeAfterImageCompare
+                                beforeUrl={inputPreviewUrl}
+                                afterUrl={result.previewUrl}
+                                title={messages.workbench.comparePreviewTitle}
+                                description={messages.workbench.comparePreviewDescription}
+                                beforeLabel={messages.workbench.compareBefore}
+                                afterLabel={messages.workbench.compareAfter}
+                                sliderLabel={messages.workbench.compareSliderLabel}
+                              />
+                            ) : null}
+                            {!showImageCompare && tool.id !== 'url-image' && result.previewUrl && result.mimeType.startsWith('image/') ? (
+                              <img src={result.previewUrl} alt={result.name} className="max-h-80 w-full rounded-xl object-contain" />
+                            ) : null}
+                            {result.previewUrl && result.mimeType.startsWith('video/') ? (
+                              <video src={result.previewUrl} controls className="max-h-80 w-full rounded-xl" />
+                            ) : null}
+                            {result.previewUrl && result.mimeType.startsWith('audio/') ? (
+                              <audio src={result.previewUrl} controls className="w-full" />
+                            ) : null}
+                            {result.textContent ? (
+                              <div className="space-y-3">
+                                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-base-subtle/70 px-3 py-2">
+                                  <p className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.extractedText}</p>
+                                  <button
+                                    type="button"
+                                    data-testid="result-copy-text"
+                                    onClick={() => void onCopyResultText(result.textContent ?? '')}
+                                    className="btn-ghost px-3 py-2 text-xs"
+                                  >
+                                    <Copy size={14} />
+                                    {messages.workbench.copyText}
+                                  </button>
+                                </div>
+                                <pre className="max-h-64 overflow-auto rounded-xl border border-border bg-base-subtle p-3 text-xs text-ink">
+                                  {result.textContent}
+                                </pre>
                               </div>
+                            ) : null}
+                            {result.metadata ? (
                               <pre className="max-h-64 overflow-auto rounded-xl border border-border bg-base-subtle p-3 text-xs text-ink">
-                                {result.textContent}
+                                {JSON.stringify(result.metadata, null, 2)}
                               </pre>
-                            </div>
-                          ) : null}
-                          {result.metadata ? (
-                            <pre className="max-h-64 overflow-auto rounded-xl border border-border bg-base-subtle p-3 text-xs text-ink">
-                              {JSON.stringify(result.metadata, null, 2)}
-                            </pre>
-                          ) : null}
-                        </ResultCard>
-                      ))}
+                            ) : null}
+                          </ResultCard>
+                        );
+                      })}
                     </div>
                   ) : null}
                 </section>
