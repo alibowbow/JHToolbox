@@ -299,6 +299,78 @@ test('image resize presets fill both width and height together', async ({ page }
   await expect(page.locator('input[type="number"]').nth(1)).toHaveValue('1920');
 });
 
+test('image crop supports fixed ratios and freeform drag editing before processing', async ({ page }) => {
+  await page.goto('/tools/image/image-crop');
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'sample-crop.svg',
+    mimeType: 'image/svg+xml',
+    buffer: Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">' +
+        '<rect width="1200" height="800" fill="#e2e8f0" />' +
+        '<rect x="80" y="80" width="400" height="240" fill="#0f172a" />' +
+        '<rect x="620" y="120" width="460" height="560" fill="#38bdf8" />' +
+        '<rect x="120" y="430" width="380" height="250" fill="#f97316" />' +
+        '</svg>',
+    ),
+  });
+
+  await expect(page.getByTestId('image-crop-editor')).toBeVisible();
+  await page.getByTestId('image-crop-preset-16-9').click();
+  await expect(page.getByTestId('image-crop-metrics')).toContainText('1200px');
+
+  const selection = page.getByTestId('image-crop-selection');
+  const ratioBox = await selection.boundingBox();
+  if (!ratioBox) {
+    throw new Error('Image crop selection box was not available.');
+  }
+
+  const ratioHandle = page.getByTestId('image-crop-handle-se');
+  const ratioHandleBox = await ratioHandle.boundingBox();
+  if (!ratioHandleBox) {
+    throw new Error('Image crop resize handle was not available.');
+  }
+
+  await ratioHandle.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const startX = rect.left + rect.width / 2;
+    const startY = rect.top + rect.height / 2;
+    const targetX = startX - 140;
+    const targetY = startY - 100;
+
+    element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: startX, clientY: startY, button: 0 }));
+    window.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: targetX, clientY: targetY, buttons: 1 }));
+    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: targetX, clientY: targetY, button: 0 }));
+  });
+
+  const resizedBox = await selection.boundingBox();
+  if (!resizedBox) {
+    throw new Error('Image crop selection box was not available after resizing.');
+  }
+  expect(Math.abs(resizedBox.width - ratioBox.width)).toBeGreaterThan(10);
+
+  await page.getByTestId('image-crop-preset-free').click();
+  const stage = page.getByTestId('image-crop-stage');
+  const stageBox = await stage.boundingBox();
+  if (!stageBox) {
+    throw new Error('Image crop stage was not available.');
+  }
+
+  await page.mouse.move(stageBox.x + stageBox.width - 24, stageBox.y + stageBox.height - 24);
+  await page.mouse.down();
+  await page.mouse.move(stageBox.x + stageBox.width * 0.55, stageBox.y + stageBox.height * 0.55, { steps: 12 });
+  await page.mouse.up();
+
+  const freeformBox = await selection.boundingBox();
+  if (!freeformBox) {
+    throw new Error('Image crop selection box was not available after freeform drawing.');
+  }
+  expect(freeformBox.width).toBeLessThan(stageBox.width);
+  expect(freeformBox.height).toBeLessThan(stageBox.height);
+
+  await expect(page.locator('input[type="number"]').nth(2)).not.toHaveValue('1200');
+  await expect(page.locator('input[type="number"]').nth(3)).not.toHaveValue('800');
+});
 test('url-based tools start from direct input without showing the upload dropzone', async ({ page }) => {
   await page.goto('/tools/pdf/url-pdf');
 
@@ -360,15 +432,32 @@ test('url image allows trimming a long captured page before saving', async ({ pa
 
   await expect(page.getByTestId('url-image-cropper')).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole('button', { name: 'Download original' })).toBeVisible();
+  await expect(page.getByTestId('url-image-crop-preset-free')).toBeVisible();
 
-  const startInput = page.getByTestId('url-image-crop-start-input');
-  await expect(startInput).toHaveValue('0');
-  await page.getByTestId('url-image-crop-start-range').fill('240');
-  await expect(startInput).toHaveValue('240');
+  await page.getByTestId('url-image-crop-preset-4-3').click();
+  const selection = page.getByTestId('url-image-crop-selection');
+  const initialBox = await selection.boundingBox();
+  if (!initialBox) {
+    throw new Error('URL image crop selection box was not available.');
+  }
 
-  await startInput.fill('240');
-  await expect(startInput).toHaveValue('240');
-  await expect(page.getByText(/Crop height:/)).toBeVisible();
+  await selection.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const startX = rect.left + rect.width / 2;
+    const startY = rect.top + rect.height / 2;
+    const targetY = startY + 80;
+
+    element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: startX, clientY: startY, button: 0 }));
+    window.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: startX, clientY: targetY, buttons: 1 }));
+    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: startX, clientY: targetY, button: 0 }));
+  });
+
+  const movedBox = await selection.boundingBox();
+  if (!movedBox) {
+    throw new Error('URL image crop selection box disappeared after dragging.');
+  }
+  expect(Math.abs(movedBox.y - initialBox.y)).toBeGreaterThan(5);
+  await expect(page.getByText('Crop width')).toBeVisible();
 
   const downloadPromise = page.waitForEvent('download');
   await page.getByTestId('url-image-crop-download').click();

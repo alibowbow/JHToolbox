@@ -11,6 +11,7 @@ import { BrowserCaptureWorkbench } from '@/components/tool-ui/browser-capture-wo
 import { PdfPageEditor, PdfEditorPage } from '@/components/ui/PdfPageEditor';
 import { DropZone } from '@/components/ui/DropZone';
 import { ProgressBar } from '@/components/ui/ProgressBar';
+import { ImageCropEditor, type CropRect } from '@/components/ui/ImageCropEditor';
 import { ResultCard } from '@/components/ui/ResultCard';
 import { UrlImageCropper } from '@/components/ui/UrlImageCropper';
 import { Tabs } from '@/components/ui/Tabs';
@@ -48,7 +49,7 @@ type OptionPresetGroup = {
   presets: OptionPreset[];
 };
 
-const RESOLUTION_PRESET_TOOL_IDS = new Set(['image-resize', 'image-crop', 'video-resize', 'video-crop']);
+const RESOLUTION_PRESET_TOOL_IDS = new Set(['image-resize', 'video-resize', 'video-crop']);
 const OVERLAY_SIZE_PRESET_TOOL_IDS = new Set(['pdf-redact', 'edit-pdf', 'pdf-sign']);
 const OUTPUT_WIDTH_PRESET_TOOL_IDS = new Set([
   'video-convert',
@@ -469,6 +470,12 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
   const dropLabel = fileOptional ? messages.workbench.dropzoneOptional : messages.workbench.dropzone;
   const trimMode = String(options.trimMode ?? 'keep');
   const outputFormat = String(options.outputFormat ?? 'keep');
+  const imageCropRect: CropRect = {
+    x: Number(options.x ?? 0),
+    y: Number(options.y ?? 0),
+    width: Number(options.width ?? 0),
+    height: Number(options.height ?? 0),
+  };
 
   useEffect(() => {
     setOptions(getInitialOptions(tool, searchParams));
@@ -760,6 +767,18 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
                             ...nextValues,
                           }))
                         }
+                      />
+                    ) : tool.id === 'image-crop' && inputPreviewUrl && files[0]?.type.startsWith('image/') ? (
+                      <ImageCropEditor
+                        crop={imageCropRect}
+                        previewUrl={inputPreviewUrl}
+                        onCropChange={(nextCrop) =>
+                          setOptions((currentOptions) => ({
+                            ...currentOptions,
+                            ...nextCrop,
+                          }))
+                        }
+                        resetOnImageLoad
                       />
                     ) : inputPreviewUrl ? (
                       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
