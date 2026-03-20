@@ -31,6 +31,7 @@ export default function HomePage() {
   const [recentIds, setRecentIds] = useState<string[]>([]);
   const browseTools = useMemo(() => getBrowsableTools(), []);
   const popularTools = useMemo(() => getToolsByBrowseGroup('popular').slice(0, 6), []);
+  const editorEnabledCount = useMemo(() => getToolsByBrowseGroup('editor-enabled').length, []);
 
   useEffect(() => {
     setRecentIds(getRecentTools());
@@ -41,42 +42,61 @@ export default function HomePage() {
   const collectionTitle = recentTools.length > 0 ? messages.home.recentTitle : messages.home.popularTitle;
   const collectionDescription =
     recentTools.length > 0 ? messages.home.recentDescription : messages.home.popularDescription;
+  const highlightMetrics = [
+    { label: 'Tool count', value: formatToolCount(locale, browseTools.length) },
+    { label: 'Editor-ready', value: formatToolCount(locale, editorEnabledCount) },
+    { label: 'Execution model', value: 'Browser-local' },
+  ];
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-10">
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-10">
       <motion.section
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="surface-glow relative overflow-hidden rounded-xl3 border border-border p-7 shadow-card sm:p-10"
+        className="surface-glow relative overflow-hidden rounded-[2rem] border border-border p-7 shadow-card sm:p-10"
       >
-        <div className="absolute inset-0 bg-grid-faint opacity-60" />
-        <div className="relative z-10 max-w-3xl">
-          <div className="badge mb-4 border border-prime/20 bg-prime/10 text-prime">
-            <span className="h-1.5 w-1.5 rounded-full bg-prime" />
-            {messages.home.badge}
-          </div>
-          <h1 className="font-display text-4xl font-semibold leading-tight tracking-tight text-ink sm:text-5xl">
-            {messages.home.titleLead}
-            <br />
-            <span className="text-prime">{messages.home.titleAccent}</span>
-          </h1>
-          <p
-            className="mt-4 max-w-2xl text-sm leading-relaxed sm:text-base"
-            style={{ color: 'rgb(var(--color-ink) / 0.9)' }}
-          >
-            {messages.home.description}
-          </p>
+        <div className="absolute inset-0 bg-grid-faint opacity-50" />
+        <div className="relative z-10 grid gap-8 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.7fr)] lg:items-end">
+          <div className="max-w-3xl">
+            <div className="badge mb-4 border border-prime/20 bg-prime/10 text-prime">
+              <span className="h-1.5 w-1.5 rounded-full bg-prime" />
+              {messages.home.badge}
+            </div>
+            <h1 className="font-display text-4xl font-semibold leading-tight tracking-tight text-ink sm:text-5xl lg:text-6xl">
+              {messages.home.titleLead}
+              <br />
+              <span className="text-prime">{messages.home.titleAccent}</span>
+            </h1>
+            <p
+              className="mt-4 max-w-2xl text-sm leading-relaxed sm:text-base"
+              style={{ color: 'rgb(var(--color-ink) / 0.9)' }}
+            >
+              {messages.home.description}
+            </p>
 
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Link href="/tools" className="btn-primary">
-              {messages.home.primaryCta}
-              <ArrowRight size={16} />
-            </Link>
-            <a href="#recent-tools" className="btn-ghost">
-              {messages.home.secondaryCta}
-              <ChevronDown size={16} />
-            </a>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link href="/tools" className="btn-primary">
+                {messages.home.primaryCta}
+                <ArrowRight size={16} />
+              </Link>
+              <a href="#recent-tools" className="btn-ghost">
+                {messages.home.secondaryCta}
+                <ChevronDown size={16} />
+              </a>
+            </div>
+          </div>
+
+          <div className="workspace-panel p-5">
+            <p className="workspace-kicker">Workspace at a glance</p>
+            <div className="mt-4 grid gap-3">
+              {highlightMetrics.map((item) => (
+                <div key={item.label} className="workspace-metric">
+                  <p className="workspace-kicker">{item.label}</p>
+                  <p className="workspace-metric-value">{item.value}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </motion.section>
@@ -155,15 +175,16 @@ export default function HomePage() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.4 }}
-        className="grid grid-cols-1 gap-3 md:grid-cols-2"
+        className="grid grid-cols-1 gap-4 md:grid-cols-2"
       >
         {[
           { title: messages.home.featureOneTitle, body: messages.home.featureOneBody },
           { title: messages.home.featureTwoTitle, body: messages.home.featureTwoBody },
         ].map((item) => (
-          <div key={item.title} className="card p-5">
-            <p className="text-sm font-semibold text-ink">{item.title}</p>
-            <p className="mt-2 text-xs leading-relaxed text-ink-muted">{item.body}</p>
+          <div key={item.title} className="workspace-panel p-5">
+            <p className="workspace-kicker">Why it feels better</p>
+            <p className="mt-3 text-base font-semibold text-ink">{item.title}</p>
+            <p className="mt-2 text-sm leading-relaxed text-ink-muted">{item.body}</p>
           </div>
         ))}
       </motion.section>

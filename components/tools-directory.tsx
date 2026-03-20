@@ -1,61 +1,30 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { ToolCard } from '@/components/tool-card';
 import { Tabs } from '@/components/ui/Tabs';
 import { useLocale } from '@/components/providers/locale-provider';
 import { formatToolCount, getCategoryCopy } from '@/lib/i18n';
-import { categories, getBrowsableTools, getToolsByBrowseGroup, getToolsByCategory } from '@/lib/tool-registry';
-import { ToolBrowseGroup } from '@/types/tool';
+import { getRecentTools } from '@/lib/recent-tools';
+import { categories, getBrowsableTools, getToolsByBrowseGroup, getToolsByCategory, getToolById } from '@/lib/tool-registry';
+import { getBrowseGroupSections } from '@/lib/tool-presentation';
+import { ToolDefinition } from '@/types/tool';
+
+function isToolDefinition(tool: ToolDefinition | undefined): tool is ToolDefinition {
+  return Boolean(tool);
+}
 
 export function ToolsDirectory() {
   const { locale, messages } = useLocale();
   const browseTools = getBrowsableTools();
-  const focusGroups: Array<{
-    id: ToolBrowseGroup;
-    label: string;
-    description: string;
-  }> = [
-    {
-      id: 'popular',
-      label: messages.directory.popularTitle,
-      description: messages.directory.popularDescription,
-    },
-    {
-      id: 'new',
-      label: messages.directory.newTitle,
-      description: messages.directory.newDescription,
-    },
-    {
-      id: 'editor-enabled',
-      label: messages.directory.editorEnabledTitle,
-      description: messages.directory.editorEnabledDescription,
-    },
-    {
-      id: 'convert',
-      label: messages.directory.convertTitle,
-      description: messages.directory.convertDescription,
-    },
-    {
-      id: 'trim',
-      label: messages.directory.trimTitle,
-      description: messages.directory.trimDescription,
-    },
-    {
-      id: 'compress',
-      label: messages.directory.compressTitle,
-      description: messages.directory.compressDescription,
-    },
-    {
-      id: 'merge',
-      label: messages.directory.mergeTitle,
-      description: messages.directory.mergeDescription,
-    },
-    {
-      id: 'capture',
-      label: messages.directory.captureTitle,
-      description: messages.directory.captureDescription,
-    },
-  ];
+  const [recentToolIds, setRecentToolIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    setRecentToolIds(getRecentTools());
+  }, []);
+
+  const recentTools = recentToolIds.map((toolId) => getToolById(toolId)).filter(isToolDefinition);
+  const focusGroups = getBrowseGroupSections(messages.directory);
 
   const focusSections = focusGroups
     .map((group) => ({
@@ -111,6 +80,24 @@ export function ToolsDirectory() {
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-ink-muted">{messages.directory.description}</p>
       </section>
 
+      {recentTools.length > 0 ? (
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{messages.home.recentTitle}</h2>
+              <p className="mt-1 text-sm text-ink-muted">{messages.home.recentDescription}</p>
+            </div>
+            <span className="badge border border-border bg-base-subtle text-ink-muted">{formatToolCount(locale, recentTools.length)}</span>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {recentTools.map((tool) => (
+              <ToolCard key={`recent-${tool.id}`} tool={tool} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="space-y-4">
         <div className="flex items-end justify-between gap-3">
           <div>
@@ -141,7 +128,7 @@ export function ToolsDirectory() {
         </div>
       </section>
 
-      <Tabs tabs={tabs}>
+      <Tabs tabs={tabs} storageKey="jhtoolbox.directory.activeTab">
         {(activeTab) => {
           if (activeTab === 'all') {
             return <div className="space-y-10">{categories.map((category) => renderCategorySection(category.id))}</div>;

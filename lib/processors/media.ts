@@ -1028,6 +1028,10 @@ const presets: Record<string, MediaPreset> = {
 export async function processMediaTool(ctx: ProcessContext): Promise<ProcessedFile[]> {
   const { toolId, files, options, onProgress } = ctx;
 
+  if (!files.length) {
+    throw new Error('Select at least one media file.');
+  }
+
   const legacyVideoOutputFormat = LEGACY_VIDEO_CONVERTER_OUTPUTS[toolId];
 
   if (toolId === 'video-convert' || legacyVideoOutputFormat) {

@@ -24,15 +24,23 @@ export function ResultCard({
     <motion.article
       initial={{ opacity: 0, scale: 0.97, y: 8 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
-      className="card overflow-hidden border-ok/20 bg-ok/5 p-5"
+      className="workspace-panel overflow-hidden border-ok/20 bg-ok/5 p-5"
     >
-      <div className="mb-4 flex items-center gap-3">
-        <CheckCircle2 size={18} className="text-ok" />
-        <p className="text-sm font-semibold text-ink">{title}</p>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-ok/10 text-ok">
+            <CheckCircle2 size={18} className="text-ok" />
+          </div>
+          <div>
+            <p className="workspace-kicker">Output ready</p>
+            <p className="mt-1 text-sm font-semibold text-ink">{title}</p>
+          </div>
+        </div>
+        <span className="editor-chip border-ok/25 bg-ok/10 text-ok">Ready</span>
       </div>
 
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-base-subtle text-ink-muted">
+      <div className="workspace-section flex items-center gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl2 border border-border bg-base-subtle text-ink-muted">
           <File size={18} />
         </div>
         <div className="min-w-0 flex-1">

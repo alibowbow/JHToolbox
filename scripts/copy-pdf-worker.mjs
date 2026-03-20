@@ -9,4 +9,13 @@ const source = path.join(projectRoot, 'node_modules', 'pdfjs-dist', 'legacy', 'b
 const destination = path.join(projectRoot, 'public', 'pdf.worker.min.mjs');
 
 await mkdir(path.dirname(destination), { recursive: true });
-await copyFile(source, destination);
+
+try {
+  await copyFile(source, destination);
+} catch (cause) {
+  if (cause?.code === 'ENOENT') {
+    throw new Error(`Unable to copy PDF worker. Expected source not found at ${source}. Did you run npm install?`);
+  }
+
+  throw cause;
+}

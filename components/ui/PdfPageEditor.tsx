@@ -189,16 +189,16 @@ export function PdfPageEditor({ files, mode, onChange }: PdfPageEditorProps) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-ink-muted">{messages.workbench.pdfEditorHint}</p>
         <div className="flex flex-wrap gap-2">
-          <span className="badge border border-border bg-base-elevated text-ink-muted">
+          <span className="editor-chip normal-case tracking-normal text-ink-muted">
             {messages.workbench.pdfEditorVisiblePages}: {pages.length}
           </span>
-          <span className="badge border border-border bg-base-elevated text-ink-muted">
+          <span className="editor-chip normal-case tracking-normal text-ink-muted">
             {messages.workbench.pdfEditorSelectedCount}: {selectedCount}
           </span>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="workspace-toolbar">
         <button
           type="button"
           onClick={() => setSelectedIds(pages.map((page) => page.id))}
@@ -227,7 +227,7 @@ export function PdfPageEditor({ files, mode, onChange }: PdfPageEditorProps) {
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-3 rounded-xl border border-border bg-base-elevated px-4 py-4 text-sm text-ink-muted">
+        <div className="workspace-section flex items-center gap-3 text-sm text-ink-muted">
           <LoaderCircle size={16} className="animate-spin" />
           {messages.workbench.pdfEditorLoading}
         </div>
@@ -236,7 +236,7 @@ export function PdfPageEditor({ files, mode, onChange }: PdfPageEditorProps) {
       {error ? <div className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div> : null}
 
       {!loading && !pages.length && !error ? (
-        <div className="rounded-xl border border-border bg-base-elevated px-4 py-4 text-sm text-ink-muted">
+        <div className="workspace-section text-sm text-ink-muted">
           {messages.workbench.pdfEditorEmpty}
         </div>
       ) : null}
@@ -256,7 +256,7 @@ export function PdfPageEditor({ files, mode, onChange }: PdfPageEditorProps) {
                   setDragId(null);
                 }}
                 className={cx(
-                  'card overflow-hidden border transition-colors',
+                  'workspace-panel overflow-hidden border transition-colors',
                   selected && 'border-prime/40 bg-prime/5',
                   dragId === page.id && 'border-accent/40',
                 )}

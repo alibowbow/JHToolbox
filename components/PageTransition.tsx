@@ -12,9 +12,10 @@ export function PageTransition({
   return (
     <motion.div
       key={routeKey}
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25, ease: 'easeOut' }}
+      initial={{ opacity: 0, y: 18, scale: 0.995 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.32, ease: 'easeOut' }}
+      className="relative"
     >
       {children}
     </motion.div>

@@ -26,18 +26,25 @@ async function runImageOcr(file: File, lang: string, onProgress: (value: number)
     },
   });
 
-  if (worker.loadLanguage && worker.initialize) {
-    await worker.loadLanguage(lang);
-    await worker.initialize(lang);
-  }
+  try {
+    if (worker.loadLanguage && worker.initialize) {
+      await worker.loadLanguage(lang);
+      await worker.initialize(lang);
+    }
 
-  const output = await worker.recognize(file);
-  await worker.terminate();
-  return output?.data?.text ?? '';
+    const output = await worker.recognize(file);
+    return output?.data?.text ?? '';
+  } finally {
+    await worker.terminate();
+  }
 }
 
 export async function processOcrTool(ctx: ProcessContext): Promise<ProcessedFile[]> {
   const { toolId, files, options, onProgress } = ctx;
+
+  if (!files.length) {
+    throw new Error('Select at least one image or PDF file.');
+  }
 
   if (toolId === 'ocr-image-to-text') {
     const lang = String(options.lang ?? 'eng');

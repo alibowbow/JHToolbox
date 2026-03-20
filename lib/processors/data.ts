@@ -108,8 +108,9 @@ export async function processDataTool(ctx: ProcessContext): Promise<ProcessedFil
 
   if (toolId === 'create-zip') {
     const zip = new JSZip();
+    const totalFiles = Math.max(files.length, 1);
     files.forEach((file, index) => {
-      onProgress({ percent: (index / files.length) * 100, stage: 'ZIP 생성 중' });
+      onProgress({ percent: (index / totalFiles) * 100, stage: 'ZIP 생성 중' });
       zip.file(file.name, file);
     });
 
@@ -128,13 +129,17 @@ export async function processDataTool(ctx: ProcessContext): Promise<ProcessedFil
   }
 
   if (toolId === 'extract-zip') {
+    if (!files.length) {
+      throw new Error('Select a ZIP file to extract.');
+    }
+
     const file = files[0];
     const zip = await JSZip.loadAsync(await file.arrayBuffer());
     const entries = Object.values(zip.files).filter((entry) => !entry.dir);
     const out: ProcessedFile[] = [];
 
     for (let index = 0; index < entries.length; index += 1) {
-      onProgress({ percent: (index / entries.length) * 100, stage: 'ZIP 해제 중' });
+      onProgress({ percent: (index / Math.max(entries.length, 1)) * 100, stage: 'ZIP 해제 중' });
       const entry = entries[index];
       const blob = await entry.async('blob');
       out.push({
@@ -145,6 +150,10 @@ export async function processDataTool(ctx: ProcessContext): Promise<ProcessedFil
     }
 
     return out;
+  }
+
+  if (!files.length) {
+    throw new Error('Select at least one file to process.');
   }
 
   const out: ProcessedFile[] = [];

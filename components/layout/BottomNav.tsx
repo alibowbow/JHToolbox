@@ -28,9 +28,9 @@ export function BottomNav() {
     <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-base-subtle/90 backdrop-blur md:hidden">
       <div
         data-testid="mobile-bottom-nav-scroll"
-        className="overflow-x-auto px-2 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="overflow-x-auto px-3 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        <nav className="mx-auto flex min-w-max gap-1">
+        <nav className="mx-auto flex min-w-max gap-2 rounded-[1.4rem] border border-border/60 bg-base-elevated/75 p-2 shadow-card">
           {items.map(({ href, key, icon: Icon }) => {
             const active = pathname === href || (href !== '/' && pathname.startsWith(href));
             const label =
@@ -40,8 +40,8 @@ export function BottomNav() {
               <Link key={href} href={href} className="shrink-0">
                 <motion.div
                   whileTap={{ scale: 0.95 }}
-                  className={`flex min-w-[76px] flex-col items-center gap-1 rounded-xl px-3 py-2 text-[11px] ${
-                    active ? 'bg-base-elevated text-ink' : 'text-ink-muted'
+                  className={`flex min-w-[80px] flex-col items-center gap-1 rounded-xl2 px-3 py-2.5 text-[11px] ${
+                    active ? 'bg-base text-ink shadow-card' : 'text-ink-muted'
                   }`}
                 >
                   <Icon size={16} />

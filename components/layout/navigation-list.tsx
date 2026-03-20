@@ -31,7 +31,7 @@ export function NavigationList({
   const { locale, messages } = useLocale();
 
   return (
-    <nav className="space-y-1">
+    <nav className="space-y-1.5">
       {navItems.map(({ href, key, icon: Icon, iconClass, dotClass }) => {
         const active = pathname === href || (href !== '/' && pathname.startsWith(href));
         const label =
@@ -42,20 +42,27 @@ export function NavigationList({
             <motion.div
               whileHover={{ x: 2 }}
               whileTap={{ scale: 0.98 }}
-              className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
-                active ? 'text-ink' : 'text-ink-muted hover:bg-base-elevated/60 hover:text-ink'
+              className={`relative flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium transition-colors ${
+                active ? 'text-ink' : 'text-ink-muted hover:bg-base-elevated/70 hover:text-ink'
               }`}
             >
               {active ? (
                 <motion.div
                   layoutId={activeIndicatorId}
-                  className="absolute inset-0 rounded-xl bg-base-elevated"
+                  className="absolute inset-0 rounded-2xl border border-border/60 bg-base-elevated"
                   style={{ zIndex: -1 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 40 }}
                 />
               ) : null}
-              <Icon size={16} className={active ? iconClass : 'text-ink-muted'} />
-              <span>{label}</span>
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-border/60 bg-base-subtle/75">
+                <Icon size={16} className={active ? iconClass : 'text-ink-muted'} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="block truncate">{label}</span>
+                <span className="mt-0.5 block text-[11px] uppercase tracking-[0.18em] text-ink-faint">
+                  {active ? 'Current' : 'Open'}
+                </span>
+              </div>
               {active ? <span className={`ml-auto h-1.5 w-1.5 rounded-full ${dotClass}`} /> : null}
             </motion.div>
           </Link>
