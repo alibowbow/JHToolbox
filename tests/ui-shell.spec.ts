@@ -1,4 +1,88 @@
-import { devices, expect, test } from '@playwright/test';
+import { devices, expect, test, type Page } from '@playwright/test';
+
+async function createDemoVideoBuffer(page: Page) {
+  const bytes = await page.evaluate(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 360;
+
+    const context = canvas.getContext('2d');
+    if (!context) {
+      throw new Error('Canvas context was unavailable.');
+    }
+
+    const mimeTypes = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+    const mimeType = mimeTypes.find((candidate) => MediaRecorder.isTypeSupported(candidate));
+    if (!mimeType) {
+      throw new Error('WebM recording was unavailable in this browser.');
+    }
+
+    const stream = canvas.captureStream(30);
+    const recorder = new MediaRecorder(stream, { mimeType });
+    const chunks: BlobPart[] = [];
+
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        chunks.push(event.data);
+      }
+    };
+
+    const stopped = new Promise<void>((resolve) => {
+      recorder.onstop = () => resolve();
+    });
+
+    let frame = 0;
+    const drawFrame = () => {
+      const progress = frame / 48;
+      const hue = Math.round(progress * 240);
+
+      context.fillStyle = `hsl(${hue} 82% 58%)`;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+
+      context.fillStyle = 'rgba(15, 23, 42, 0.82)';
+      context.fillRect(44, 40, 552, 72);
+      context.fillRect(64 + frame * 6, 160, 180, 96);
+
+      context.fillStyle = 'rgba(255, 255, 255, 0.96)';
+      context.font = 'bold 40px Arial, sans-serif';
+      context.fillText(`Frame ${frame + 1}`, 80, 88);
+
+      context.fillStyle = '#0f172a';
+      context.fillRect(64, 284, 248, 28);
+      context.fillStyle = '#ffffff';
+      context.fillRect(64 + progress * 220, 284, 28, 28);
+
+      context.strokeStyle = '#f8fafc';
+      context.lineWidth = 6;
+      context.strokeRect(360, 140, 180, 120);
+
+      frame += 1;
+    };
+
+    recorder.start();
+    drawFrame();
+
+    const intervalId = window.setInterval(() => {
+      drawFrame();
+      if (frame >= 48) {
+        window.clearInterval(intervalId);
+        recorder.stop();
+      }
+    }, 33);
+
+    await new Promise((resolve) => window.setTimeout(resolve, 1800));
+    window.clearInterval(intervalId);
+    if (recorder.state !== 'inactive') {
+      recorder.stop();
+    }
+    await stopped;
+
+    const blob = new Blob(chunks, { type: mimeType });
+    return Array.from(new Uint8Array(await blob.arrayBuffer()));
+  });
+
+  return Buffer.from(bytes);
+}
 
 test('theme toggle changes the global theme without hydration errors', async ({ page }) => {
   const consoleErrors: string[] = [];
@@ -125,6 +209,92 @@ test('legacy GIF and WEBP routes redirect to the unified video converter', async
   await page.goto('/tools/video/video-to-webp');
   await expect(page).toHaveURL(/\/tools\/video\/video-convert\?outputFormat=webp$/);
   await expect(page.locator('select').first()).toHaveValue('webp');
+});
+
+test('video crop editor exposes timeline scrubbing, trim handles, and hides legacy numeric inputs', async ({ page }) => {
+  await page.goto('/tools/video/video-crop');
+
+  const videoBuffer = await createDemoVideoBuffer(page);
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'timeline-source.webm',
+    mimeType: 'video/webm',
+    buffer: videoBuffer,
+  });
+
+  await expect(page.getByText('Video editor')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText('Preview the clip and adjust the edit before you run it.')).toBeVisible();
+  await expect(page.getByText('Timeline', { exact: true })).toBeVisible();
+  await expect(page.getByText('Crop frame', { exact: true })).toBeVisible();
+  await expect(page.getByText('Aspect ratios', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Free' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Square' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Landscape' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Portrait' })).toBeVisible();
+
+  const playhead = page.getByRole('slider', { name: 'Playhead' });
+  await playhead.fill('30');
+  await expect(playhead).toHaveValue('30');
+
+  const trimStart = page.getByRole('slider', { name: 'Trim start' });
+  const trimEnd = page.getByRole('slider', { name: 'Trim end' });
+  await trimStart.fill('10');
+  await trimEnd.fill('85');
+  await expect(trimStart).toHaveValue('10');
+  await expect(trimEnd).toHaveValue('85');
+
+  await expect(page.locator('input[type="number"]')).toHaveCount(0);
+});
+
+test('video crop ratio presets reshape the crop frame', async ({ page }) => {
+  await page.goto('/tools/video/video-crop');
+
+  const videoBuffer = await createDemoVideoBuffer(page);
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'ratio-source.webm',
+    mimeType: 'video/webm',
+    buffer: videoBuffer,
+  });
+
+  const selection = page.getByTestId('video-crop-selection');
+  await expect(selection).toBeVisible({ timeout: 60_000 });
+
+  await page.getByRole('button', { name: 'Square' }).click();
+  const squareBox = await selection.boundingBox();
+  if (!squareBox) {
+    throw new Error('Square crop selection box was not available.');
+  }
+
+  await page.getByRole('button', { name: 'Landscape' }).click();
+  const landscapeBox = await selection.boundingBox();
+  if (!landscapeBox) {
+    throw new Error('Landscape crop selection box was not available.');
+  }
+
+  await page.getByRole('button', { name: 'Portrait' }).click();
+  const portraitBox = await selection.boundingBox();
+  if (!portraitBox) {
+    throw new Error('Portrait crop selection box was not available.');
+  }
+
+  expect(squareBox.width / squareBox.height).toBeGreaterThan(0.9);
+  expect(landscapeBox.width / landscapeBox.height).toBeGreaterThan(portraitBox.width / portraitBox.height);
+});
+
+test('video trim uses the timeline editor without duplicate numeric inputs', async ({ page }) => {
+  await page.goto('/tools/video/video-trim');
+
+  const videoBuffer = await createDemoVideoBuffer(page);
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'trim-source.webm',
+    mimeType: 'video/webm',
+    buffer: videoBuffer,
+  });
+
+  await expect(page.getByText('Video editor')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole('slider', { name: 'Playhead' })).toBeVisible();
+  await expect(page.getByRole('slider', { name: 'Trim start' })).toBeVisible();
+  await expect(page.getByRole('slider', { name: 'Trim end' })).toBeVisible();
+  await expect(page.locator('input[type="number"]')).toHaveCount(0);
 });
 
 test('audio cutter shows waveform editing before processing and exports a trimmed file', async ({ page }) => {

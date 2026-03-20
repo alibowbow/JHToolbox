@@ -15,6 +15,7 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { ImageCropEditor, type CropRect } from '@/components/ui/ImageCropEditor';
 import { ResultCard } from '@/components/ui/ResultCard';
 import { UrlImageCropper } from '@/components/ui/UrlImageCropper';
+import { VideoTimelineEditor } from '@/components/ui/VideoTimelineEditor';
 import { Tabs } from '@/components/ui/Tabs';
 import { toast } from '@/components/ui/Toast';
 import { formatMegaBytes, getCategoryCopy } from '@/lib/i18n';
@@ -42,7 +43,7 @@ import { ToolDefinition, ToolOption } from '@/types/tool';
 
 const OPTIONAL_FILE_TOOLS = new Set(['qr-generator', 'url-image', 'url-pdf', 'detect-cms']);
 const PDF_EDITOR_TOOLS = new Set(['pdf-merge', 'pdf-rearrange']);
-const CUSTOM_OPTIONS_IN_PREVIEW_TOOLS = new Set(['pdf-rearrange', 'image-crop']);
+const CUSTOM_OPTIONS_IN_PREVIEW_TOOLS = new Set(['pdf-rearrange', 'image-crop', 'video-trim', 'video-crop']);
 const IMAGE_COMPARE_EXCLUDED_TOOL_IDS = new Set([
   'image-crop',
   'image-split',
@@ -51,6 +52,45 @@ const IMAGE_COMPARE_EXCLUDED_TOOL_IDS = new Set([
   'image-color-palette-extract',
   'url-image',
 ]);
+const VIDEO_EDITOR_TOOL_IDS = new Set([
+  'video-trim',
+  'video-crop',
+  'video-thumbnail-generator',
+  'video-speed-change',
+  'video-resize',
+  'video-watermark',
+  'video-convert',
+  'video-compress',
+  'mute-video',
+  'extract-audio',
+  'video-reverse',
+]);
+const VIDEO_TRIM_TOOL_IDS = new Set([
+  'video-trim',
+  'video-crop',
+  'video-speed-change',
+  'video-resize',
+  'video-watermark',
+  'video-convert',
+  'video-compress',
+  'mute-video',
+  'extract-audio',
+  'video-reverse',
+]);
+const EMPTY_OPTION_KEY_SET = new Set<string>();
+const HIDDEN_OPTION_KEYS_BY_TOOL_ID: Record<string, Set<string>> = {
+  'video-trim': new Set(['startTime', 'endTime']),
+  'video-crop': new Set(['x', 'y', 'width', 'height', 'cropPreset', 'startTime', 'endTime']),
+  'video-thumbnail-generator': new Set(['timestamp']),
+  'video-speed-change': new Set(['startTime', 'endTime']),
+  'video-resize': new Set(['startTime', 'endTime']),
+  'video-watermark': new Set(['startTime', 'endTime']),
+  'video-convert': new Set(['startTime', 'endTime']),
+  'video-compress': new Set(['startTime', 'endTime']),
+  'mute-video': new Set(['startTime', 'endTime']),
+  'extract-audio': new Set(['startTime', 'endTime']),
+  'video-reverse': new Set(['startTime', 'endTime']),
+};
 
 type SearchParamSource = Pick<URLSearchParams, 'get'>;
 type ToolOptionValues = Record<string, string | number | boolean>;
@@ -499,10 +539,12 @@ function StandardToolWorkbench({
   const category = getCategoryCopy(locale, displayCategoryId);
   const localizedTool = getLocalizedToolCopy(tool, locale);
   const toolOptions = tool.options ?? [];
+  const hiddenOptionKeys = HIDDEN_OPTION_KEYS_BY_TOOL_ID[tool.id] ?? EMPTY_OPTION_KEY_SET;
+  const visibleToolOptions = toolOptions.filter((option) => !hiddenOptionKeys.has(option.key));
   const usesDirectInput = tool.inputMode === 'url';
   const usesPdfEditor = PDF_EDITOR_TOOLS.has(tool.id);
-  const hasOptions = toolOptions.length > 0;
-  const supportsOptionMemory = hasOptions && !CUSTOM_OPTIONS_IN_PREVIEW_TOOLS.has(tool.id);
+  const hasOptions = visibleToolOptions.length > 0;
+  const supportsOptionMemory = toolOptions.length > 0 && !CUSTOM_OPTIONS_IN_PREVIEW_TOOLS.has(tool.id);
   const showOptionsPanel = hasOptions && !CUSTOM_OPTIONS_IN_PREVIEW_TOOLS.has(tool.id);
   const showWideEditorLayout = tool.id === 'audio-cut';
   const fileOptional = usesDirectInput || OPTIONAL_FILE_TOOLS.has(tool.id);
@@ -518,13 +560,19 @@ function StandardToolWorkbench({
   ];
   const dropLabel = fileOptional ? messages.workbench.dropzoneOptional : messages.workbench.dropzone;
   const trimMode = String(options.trimMode ?? 'keep');
-  const outputFormat = String(options.outputFormat ?? 'keep');
   const imageCropRect: CropRect = {
     x: Number(options.x ?? 0),
     y: Number(options.y ?? 0),
     width: Number(options.width ?? 0),
     height: Number(options.height ?? 0),
   };
+  const sourceVideoFiles = files.filter((file) => file.type.startsWith('video/'));
+  const primaryVideoFile = sourceVideoFiles[0] ?? null;
+  const previewSourceFile =
+    VIDEO_EDITOR_TOOL_IDS.has(tool.id) && primaryVideoFile
+      ? primaryVideoFile
+      : files[0] ?? null;
+  const videoEditorEnabled = Boolean(inputPreviewUrl && primaryVideoFile && sourceVideoFiles.length === 1 && VIDEO_EDITOR_TOOL_IDS.has(tool.id));
 
   const syncOptionMemoryAvailability = () => {
     if (!supportsOptionMemory) {
@@ -574,12 +622,12 @@ function StandardToolWorkbench({
   }, [results]);
 
   useEffect(() => {
-    if (!files.length) {
+    if (!previewSourceFile) {
       setInputPreviewUrl(null);
       return;
     }
 
-    const firstFile = files[0];
+    const firstFile = previewSourceFile;
     if (
       !firstFile.type.startsWith('image/') &&
       !firstFile.type.startsWith('audio/') &&
@@ -595,7 +643,7 @@ function StandardToolWorkbench({
     return () => {
       URL.revokeObjectURL(previewUrl);
     };
-  }, [files]);
+  }, [previewSourceFile]);
 
   const handlePdfPlanChange = (pages: PdfEditorPage[]) => {
     setOptions((currentOptions) => {
@@ -697,6 +745,16 @@ function StandardToolWorkbench({
       setError(messages.workbench.addPageError);
       toast.error(messages.workbench.addPageError);
       return;
+    }
+
+    if (VIDEO_TRIM_TOOL_IDS.has(tool.id)) {
+      const startTime = Number(options.startTime ?? 0);
+      const endTime = Number(options.endTime ?? 0);
+      if (endTime > 0 && endTime <= startTime + 0.01) {
+        setError(messages.workbench.invalidTrimRange);
+        toast.error(messages.workbench.invalidTrimRange);
+        return;
+      }
     }
 
     try {
@@ -872,7 +930,7 @@ function StandardToolWorkbench({
               </div>
 
               <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                {toolOptions.map((option, optionIndex, allOptions) =>
+                {visibleToolOptions.map((option, optionIndex, allOptions) =>
                   renderOptionField(tool, option, optionIndex, allOptions, options, locale, updateOptionValue),
                 )}
               </div>
@@ -981,21 +1039,49 @@ function StandardToolWorkbench({
                         }
                         resetOnImageLoad
                       />
+                    ) : videoEditorEnabled && inputPreviewUrl && primaryVideoFile ? (
+                      <VideoTimelineEditor
+                        file={primaryVideoFile}
+                        previewUrl={inputPreviewUrl}
+                        trimEnabled={VIDEO_TRIM_TOOL_IDS.has(tool.id)}
+                        trimStart={Number(options.startTime ?? 0)}
+                        trimEnd={Number(options.endTime ?? 0)}
+                        onTrimChange={(nextValues) =>
+                          setOptions((currentOptions) => ({
+                            ...currentOptions,
+                            ...nextValues,
+                          }))
+                        }
+                        captureEnabled={tool.id === 'video-thumbnail-generator'}
+                        captureTime={Number(options.timestamp ?? 0)}
+                        onCaptureTimeChange={(nextValue) => updateOptionValue('timestamp', Number(nextValue.toFixed(3)))}
+                        cropEnabled={tool.id === 'video-crop'}
+                        crop={imageCropRect}
+                        onCropChange={(nextCrop) =>
+                          setOptions((currentOptions) => ({
+                            ...currentOptions,
+                            ...nextCrop,
+                          }))
+                        }
+                        aspectPresetId={String(options.cropPreset ?? 'free')}
+                        onAspectPresetChange={(nextAspectPresetId) => updateOptionValue('cropPreset', nextAspectPresetId)}
+                        testIdPrefix={tool.id === 'video-crop' ? 'video-crop' : 'video-editor'}
+                      />
                     ) : inputPreviewUrl ? (
                       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
                         <div className="editor-frame">
-                          {files[0]?.type.startsWith('image/') ? (
-                            <img src={inputPreviewUrl} alt={files[0].name} className="max-h-[24rem] w-full rounded-lg object-contain" />
+                          {previewSourceFile?.type.startsWith('image/') ? (
+                            <img src={inputPreviewUrl} alt={previewSourceFile.name} className="max-h-[24rem] w-full rounded-lg object-contain" />
                           ) : null}
-                          {files[0]?.type.startsWith('audio/') ? <audio src={inputPreviewUrl} controls className="w-full" /> : null}
-                          {files[0]?.type.startsWith('video/') ? (
+                          {previewSourceFile?.type.startsWith('audio/') ? <audio src={inputPreviewUrl} controls className="w-full" /> : null}
+                          {previewSourceFile?.type.startsWith('video/') ? (
                             <video src={inputPreviewUrl} controls className="max-h-[24rem] w-full rounded-lg" />
                           ) : null}
                         </div>
                         <div className="workspace-panel space-y-3 p-4">
                           <div className="workspace-metric">
                             <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.selectedFile}</p>
-                            <p className="mt-2 truncate text-sm font-semibold text-ink">{files[0]?.name}</p>
+                            <p className="mt-2 truncate text-sm font-semibold text-ink">{previewSourceFile?.name}</p>
                           </div>
                           <div className="workspace-metric">
                             <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.fileCount}</p>
@@ -1003,7 +1089,7 @@ function StandardToolWorkbench({
                           </div>
                           <div className="workspace-metric">
                             <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.firstFileSize}</p>
-                            <p className="mt-2 text-sm font-semibold text-ink">{formatMegaBytes(files[0]?.size ?? 0)}</p>
+                            <p className="mt-2 text-sm font-semibold text-ink">{formatMegaBytes(previewSourceFile?.size ?? 0)}</p>
                           </div>
                         </div>
                       </div>
@@ -1015,6 +1101,7 @@ function StandardToolWorkbench({
                   </section>
                 ) : null}
 
+                {!showOptionsPanel && optionMemoryPanel ? <div>{optionMemoryPanel}</div> : null}
                 {!showOptionsPanel ? (
                   <button type="button" disabled={running} onClick={onProcess} className="btn-primary w-full justify-center">
                     {running ? <LoaderCircle size={18} className="animate-spin" /> : <Play size={18} />}
@@ -1029,7 +1116,7 @@ function StandardToolWorkbench({
                   <p className="mt-2 text-sm font-semibold text-ink">{messages.workbench.options}</p>
                   {optionMemoryPanel ? <div className="mt-4">{optionMemoryPanel}</div> : null}
                   <div className="mt-4 space-y-4">
-                    {toolOptions.map((option, optionIndex, allOptions) =>
+                    {visibleToolOptions.map((option, optionIndex, allOptions) =>
                       renderOptionField(tool, option, optionIndex, allOptions, options, locale, updateOptionValue),
                     )}
                   </div>

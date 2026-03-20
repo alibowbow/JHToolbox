@@ -881,6 +881,12 @@ export const tools: ToolDefinition[] = [
     description: 'Remove the audio track from a video.',
     accept: 'video/*',
     tags: ['video', 'mute'],
+    browseGroups: ['new', 'editor-enabled'],
+    previewKind: 'video',
+    options: [
+      { key: 'startTime', label: 'Start time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
+      { key: 'endTime', label: 'End time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
+    ],
   },
   {
     id: 'extract-audio',
@@ -889,6 +895,12 @@ export const tools: ToolDefinition[] = [
     description: 'Extract audio from a video file.',
     accept: 'video/*',
     tags: ['video', 'audio', 'extract'],
+    browseGroups: ['new', 'editor-enabled'],
+    previewKind: 'video',
+    options: [
+      { key: 'startTime', label: 'Start time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
+      { key: 'endTime', label: 'End time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
+    ],
   },
   {
     id: 'video-compress',
@@ -901,6 +913,8 @@ export const tools: ToolDefinition[] = [
     previewKind: 'video',
     options: [
       { key: 'crf', label: 'CRF (lower = better quality)', type: 'number', defaultValue: 28, min: 18, max: 40 },
+      { key: 'startTime', label: 'Start time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
+      { key: 'endTime', label: 'End time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
     ],
   },
   {
@@ -926,6 +940,22 @@ export const tools: ToolDefinition[] = [
           { label: '2x', value: '2' },
         ],
       },
+      { key: 'startTime', label: 'Start time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
+      { key: 'endTime', label: 'End time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
+    ],
+  },
+  {
+    id: 'video-trim',
+    name: 'Video Trim',
+    category: 'video',
+    description: 'Trim a video to a chosen in and out point.',
+    accept: 'video/*',
+    tags: ['video', 'trim', 'clip'],
+    browseGroups: ['new', 'trim', 'editor-enabled'],
+    previewKind: 'video',
+    options: [
+      { key: 'startTime', label: 'Start time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
+      { key: 'endTime', label: 'End time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
     ],
   },
   {
@@ -942,6 +972,23 @@ export const tools: ToolDefinition[] = [
       { key: 'y', label: 'Y', type: 'number', defaultValue: 0, min: 0 },
       { key: 'width', label: 'Width', type: 'number', defaultValue: 1280, min: 16 },
       { key: 'height', label: 'Height', type: 'number', defaultValue: 720, min: 16 },
+      {
+        key: 'cropPreset',
+        label: 'Aspect ratio',
+        type: 'select',
+        defaultValue: 'free',
+        options: [
+          { label: 'Free', value: 'free' },
+          { label: 'Square', value: 'square' },
+          { label: '16:9', value: 'landscape' },
+          { label: '4:3', value: '4-3' },
+          { label: '2:3', value: '2-3' },
+          { label: '3:4', value: '3-4' },
+          { label: '9:16', value: 'portrait' },
+        ],
+      },
+      { key: 'startTime', label: 'Start time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
+      { key: 'endTime', label: 'End time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
     ],
   },
   {
@@ -956,6 +1003,8 @@ export const tools: ToolDefinition[] = [
     options: [
       { key: 'width', label: 'Width', type: 'number', defaultValue: 1280, min: 120 },
       { key: 'height', label: 'Height', type: 'number', defaultValue: 720, min: 120 },
+      { key: 'startTime', label: 'Start time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
+      { key: 'endTime', label: 'End time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
     ],
   },
   {
@@ -985,6 +1034,8 @@ export const tools: ToolDefinition[] = [
       { key: 'scale', label: 'Scale', type: 'range', defaultValue: 0.24, min: 0.05, max: 1, step: 0.02 },
       { key: 'x', label: 'X', type: 'number', defaultValue: 24, min: 0 },
       { key: 'y', label: 'Y', type: 'number', defaultValue: 24, min: 0 },
+      { key: 'startTime', label: 'Start time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
+      { key: 'endTime', label: 'End time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
     ],
   },
   {
@@ -996,6 +1047,10 @@ export const tools: ToolDefinition[] = [
     tags: ['video', 'reverse'],
     browseGroups: ['new'],
     previewKind: 'video',
+    options: [
+      { key: 'startTime', label: 'Start time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
+      { key: 'endTime', label: 'End time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
+    ],
   },
   {
     id: 'video-thumbnail-generator',
@@ -1007,7 +1062,7 @@ export const tools: ToolDefinition[] = [
     browseGroups: ['new', 'capture', 'editor-enabled'],
     previewKind: 'video',
     options: [
-      { key: 'timestamp', label: 'Timestamp', type: 'number', defaultValue: 1, min: 0 },
+      { key: 'timestamp', label: 'Timestamp', type: 'number', defaultValue: 1, min: 0, step: 0.01 },
       {
         key: 'format',
         label: 'Output format',
@@ -1047,6 +1102,8 @@ export const tools: ToolDefinition[] = [
       },
       { key: 'fps', label: 'FPS', type: 'number', defaultValue: 12, min: 5, max: 30 },
       { key: 'width', label: 'Width', type: 'number', defaultValue: 640, min: 120, max: 1920 },
+      { key: 'startTime', label: 'Start time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
+      { key: 'endTime', label: 'End time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
     ],
   },
   {
@@ -1778,6 +1835,7 @@ export const categories: ToolCategoryDefinition[] = [
       'mute-video',
       'video-compress',
       'video-speed-change',
+      'video-trim',
       'video-crop',
       'video-resize',
       'video-watermark',

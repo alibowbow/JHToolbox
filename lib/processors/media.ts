@@ -143,6 +143,27 @@ function getVideoFormatConfig(format: string) {
   return VIDEO_FORMATS[requestedFormat] ?? VIDEO_FORMATS.mp4;
 }
 
+function hasTrimSelection(options: Record<string, string | number | boolean>) {
+  const startTime = Math.max(0, parseNumber(options.startTime, 0));
+  const endTime = Math.max(0, parseNumber(options.endTime, 0));
+  return startTime > 0.01 || endTime > startTime + 0.05;
+}
+
+function buildVideoInputArgs(inputName: string, options: Record<string, string | number | boolean>) {
+  const startTime = Math.max(0, parseNumber(options.startTime, 0));
+  const endTime = Math.max(0, parseNumber(options.endTime, 0));
+
+  if (endTime > startTime + 0.05) {
+    return ['-ss', `${startTime}`, '-t', `${Number((endTime - startTime).toFixed(3))}`, '-i', inputName];
+  }
+
+  if (startTime > 0.01) {
+    return ['-ss', `${startTime}`, '-i', inputName];
+  }
+
+  return ['-i', inputName];
+}
+
 function buildTempoFilter(speed: number) {
   let remaining = Math.max(0.25, Math.min(4, speed));
   const filters: string[] = [];
@@ -566,20 +587,21 @@ async function processVideoConvert(ctx: ProcessContext, forcedOutputFormat?: Uni
 
     try {
       await ffmpeg.writeFile(inputName, await fetchFile(file));
+      const inputArgs = buildVideoInputArgs(inputName, options);
       if (outputFormat === 'gif') {
         const fps = Math.max(1, Math.min(30, parseNumber(options.fps, 12)));
         const width = Math.max(120, Math.round(parseNumber(options.width, 640)));
-        await ffmpeg.exec(['-i', inputName, '-vf', `fps=${fps},scale=${width}:-1:flags=lanczos`, '-loop', '0', outputName]);
+        await ffmpeg.exec([...inputArgs, '-vf', `fps=${fps},scale=${width}:-1:flags=lanczos`, '-loop', '0', outputName]);
       } else if (outputFormat === 'webp') {
         const fps = Math.max(1, Math.min(30, parseNumber(options.fps, 12)));
         const width = Math.max(120, Math.round(parseNumber(options.width, 640)));
-        await ffmpeg.exec(['-i', inputName, '-vf', `fps=${fps},scale=${width}:-1`, '-loop', '0', '-lossless', '0', outputName]);
+        await ffmpeg.exec([...inputArgs, '-vf', `fps=${fps},scale=${width}:-1`, '-loop', '0', '-lossless', '0', outputName]);
       } else {
         const config = getVideoFormatConfig(outputFormat);
         await execWithFallback(
           ffmpeg,
-          ['-i', inputName, ...config.withAudioArgs, outputName],
-          ['-i', inputName, ...config.withoutAudioArgs, outputName],
+          [...inputArgs, ...config.withAudioArgs, outputName],
+          [...inputArgs, ...config.withoutAudioArgs, outputName],
         );
       }
 
@@ -617,10 +639,11 @@ async function processVideoSpeedChange(ctx: ProcessContext) {
 
     try {
       await ffmpeg.writeFile(inputName, await fetchFile(file));
+      const inputArgs = buildVideoInputArgs(inputName, options);
       await execWithFallback(
         ffmpeg,
-        ['-i', inputName, '-filter:v', `setpts=PTS/${speed}`, '-af', buildTempoFilter(speed), '-c:v', 'libx264', '-c:a', 'aac', outputName],
-        ['-i', inputName, '-filter:v', `setpts=PTS/${speed}`, '-an', '-c:v', 'libx264', outputName],
+        [...inputArgs, '-filter:v', `setpts=PTS/${speed}`, '-af', buildTempoFilter(speed), '-c:v', 'libx264', '-c:a', 'aac', outputName],
+        [...inputArgs, '-filter:v', `setpts=PTS/${speed}`, '-an', '-c:v', 'libx264', outputName],
       );
       const data = await ffmpeg.readFile(outputName);
       const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
@@ -689,11 +712,11 @@ async function processVideoWatermark(ctx: ProcessContext) {
 
       try {
         await ffmpeg.writeFile(inputName, await fetchFile(file));
+        const inputArgs = buildVideoInputArgs(inputName, options);
         await execWithFallback(
           ffmpeg,
           [
-            '-i',
-            inputName,
+            ...inputArgs,
             '-i',
             watermarkName,
             '-filter_complex',
@@ -710,8 +733,7 @@ async function processVideoWatermark(ctx: ProcessContext) {
             outputName,
           ],
           [
-            '-i',
-            inputName,
+            ...inputArgs,
             '-i',
             watermarkName,
             '-filter_complex',
@@ -761,10 +783,11 @@ async function processVideoReverse(ctx: ProcessContext) {
 
     try {
       await ffmpeg.writeFile(inputName, await fetchFile(file));
+      const inputArgs = buildVideoInputArgs(inputName, ctx.options);
       await execWithFallback(
         ffmpeg,
-        ['-i', inputName, '-vf', 'reverse', '-af', 'areverse', '-c:v', 'libx264', '-c:a', 'aac', outputName],
-        ['-i', inputName, '-vf', 'reverse', '-an', '-c:v', 'libx264', outputName],
+        [...inputArgs, '-vf', 'reverse', '-af', 'areverse', '-c:v', 'libx264', '-c:a', 'aac', outputName],
+        [...inputArgs, '-vf', 'reverse', '-an', '-c:v', 'libx264', outputName],
       );
 
       const data = await ffmpeg.readFile(outputName);
@@ -888,7 +911,7 @@ const presets: Record<string, MediaPreset> = {
     args: (input, _file, output, options) => {
       const fps = Math.max(1, parseNumber(options.fps, 12));
       const width = Math.max(120, parseNumber(options.width, 480));
-      return ['-i', input, '-vf', `fps=${fps},scale=${width}:-1:flags=lanczos`, '-loop', '0', output];
+      return [...buildVideoInputArgs(input, options), '-vf', `fps=${fps},scale=${width}:-1:flags=lanczos`, '-loop', '0', output];
     },
   },
   'video-to-webp': {
@@ -897,25 +920,35 @@ const presets: Record<string, MediaPreset> = {
     args: (input, _file, output, options) => {
       const fps = Math.max(1, parseNumber(options.fps, 12));
       const width = Math.max(120, parseNumber(options.width, 640));
-      return ['-i', input, '-vf', `fps=${fps},scale=${width}:-1`, '-loop', '0', '-lossless', '0', output];
+      return [...buildVideoInputArgs(input, options), '-vf', `fps=${fps},scale=${width}:-1`, '-loop', '0', '-lossless', '0', output];
     },
   },
   'mute-video': {
     outputName: 'output.mp4',
     mimeType: 'video/mp4',
-    args: (input, _file, output) => ['-i', input, '-c:v', 'copy', '-an', output],
+    args: (input, _file, output, options) =>
+      hasTrimSelection(options)
+        ? [...buildVideoInputArgs(input, options), '-c:v', 'libx264', '-an', output]
+        : ['-i', input, '-c:v', 'copy', '-an', output],
   },
   'extract-audio': {
     outputName: 'output.mp3',
     mimeType: 'audio/mpeg',
-    args: (input, _file, output) => ['-i', input, '-vn', '-acodec', 'libmp3lame', '-q:a', '2', output],
+    args: (input, _file, output, options) => [...buildVideoInputArgs(input, options), '-vn', '-acodec', 'libmp3lame', '-q:a', '2', output],
   },
   'video-compress': {
     outputName: 'output.mp4',
     mimeType: 'video/mp4',
     args: (input, _file, output, options) => {
       const crf = Math.max(18, Math.min(40, parseNumber(options.crf, 28)));
-      return ['-i', input, '-c:v', 'libx264', '-crf', `${crf}`, '-preset', 'medium', '-c:a', 'aac', output];
+      return [...buildVideoInputArgs(input, options), '-c:v', 'libx264', '-crf', `${crf}`, '-preset', 'medium', '-c:a', 'aac', output];
+    },
+  },
+  'video-trim': {
+    outputName: 'output.mp4',
+    mimeType: 'video/mp4',
+    args: (input, _file, output, options) => {
+      return [...buildVideoInputArgs(input, options), '-c:v', 'libx264', '-c:a', 'aac', output];
     },
   },
   'video-crop': {
@@ -926,7 +959,7 @@ const presets: Record<string, MediaPreset> = {
       const y = Math.max(0, Math.round(parseNumber(options.y, 0)));
       const width = Math.max(16, Math.round(parseNumber(options.width, 1280)));
       const height = Math.max(16, Math.round(parseNumber(options.height, 720)));
-      return ['-i', input, '-vf', `crop=${width}:${height}:${x}:${y}`, '-c:v', 'libx264', '-c:a', 'aac', output];
+      return [...buildVideoInputArgs(input, options), '-vf', `crop=${width}:${height}:${x}:${y}`, '-c:v', 'libx264', '-c:a', 'aac', output];
     },
   },
   'video-resize': {
@@ -935,7 +968,7 @@ const presets: Record<string, MediaPreset> = {
     args: (input, _file, output, options) => {
       const width = Math.max(120, Math.round(parseNumber(options.width, 1280)));
       const height = Math.max(120, Math.round(parseNumber(options.height, 720)));
-      return ['-i', input, '-vf', `scale=${width}:${height}:flags=lanczos`, '-c:v', 'libx264', '-c:a', 'aac', output];
+      return [...buildVideoInputArgs(input, options), '-vf', `scale=${width}:${height}:flags=lanczos`, '-c:v', 'libx264', '-c:a', 'aac', output];
     },
   },
   'gif-to-video': {
