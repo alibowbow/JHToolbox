@@ -4,7 +4,7 @@ import { clampTime, formatTime } from '@/lib/audio';
 
 export type AudioEditorMode = 'editor' | 'batch';
 export type AudioTrimMode = 'keep' | 'remove';
-export type AudioEffectTab = 'fade' | 'speed' | 'pitch' | 'eq';
+export type AudioEffectTab = 'fade' | 'speed' | 'pitch' | 'amplify' | 'eq';
 
 export interface AudioSelection {
   start: number;
@@ -17,6 +17,7 @@ export interface AudioEffectsState {
   fadeOut: number;
   speed: number;
   pitch: number;
+  gain: number;
   low: number;
   mid: number;
   high: number;
@@ -31,6 +32,7 @@ export const DEFAULT_EFFECTS: AudioEffectsState = {
   fadeOut: 0.35,
   speed: 1,
   pitch: 0,
+  gain: 1.25,
   low: 0,
   mid: 0,
   high: 0,

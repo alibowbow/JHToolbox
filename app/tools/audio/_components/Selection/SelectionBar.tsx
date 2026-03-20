@@ -1,6 +1,8 @@
 'use client';
 
+import { useLocale } from '@/components/providers/locale-provider';
 import { formatTime } from '../audio-editor-utils';
+import { getAudioEditorCopy } from '../audio-editor-copy';
 import { SelectionControls } from './SelectionControls';
 
 interface SelectionBarProps {
@@ -32,6 +34,8 @@ export function SelectionBar({
   onCopySelection,
   onClearSelection,
 }: SelectionBarProps) {
+  const { locale } = useLocale();
+  const copy = getAudioEditorCopy(locale);
   const selectionLength = Math.max(0, end - start);
 
   return (
@@ -39,13 +43,13 @@ export function SelectionBar({
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="space-y-3">
           <div>
-            <p className="workspace-kicker">Selection</p>
-            <h2 className="mt-2 text-base font-semibold text-ink">Trim, keep, or remove a range</h2>
+            <p className="workspace-kicker">{copy.selection.kicker}</p>
+            <h2 className="mt-2 text-base font-semibold text-ink">{copy.selection.title}</h2>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="text-xs uppercase tracking-[0.18em] text-ink-faint">
-              Start
+              {copy.selection.start}
               <input
                 type="number"
                 min={0}
@@ -57,7 +61,7 @@ export function SelectionBar({
               />
             </label>
             <label className="text-xs uppercase tracking-[0.18em] text-ink-faint">
-              End
+              {copy.selection.end}
               <input
                 type="number"
                 min={0}
@@ -69,7 +73,7 @@ export function SelectionBar({
               />
             </label>
             <div className="rounded-xl border border-border bg-base-subtle/80 p-3">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-ink-faint">Length</p>
+              <p className="text-[11px] uppercase tracking-[0.18em] text-ink-faint">{copy.selection.length}</p>
               <p className="mt-1 text-sm font-semibold text-ink">{formatTime(selectionLength)}</p>
             </div>
           </div>
@@ -82,7 +86,7 @@ export function SelectionBar({
                 onClick={() => onTrimModeChange(mode)}
                 className={trimMode === mode ? 'btn-primary px-3 py-2 text-xs' : 'btn-ghost px-3 py-2 text-xs'}
               >
-                {mode === 'keep' ? 'Keep selection' : 'Remove selection'}
+                {mode === 'keep' ? copy.selection.keepMode : copy.selection.removeMode}
               </button>
             ))}
           </div>

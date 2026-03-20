@@ -1,7 +1,10 @@
 'use client';
 
 import { ChevronDown, Mic2, SlidersHorizontal, Waves, type LucideIcon } from 'lucide-react';
+import { useLocale } from '@/components/providers/locale-provider';
 import { AudioEffectTab, AudioEffectsState } from '../audio-editor-utils';
+import { getAudioEditorCopy } from '../audio-editor-copy';
+import { AmplifyControls } from './AmplifyControls';
 import { FadeControls } from './FadeControls';
 import { PitchControls } from './PitchControls';
 import { SpeedControls } from './SpeedControls';
@@ -17,13 +20,6 @@ interface EffectsPanelProps {
   onToggleCollapsed?: () => void;
 }
 
-const tabs: Array<{ id: AudioEffectTab; label: string; icon: LucideIcon }> = [
-  { id: 'fade', label: 'Fade', icon: Waves },
-  { id: 'speed', label: 'Speed', icon: SlidersHorizontal },
-  { id: 'pitch', label: 'Pitch', icon: Mic2 },
-  { id: 'eq', label: 'EQ', icon: SlidersHorizontal },
-];
-
 export function EffectsPanel({
   activeTab,
   effects,
@@ -34,6 +30,16 @@ export function EffectsPanel({
   collapsed = false,
   onToggleCollapsed,
 }: EffectsPanelProps) {
+  const { locale } = useLocale();
+  const copy = getAudioEditorCopy(locale);
+  const tabs: Array<{ id: AudioEffectTab; label: string; icon: LucideIcon }> = [
+    { id: 'fade', label: copy.effects.fade, icon: Waves },
+    { id: 'speed', label: copy.effects.speed, icon: SlidersHorizontal },
+    { id: 'pitch', label: copy.effects.pitch, icon: Mic2 },
+    { id: 'amplify', label: copy.effects.amplify, icon: Waves },
+    { id: 'eq', label: copy.effects.eq, icon: SlidersHorizontal },
+  ];
+
   return (
     <section className="workspace-panel p-4">
       <button
@@ -42,8 +48,8 @@ export function EffectsPanel({
         className="flex w-full items-center justify-between gap-3 text-left"
       >
         <div>
-          <p className="workspace-kicker">Effects</p>
-          <h2 className="mt-2 text-base font-semibold text-ink">Shape the audio before export</h2>
+          <p className="workspace-kicker">{copy.effects.kicker}</p>
+          <h2 className="mt-2 text-base font-semibold text-ink">{copy.effects.title}</h2>
         </div>
         {onToggleCollapsed ? <ChevronDown size={18} className={collapsed ? 'rotate-180 transition' : 'transition'} /> : null}
       </button>
@@ -94,10 +100,18 @@ export function EffectsPanel({
                 onApply={() => onApply('pitch')}
               />
             ) : null}
+            {activeTab === 'amplify' ? (
+              <AmplifyControls
+                gain={effects.gain}
+                onChange={(nextGain) => onChange({ gain: nextGain })}
+                onPreview={() => onPreview('amplify')}
+                onApply={() => onApply('amplify')}
+              />
+            ) : null}
             {activeTab === 'eq' ? (
               <div className="space-y-4">
                 <label className="block text-xs uppercase tracking-[0.18em] text-ink-faint">
-                  Low
+                  {copy.effects.low}
                   <input
                     type="range"
                     min={-12}
@@ -109,7 +123,7 @@ export function EffectsPanel({
                   />
                 </label>
                 <label className="block text-xs uppercase tracking-[0.18em] text-ink-faint">
-                  Mid
+                  {copy.effects.mid}
                   <input
                     type="range"
                     min={-12}
@@ -121,7 +135,7 @@ export function EffectsPanel({
                   />
                 </label>
                 <label className="block text-xs uppercase tracking-[0.18em] text-ink-faint">
-                  High
+                  {copy.effects.high}
                   <input
                     type="range"
                     min={-12}
@@ -133,14 +147,14 @@ export function EffectsPanel({
                   />
                 </label>
                 <div className="rounded-xl border border-border bg-base-elevated px-3 py-2 text-xs text-ink-muted">
-                  EQ is staged as UI in this first step. The panel is ready for a later Web Audio filter chain.
+                  {copy.effects.eqHint}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button type="button" onClick={() => onPreview('eq')} className="btn-ghost px-3 py-2 text-xs">
-                    Preview EQ
+                    {copy.effects.previewEq}
                   </button>
                   <button type="button" onClick={() => onApply('eq')} className="btn-primary px-3 py-2 text-xs">
-                    Apply EQ
+                    {copy.effects.applyEq}
                   </button>
                 </div>
               </div>

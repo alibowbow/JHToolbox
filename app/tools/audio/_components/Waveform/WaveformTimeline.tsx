@@ -1,6 +1,8 @@
 'use client';
 
+import { useLocale } from '@/components/providers/locale-provider';
 import { formatTime } from '../audio-editor-utils';
+import { getAudioEditorCopy } from '../audio-editor-copy';
 
 interface WaveformTimelineProps {
   duration: number;
@@ -8,13 +10,15 @@ interface WaveformTimelineProps {
 }
 
 export function WaveformTimeline({ duration, zoom }: WaveformTimelineProps) {
+  const { locale } = useLocale();
+  const copy = getAudioEditorCopy(locale);
   const segments = Math.max(6, Math.min(16, Math.floor(zoom * 2.5)));
   const step = duration > 0 ? duration / segments : 0;
 
   return (
     <div className="rounded-t-2xl border border-border border-b-0 bg-base-subtle/80 px-4 py-3">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] uppercase tracking-[0.22em] text-ink-faint">Timeline</span>
+        <span className="text-[11px] uppercase tracking-[0.22em] text-ink-faint">{copy.waveform.timeline}</span>
         <span className="badge border border-border bg-base-elevated text-ink-muted">x{zoom.toFixed(1)}</span>
       </div>
       <div

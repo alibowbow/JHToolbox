@@ -4,6 +4,10 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+function clampSample(value: number) {
+  return clamp(value, -1, 1);
+}
+
 function secondsToSample(buffer: AudioBuffer, timeSec: number) {
   return clamp(Math.round(timeSec * buffer.sampleRate), 0, buffer.length);
 }
@@ -151,4 +155,21 @@ export function applySpeedToAudioRange(buffer: AudioBuffer, startSec: number, en
 export function applyPitchToAudioRange(buffer: AudioBuffer, startSec: number, endSec: number, semitones: number) {
   const playbackRate = Math.pow(2, semitones / 12);
   return applySpeedToAudioRange(buffer, startSec, endSec, playbackRate);
+}
+
+export function applyGainToAudioRange(buffer: AudioBuffer, startSec: number, endSec: number, gain: number) {
+  const nextBuffer = cloneAudioBuffer(buffer);
+  const startSample = secondsToSample(buffer, Math.min(startSec, endSec));
+  const endSample = secondsToSample(buffer, Math.max(startSec, endSec));
+  const safeGain = Math.max(0, gain);
+
+  for (let channelIndex = 0; channelIndex < nextBuffer.numberOfChannels; channelIndex += 1) {
+    const channelData = nextBuffer.getChannelData(channelIndex);
+
+    for (let sampleIndex = startSample; sampleIndex < endSample; sampleIndex += 1) {
+      channelData[sampleIndex] = clampSample(channelData[sampleIndex] * safeGain);
+    }
+  }
+
+  return nextBuffer;
 }

@@ -1,5 +1,8 @@
 'use client';
 
+import { useLocale } from '@/components/providers/locale-provider';
+import { getAudioEditorCopy } from '../audio-editor-copy';
+
 interface SelectionControlsProps {
   onPlaySelection: () => void;
   onTrimSelection: () => void;
@@ -15,22 +18,25 @@ export function SelectionControls({
   onCopySelection,
   onClearSelection,
 }: SelectionControlsProps) {
+  const { locale } = useLocale();
+  const copy = getAudioEditorCopy(locale);
+
   return (
     <div className="flex flex-wrap gap-2">
       <button type="button" onClick={onPlaySelection} className="btn-ghost px-3 py-2 text-xs">
-        Play selection
+        {copy.selection.playSelection}
       </button>
       <button type="button" onClick={onTrimSelection} className="btn-primary px-3 py-2 text-xs">
-        Keep selection
+        {copy.selection.keepSelection}
       </button>
       <button type="button" onClick={onRemoveSelection} className="btn-ghost px-3 py-2 text-xs">
-        Remove selection
+        {copy.selection.removeSelection}
       </button>
       <button type="button" onClick={onCopySelection} className="btn-ghost px-3 py-2 text-xs">
-        Copy times
+        {copy.selection.copyTimes}
       </button>
       <button type="button" onClick={onClearSelection} className="btn-ghost px-3 py-2 text-xs">
-        Clear
+        {copy.selection.clear}
       </button>
     </div>
   );

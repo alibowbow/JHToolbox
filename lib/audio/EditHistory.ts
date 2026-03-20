@@ -25,11 +25,11 @@ export class EditHistory {
   }
 
   get undoLabel() {
-    return this.past.at(-1)?.label ? `${this.past.at(-1)?.label} undo` : null;
+    return this.past.at(-1)?.label ?? null;
   }
 
   get redoLabel() {
-    return this.future.at(-1)?.label ? `${this.future.at(-1)?.label} redo` : null;
+    return this.future.at(-1)?.label ?? null;
   }
 
   get depth() {

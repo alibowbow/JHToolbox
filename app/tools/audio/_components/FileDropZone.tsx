@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { FileUp, Music4 } from 'lucide-react';
+import { useLocale } from '@/components/providers/locale-provider';
+import { getAudioEditorCopy } from './audio-editor-copy';
 import { AUDIO_ACCEPT, formatFileSize } from './audio-editor-utils';
 
 interface FileDropZoneProps {
@@ -31,6 +33,8 @@ export function FileDropZone({
   onWarning,
   onFiles,
 }: FileDropZoneProps) {
+  const { locale } = useLocale();
+  const copy = getAudioEditorCopy(locale);
   const internalInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const resolvedInputRef = externalInputRef ?? internalInputRef;
@@ -51,14 +55,12 @@ export function FileDropZone({
     const nextFiles = Array.from(nextList);
     const oversized = nextFiles.find((file) => file.size > maxFileSizeBytes);
     if (oversized) {
-      onError?.(`"${oversized.name}" exceeds the 500MB editor limit.`);
+      onError?.(copy.fileDrop.fileTooLarge(oversized.name));
       return;
     }
 
     const largeFiles = nextFiles.filter((file) => file.size > warningFileSizeBytes);
-    onWarning?.(
-      largeFiles.length > 0 ? 'Large audio files may take longer to decode and render in the browser.' : null,
-    );
+    onWarning?.(largeFiles.length > 0 ? copy.fileDrop.largeFileWarning : null);
     onFiles(multiple ? nextFiles : nextFiles.slice(0, 1));
   };
 
@@ -103,14 +105,14 @@ export function FileDropZone({
           </div>
           <div className="flex items-center gap-3 text-sm text-ink-muted">
             <Music4 size={16} />
-            <span>{multiple ? 'Drag multiple audio files here' : 'Drag one audio file here'}</span>
+            <span>{multiple ? copy.fileDrop.dragMultiple : copy.fileDrop.dragSingle}</span>
           </div>
         </div>
       </button>
 
       {files.length > 0 ? (
         <div className="space-y-2 rounded-2xl border border-border bg-base-subtle/70 p-3">
-          <p className="text-xs uppercase tracking-[0.24em] text-ink-faint">Loaded files</p>
+          <p className="text-xs uppercase tracking-[0.24em] text-ink-faint">{copy.fileDrop.loadedFiles}</p>
           <div className="space-y-2">
             {files.map((file) => (
               <div
@@ -121,7 +123,9 @@ export function FileDropZone({
                   <p className="truncate font-semibold text-ink">{file.name}</p>
                   <p className="text-xs text-ink-muted">{formatFileSize(file.size)}</p>
                 </div>
-                <span className="badge border border-border bg-base-subtle text-ink-muted">{file.type || 'audio'}</span>
+                <span className="badge border border-border bg-base-subtle text-ink-muted">
+                  {file.type || copy.fileDrop.defaultMime}
+                </span>
               </div>
             ))}
           </div>

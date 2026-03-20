@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useLocale } from '@/components/providers/locale-provider';
 import { renderWaveform } from '@/lib/audio';
 import { clamp } from '../audio-editor-utils';
+import { getAudioEditorCopy } from '../audio-editor-copy';
 import { PlayheadOverlay } from './PlayheadOverlay';
 import { WaveformTimeline } from './WaveformTimeline';
 
@@ -33,6 +35,8 @@ export function WaveformCanvas({
   onSeek,
   onSelectionChange,
 }: WaveformCanvasProps) {
+  const { locale } = useLocale();
+  const copy = getAudioEditorCopy(locale);
   const [baseWidth, setBaseWidth] = useState(760);
   const [dragMode, setDragMode] = useState<DragMode | null>(null);
   const [scrollNode, setScrollNode] = useState<HTMLDivElement | null>(null);
@@ -216,7 +220,7 @@ export function WaveformCanvas({
 
           {isSilent ? (
             <div className="absolute inset-x-4 bottom-4 rounded-xl border border-border bg-base-elevated/95 px-3 py-2 text-sm text-ink-muted">
-              Silent or very quiet audio detected. You can still trim and export this file.
+              {copy.waveform.silentNotice}
             </div>
           ) : null}
         </div>

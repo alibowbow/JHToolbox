@@ -332,9 +332,27 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   await page.locator('input[type="file"]').setInputFiles('tests/fixtures/sample.wav');
   await expect(page.getByText('Import audio')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Keep selection' }).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'WAV', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'MP3', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save WAV' }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save MP3' }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start recording' }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Amplify' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'File conversion' }).first()).toBeVisible();
   await expect(page.getByText('Shape the audio before export')).toBeVisible();
+});
+
+test('audio editor localizes save, record, and conversion actions in korean mode', async ({ page }) => {
+  await page.goto('/tools/audio');
+  await page.getByRole('button', { name: 'ko' }).click();
+
+  await page.locator('input[type="file"]').setInputFiles('tests/fixtures/sample.wav');
+
+  await expect(page.getByText('오디오 불러오기')).toBeVisible();
+  await expect(page.getByRole('button', { name: '녹음 시작' }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'WAV 저장' }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'MP3 저장' }).first()).toBeVisible();
+  await expect(page.getByRole('link', { name: '파일 변환' }).first()).toBeVisible();
+  await expect(page.getByRole('link', { name: '파일 변환 열기' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '앰플리파이' })).toBeVisible();
 });
 
 test('pdf rearrange shows page editor controls before processing', async ({ page }) => {

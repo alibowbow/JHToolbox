@@ -1,5 +1,8 @@
 'use client';
 
+import { useLocale } from '@/components/providers/locale-provider';
+import { getAudioEditorCopy } from '../audio-editor-copy';
+
 interface FadeControlsProps {
   fadeIn: number;
   fadeOut: number;
@@ -9,10 +12,13 @@ interface FadeControlsProps {
 }
 
 export function FadeControls({ fadeIn, fadeOut, onChange, onPreview, onApply }: FadeControlsProps) {
+  const { locale } = useLocale();
+  const copy = getAudioEditorCopy(locale);
+
   return (
     <div className="space-y-4">
       <label className="block text-xs uppercase tracking-[0.18em] text-ink-faint">
-        Fade in
+        {copy.effects.fadeIn}
         <input
           type="range"
           min={0}
@@ -25,7 +31,7 @@ export function FadeControls({ fadeIn, fadeOut, onChange, onPreview, onApply }: 
         <span className="mt-1 block text-sm font-semibold text-ink">{fadeIn.toFixed(2)}s</span>
       </label>
       <label className="block text-xs uppercase tracking-[0.18em] text-ink-faint">
-        Fade out
+        {copy.effects.fadeOut}
         <input
           type="range"
           min={0}
@@ -40,10 +46,10 @@ export function FadeControls({ fadeIn, fadeOut, onChange, onPreview, onApply }: 
 
       <div className="flex flex-wrap gap-2">
         <button type="button" onClick={onPreview} className="btn-ghost px-3 py-2 text-xs">
-          Preview fade
+          {copy.effects.previewFade}
         </button>
         <button type="button" onClick={onApply} className="btn-primary px-3 py-2 text-xs">
-          Apply fade
+          {copy.effects.applyFade}
         </button>
       </div>
     </div>
