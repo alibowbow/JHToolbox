@@ -1117,6 +1117,10 @@ async function processPdfAClone(
 export async function processPdfTool(ctx: ProcessContext): Promise<ProcessedFile[]> {
   const { toolId, files, options, onProgress } = ctx;
 
+  if (!files.length) {
+    throw new Error('Select at least one PDF file.');
+  }
+
   if (toolId === 'pdf-merge') {
     const merged = await PDFDocument.create();
     const mergePlan = parseMergePlan(String(options.mergePlan ?? ''), files.length);

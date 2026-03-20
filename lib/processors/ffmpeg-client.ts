@@ -1,7 +1,10 @@
 let ffmpegRef: any = null;
 let ffmpegLoadPromise: Promise<any> | null = null;
+let ffmpegProgressHandler: ((ratio: number) => void) | null = null;
 
 export async function getFfmpeg(onProgress?: (ratio: number) => void) {
+  ffmpegProgressHandler = onProgress ?? null;
+
   if (ffmpegRef) {
     return ffmpegRef;
   }
@@ -14,7 +17,7 @@ export async function getFfmpeg(onProgress?: (ratio: number) => void) {
 
       const ffmpeg = new ffmpegMod.FFmpeg();
       ffmpeg.on('progress', ({ progress }: { progress: number }) => {
-        onProgress?.(progress);
+        ffmpegProgressHandler?.(progress);
       });
 
       const coreURL = await utilMod.toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript');
@@ -23,7 +26,10 @@ export async function getFfmpeg(onProgress?: (ratio: number) => void) {
 
       ffmpegRef = { ffmpeg, fetchFile: utilMod.fetchFile };
       return ffmpegRef;
-    })();
+    })().catch((cause) => {
+      ffmpegLoadPromise = null;
+      throw cause;
+    });
   }
 
   return await ffmpegLoadPromise;

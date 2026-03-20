@@ -27,7 +27,7 @@ async function fetchHtmlForUrl(url: string): Promise<string> {
   }
 
   const cleanUrl = url.replace(/^https?:\/\//, '');
-  const mirror = await fetch(`https://r.jina.ai/http://${cleanUrl}`, { method: 'GET' });
+  const mirror = await fetch(`https://r.jina.ai/http://${encodeURIComponent(cleanUrl)}`, { method: 'GET' });
   if (!mirror.ok) {
     throw new Error('Unable to fetch HTML for this URL. The target may block CORS or remote access.');
   }
@@ -44,7 +44,7 @@ function normalizeUrl(url: string) {
 function buildScreenshotUrl(url: string, width: number, captureFullPage: boolean) {
   const normalizedUrl = normalizeUrl(url);
   const fullPageSegment = captureFullPage ? 'fullpage/' : '';
-  return `https://image.thum.io/get/png/noanimate/${fullPageSegment}width/${width}/${normalizedUrl}`;
+  return `https://image.thum.io/get/png/noanimate/${fullPageSegment}width/${width}/${encodeURIComponent(normalizedUrl)}`;
 }
 
 async function fetchWebsiteScreenshot(url: string, width: number, captureFullPage: boolean): Promise<Blob> {
@@ -197,6 +197,10 @@ export async function processWebTool(ctx: ProcessContext): Promise<ProcessedFile
   }
 
   if (toolId === 'image-metadata') {
+    if (!files.length) {
+      throw new Error('Select at least one image file.');
+    }
+
     const outputFiles: ProcessedFile[] = [];
     const exifr: any = await import('exifr');
 

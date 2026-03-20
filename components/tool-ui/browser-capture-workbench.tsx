@@ -550,7 +550,10 @@ async function createScreenCameraSession(
 export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
   const { locale, messages } = useLocale();
   const rawSearchParams = useSearchParams();
-  const searchParams: Pick<URLSearchParams, 'get'> = rawSearchParams ?? new URLSearchParams();
+  const searchParams: Pick<URLSearchParams, 'get'> = useMemo(
+    () => rawSearchParams ?? new URLSearchParams(),
+    [rawSearchParams],
+  );
   const localizedTool = getLocalizedToolCopy(tool, locale);
   const Icon = categoryIcons[tool.category];
   const style = categoryStyles[tool.category];
@@ -1106,32 +1109,34 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
     <ToolPageLayout title={localizedTool.name} description={localizedTool.description} icon={Icon} iconColor={style.icon}>
       <div className="space-y-6">
         <section
-          className={`card grid grid-cols-1 gap-4 p-5 ${
+          className={`workspace-panel grid grid-cols-1 gap-5 p-5 sm:p-6 ${
             isAudioRecorder ? '' : 'xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]'
           }`}
         >
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-ink">{isRecorder ? copy.liveCapture : copy.screenshotSource}</p>
-                <p className="mt-1 text-xs text-ink-muted">
+                <p className="workspace-kicker">Capture studio</p>
+                <p className="mt-2 text-sm font-semibold text-ink">{isRecorder ? copy.liveCapture : copy.screenshotSource}</p>
+                <p className="mt-1 text-sm text-ink-muted">
                   {isRecorder ? copy.liveCaptureDescription : copy.screenshotSourceDescription}
                 </p>
               </div>
               <span className={`badge border ${style.badge}`}>{category.nav}</span>
             </div>
 
-            {capabilityMessage ? <div className="rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn">{capabilityMessage}</div> : null}
+            {capabilityMessage ? <div className="workspace-panel border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn">{capabilityMessage}</div> : null}
 
             {isAudioRecorder ? (
               audioEditorFile && audioEditorPreviewUrl ? (
-                <section className="space-y-4 rounded-xl border border-border bg-base-elevated p-5">
+                <section className="editor-stage space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <p className="text-sm font-semibold text-ink">{copy.waveformEditor}</p>
-                      <p className="mt-1 text-xs text-ink-muted">{copy.waveformEditorDescription}</p>
+                      <p className="workspace-kicker">Audio editor</p>
+                      <p className="mt-2 text-sm font-semibold text-ink">{copy.waveformEditor}</p>
+                      <p className="mt-1 text-sm text-ink-muted">{copy.waveformEditorDescription}</p>
                     </div>
-                    <span className="badge border border-border bg-base-subtle text-ink-muted">WAV master</span>
+                    <span className="editor-chip normal-case tracking-normal text-ink-muted">WAV master</span>
                   </div>
 
                   <AudioWaveformEditor
@@ -1144,7 +1149,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
                   />
 
                   <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-2 rounded-xl border border-border bg-base-subtle p-1">
+                    <div className="workspace-toolbar gap-2 rounded-xl p-1">
                       {(['wav', 'mp3'] as const).map((format) => {
                         const active = audioOutputFormat === format;
                         return (
@@ -1184,18 +1189,18 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
                 />
               )
             ) : livePreviewStream ? (
-              <div className="rounded-xl border border-border bg-base-elevated p-3">
+              <div className="editor-frame">
                 <video ref={previewVideoRef} autoPlay muted playsInline controls={false} className="max-h-[26rem] w-full rounded-xl bg-base" />
               </div>
             ) : (
-              <div className="rounded-xl border border-dashed border-border bg-base-elevated/70 p-8">
+              <div className="editor-stage border-dashed p-8">
                 <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-border bg-base-subtle text-prime">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-[1.15rem] border border-border bg-base-elevated text-prime shadow-card">
                     {tool.id === 'screenshot-capture' ? <Monitor size={20} /> : tool.id === 'webcam-recorder' ? <Camera size={20} /> : <Play size={20} />}
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-ink">{tool.id === 'screenshot-capture' ? copy.noScreenshotYet : copy.noLiveCapture}</p>
-                    <p className="mt-1 text-xs text-ink-muted">{tool.id === 'screenshot-capture' ? copy.screenshotIdleDescription : copy.liveCaptureIdleDescription}</p>
+                    <p className="mt-1 text-sm text-ink-muted">{tool.id === 'screenshot-capture' ? copy.screenshotIdleDescription : copy.liveCaptureIdleDescription}</p>
                   </div>
                 </div>
               </div>
@@ -1235,12 +1240,13 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
 
           {!isAudioRecorder ? (
             <div className="space-y-4">
-              <section className="rounded-xl border border-border bg-base-elevated p-4">
-                <p className="text-sm font-semibold text-ink">{messages.workbench.options}</p>
+              <section className="workspace-panel p-4">
+                <p className="workspace-kicker">Configuration</p>
+                <p className="mt-2 text-sm font-semibold text-ink">{messages.workbench.options}</p>
                 {tool.options?.length ? (
                   <div className="mt-4 space-y-4">
                     {tool.options.map((option) => (
-                      <div key={option.key}>
+                      <div key={option.key} className="workspace-section p-4">
                         <label className="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">{getLocalizedOptionLabel(option, locale)}</label>
                         {renderField(option, options[option.key], locale, (key, nextValue) =>
                           setOptions((currentOptions) => ({ ...currentOptions, [key]: nextValue }))
@@ -1253,8 +1259,9 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
                 )}
               </section>
 
-              <section className="rounded-xl border border-border bg-base-elevated p-4">
-                <p className="text-sm font-semibold text-ink">{copy.captureNotes}</p>
+              <section className="workspace-panel p-4">
+                <p className="workspace-kicker">Notes</p>
+                <p className="mt-2 text-sm font-semibold text-ink">{copy.captureNotes}</p>
                 <ul className="mt-3 space-y-2 text-sm text-ink-muted">
                   {captureNotes.map((note) => (
                     <li key={note}>{note}</li>
@@ -1266,11 +1273,12 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
         </section>
 
         {showProgress ? (
-          <section className="card p-5">
+          <section className="workspace-panel p-5">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-ink">{messages.workbench.progress}</p>
-                <p className="mt-1 text-xs text-ink-muted">{progressLabel}</p>
+                <p className="workspace-kicker">Execution</p>
+                <p className="mt-2 text-sm font-semibold text-ink">{messages.workbench.progress}</p>
+                <p className="mt-1 text-sm text-ink-muted">{progressLabel}</p>
               </div>
               <span className={`badge border ${style.badge}`}>{status}</span>
             </div>
@@ -1289,7 +1297,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
                   onDownload={() => downloadBlob(result.blob, result.name)}
                 />
 
-                <div className="card space-y-4 p-5">
+                <div className="workspace-panel space-y-4 p-5">
                   {result.previewUrl && result.mimeType.startsWith('image/') ? <img src={result.previewUrl} alt={result.name} className="max-h-[34rem] w-full rounded-xl object-contain" /> : null}
                   {result.previewUrl && result.mimeType.startsWith('video/') ? <video src={result.previewUrl} controls className="max-h-[34rem] w-full rounded-xl" /> : null}
                   {result.previewUrl && result.mimeType.startsWith('audio/') ? <audio src={result.previewUrl} controls className="w-full" /> : null}
@@ -1303,7 +1311,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
             )}
           </Tabs>
         ) : error ? (
-          <section className="card border-danger/30 bg-danger/5 p-5 text-sm text-danger">{error}</section>
+          <section className="workspace-panel border-danger/30 bg-danger/5 p-5 text-sm text-danger">{error}</section>
         ) : null}
       </div>
     </ToolPageLayout>

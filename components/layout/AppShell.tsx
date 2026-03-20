@@ -10,11 +10,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <div className="flex min-h-screen bg-base">
+    <div className="relative flex min-h-screen bg-base">
       <Sidebar />
-      <div className="flex min-h-screen min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="relative flex min-h-screen min-w-0 flex-1 flex-col overflow-hidden">
         <Topbar />
-        <main className="flex-1 overflow-y-auto px-4 pb-24 pt-4 sm:px-6 lg:px-8 lg:pb-10 lg:pt-6">
+        <main className="relative flex-1 overflow-y-auto px-4 pb-28 pt-5 sm:px-6 lg:px-8 lg:pb-12 lg:pt-8">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-white/25 to-transparent dark:from-white/5" />
           <PageTransition routeKey={pathname ?? 'app'}>{children}</PageTransition>
         </main>
         <BottomNav />

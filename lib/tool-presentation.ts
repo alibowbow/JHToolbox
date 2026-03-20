@@ -1,5 +1,7 @@
 import { Archive, FileAudio2, FileImage, FileSearch2, FileText, FileVideo2, Globe, LucideIcon, Monitor } from 'lucide-react';
+import { AppDictionary } from '@/lib/i18n';
 import { ToolCategory } from '@/types/tool';
+import { ToolBrowseGroup } from '@/types/tool';
 
 export const categoryIcons: Record<ToolCategory, LucideIcon> = {
   pdf: FileText,
@@ -88,3 +90,50 @@ export const categoryStyles: Record<
     badge: 'border-fuchsia-400/20 bg-fuchsia-500/10 text-fuchsia-300',
   },
 };
+
+export const browseGroupOrder: ToolBrowseGroup[] = ['popular', 'new', 'editor-enabled', 'convert', 'trim', 'compress', 'merge', 'capture'];
+
+export function getBrowseGroupSections(directoryCopy: AppDictionary['directory']) {
+  return browseGroupOrder.map((id) => {
+    const copy = {
+      popular: {
+        label: directoryCopy.popularTitle,
+        description: directoryCopy.popularDescription,
+      },
+      new: {
+        label: directoryCopy.newTitle,
+        description: directoryCopy.newDescription,
+      },
+      'editor-enabled': {
+        label: directoryCopy.editorEnabledTitle,
+        description: directoryCopy.editorEnabledDescription,
+      },
+      convert: {
+        label: directoryCopy.convertTitle,
+        description: directoryCopy.convertDescription,
+      },
+      trim: {
+        label: directoryCopy.trimTitle,
+        description: directoryCopy.trimDescription,
+      },
+      compress: {
+        label: directoryCopy.compressTitle,
+        description: directoryCopy.compressDescription,
+      },
+      merge: {
+        label: directoryCopy.mergeTitle,
+        description: directoryCopy.mergeDescription,
+      },
+      capture: {
+        label: directoryCopy.captureTitle,
+        description: directoryCopy.captureDescription,
+      },
+    }[id];
+
+    return {
+      id,
+      label: copy.label,
+      description: copy.description,
+    };
+  });
+}

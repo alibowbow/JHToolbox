@@ -289,6 +289,10 @@ function applySharpen(source: ImageData, amount: number) {
 export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFile[]> {
   const { toolId, files, options, onProgress } = ctx;
 
+  if (!files.length) {
+    throw new Error('Select at least one image file.');
+  }
+
   const conversionTarget = splitTargets(toolId);
   if (conversionTarget) {
     const out: ProcessedFile[] = [];

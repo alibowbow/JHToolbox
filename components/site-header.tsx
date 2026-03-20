@@ -26,7 +26,7 @@ export function SiteHeader() {
   }, [query]);
 
   return (
-    <header className="sticky top-0 z-30 border-b border-border/80 bg-bg/90 backdrop-blur">
+    <header className="sticky top-0 z-30 border-b border-border/80 bg-base-elevated/90 backdrop-blur">
       <div className="mx-auto flex w-full max-w-7xl items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
         <Link href="/" className="flex items-center gap-2 font-semibold">
           <Wrench size={18} className="text-accent" />

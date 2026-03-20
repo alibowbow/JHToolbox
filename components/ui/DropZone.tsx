@@ -32,8 +32,8 @@ export function DropZone({ onFiles, accept, multiple = false, label, files }: Dr
         htmlFor={inputId}
         animate={
           isDragging
-            ? { borderColor: '#00e5ff', backgroundColor: '#00e5ff08', scale: 1.01 }
-            : { borderColor: '#ffffff14', backgroundColor: '#18181f', scale: 1 }
+            ? { borderColor: '#22d3ee', backgroundColor: 'rgba(34,211,238,0.08)', scale: 1.01 }
+            : { borderColor: 'rgba(15,23,42,0.08)', backgroundColor: 'rgba(255,255,255,0.68)', scale: 1 }
         }
         onDragOver={(event) => {
           event.preventDefault();
@@ -46,17 +46,20 @@ export function DropZone({ onFiles, accept, multiple = false, label, files }: Dr
           const droppedFiles = Array.from(event.dataTransfer.files);
           pushFiles(multiple ? [...currentFiles, ...droppedFiles] : droppedFiles.slice(0, 1));
         }}
-        className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl2 border-2 border-dashed p-8 text-center transition-colors sm:p-10"
+        className="editor-stage flex cursor-pointer flex-col items-center justify-center gap-4 border-2 border-dashed p-8 text-center transition-colors sm:p-10"
       >
         <motion.div
           animate={isDragging ? { y: -4 } : { y: 0 }}
-          className="flex h-12 w-12 items-center justify-center rounded-xl border border-border bg-base-subtle text-prime"
+          className="flex h-14 w-14 items-center justify-center rounded-[1.2rem] border border-border bg-base-elevated text-prime shadow-card"
         >
           <Upload size={22} />
         </motion.div>
         <div className="space-y-1">
-          <p className="text-sm font-medium text-ink">{label}</p>
-          {accept ? <p className="text-xs text-ink-muted">{accept}</p> : null}
+          <p className="text-base font-semibold text-ink">{label}</p>
+          <p className="text-xs uppercase tracking-[0.18em] text-ink-faint">
+            {multiple ? 'Batch-ready' : 'Single file'}
+          </p>
+          {accept ? <p className="text-sm text-ink-muted">{accept}</p> : null}
         </div>
         <input
           id={inputId}
@@ -79,9 +82,9 @@ export function DropZone({ onFiles, accept, multiple = false, label, files }: Dr
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="card flex items-center gap-3 px-4 py-3"
+            className="workspace-section flex items-center gap-3 px-4 py-3"
           >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-base-subtle text-prime">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl2 bg-base-subtle text-prime">
               <File size={16} />
             </div>
             <div className="min-w-0 flex-1">

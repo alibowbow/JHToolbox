@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import JSZip from 'jszip';
 import { Copy, Download, LoaderCircle, Play } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
@@ -323,13 +323,14 @@ function renderField(
   option: ToolOption,
   value: string | number | boolean | undefined,
   locale: 'en' | 'ko',
+  inputId: string,
   onChange: (key: string, nextValue: string | number | boolean) => void,
 ) {
   const commonClassName = 'input-surface mt-1 w-full';
 
   if (option.type === 'select') {
     return (
-      <select value={String(value)} onChange={(event) => onChange(option.key, event.target.value)} className={commonClassName}>
+      <select id={inputId} value={String(value)} onChange={(event) => onChange(option.key, event.target.value)} className={commonClassName}>
         {(option.options ?? []).map((entry) => (
           <option key={String(entry.value)} value={String(entry.value)}>
             {getLocalizedChoiceLabel(entry.label, locale)}
@@ -343,6 +344,7 @@ function renderField(
     return (
       <label className="mt-2 inline-flex items-center gap-2 text-sm text-ink-muted">
         <input
+          id={inputId}
           type="checkbox"
           checked={Boolean(value)}
           onChange={(event) => onChange(option.key, event.target.checked)}
@@ -356,6 +358,7 @@ function renderField(
   if (option.type === 'color') {
     return (
       <input
+        id={inputId}
         type="color"
         value={String(value)}
         onChange={(event) => onChange(option.key, event.target.value)}
@@ -368,6 +371,7 @@ function renderField(
     return (
       <div className="mt-1 space-y-2">
         <input
+          id={inputId}
           type="range"
           value={Number(value)}
           onChange={(event) => onChange(option.key, Number(event.target.value))}
@@ -383,6 +387,7 @@ function renderField(
 
   return (
     <input
+      id={inputId}
       type={option.type === 'number' ? 'number' : 'text'}
       value={String(value ?? '')}
       onChange={(event) =>
@@ -407,14 +412,15 @@ function renderOptionField(
   onChange: (key: string, nextValue: string | number | boolean) => void,
 ) {
   const presetGroup = getOptionPresetGroup(tool, option, optionIndex, allOptions, locale);
+  const inputId = `tool-option-${tool.id}-${option.key}`;
 
   return (
-    <div key={option.key}>
-      <label className="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">
+    <div key={option.key} className="workspace-section p-4">
+      <label htmlFor={inputId} className="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">
         {getLocalizedOptionLabel(option, locale)}
       </label>
       {presetGroup ? (
-        <div className="mt-2 rounded-xl border border-border bg-base-subtle/70 p-3">
+        <div className="mt-3 rounded-xl2 border border-border bg-base-subtle/70 p-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-faint">{presetGroup.title}</p>
@@ -445,7 +451,7 @@ function renderOptionField(
           </div>
         </div>
       ) : null}
-      {renderField(option, values[option.key], locale, onChange)}
+      {renderField(option, values[option.key], locale, inputId, onChange)}
     </div>
   );
 }
@@ -454,6 +460,17 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
   if (tool.inputMode === 'capture') {
     return <BrowserCaptureWorkbench tool={tool} />;
   }
+
+  return <StandardToolWorkbench tool={tool} categoryId={categoryId} />;
+}
+
+function StandardToolWorkbench({
+  tool,
+  categoryId,
+}: {
+  tool: ToolDefinition;
+  categoryId?: ToolDefinition['category'];
+}) {
 
   const { locale, messages } = useLocale();
   const rawSearchParams = useSearchParams();
@@ -465,6 +482,7 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
   const [options, setOptions] = useState<Record<string, string | number | boolean>>(() =>
     getInitialOptions(tool, searchParams),
   );
+  const optionsRef = useRef(options);
   const [progress, setProgress] = useState<{ percent: number; stage: string }>({
     percent: 0,
     stage: messages.workbench.statusIdle,
@@ -518,6 +536,10 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
     setSavedPresetAvailable(hasPresetToolOptions(tool.id));
     setLastRunAvailable(hasLastRunToolOptions(tool.id));
   };
+
+  useEffect(() => {
+    optionsRef.current = options;
+  }, [options]);
 
   useEffect(() => {
     const restoredOptions =
@@ -601,6 +623,10 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
       ...currentOptions,
       [key]: nextValue,
     }));
+    optionsRef.current = {
+      ...optionsRef.current,
+      [key]: nextValue,
+    };
   };
 
   const savePreset = () => {
@@ -653,19 +679,21 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
   };
 
   const onProcess = async () => {
+    const currentOptions = optionsRef.current;
+
     if (!files.length && !fileOptional) {
       setError(messages.workbench.addFileError);
       toast.error(messages.workbench.addFileError);
       return;
     }
 
-    if (tool.id === 'pdf-merge' && files.length > 0 && String(options.mergePlan ?? '').trim() === '') {
+    if (tool.id === 'pdf-merge' && files.length > 0 && String(currentOptions.mergePlan ?? '').trim() === '') {
       setError(messages.workbench.addPageError);
       toast.error(messages.workbench.addPageError);
       return;
     }
 
-    if (tool.id === 'pdf-rearrange' && files.length > 0 && String(options.order ?? '').trim() === '') {
+    if (tool.id === 'pdf-rearrange' && files.length > 0 && String(currentOptions.order ?? '').trim() === '') {
       setError(messages.workbench.addPageError);
       toast.error(messages.workbench.addPageError);
       return;
@@ -680,7 +708,7 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
       const processedFiles = await runTool({
         toolId: tool.id,
         files,
-        options,
+        options: currentOptions,
         onProgress: setProgress,
       });
 
@@ -706,7 +734,7 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
       setResults(filesWithPreview);
       setProgress({ percent: 100, stage: messages.workbench.statusDone });
       if (supportsOptionMemory) {
-        saveLastRunToolOptions(tool.id, toolOptions, options);
+        saveLastRunToolOptions(tool.id, toolOptions, currentOptions);
         syncOptionMemoryAvailability();
       }
       pushRecentTool(tool.id);
@@ -828,21 +856,22 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
       <div className="space-y-6">
         <div
           className={cx(
-            'grid grid-cols-1 gap-4',
+            'grid grid-cols-1 gap-5',
             !usesDirectInput && showOptionsPanel && !showWideEditorLayout && 'xl:grid-cols-5',
           )}
         >
           {usesDirectInput ? (
-            <section className="card p-5">
+            <section className="workspace-panel p-5 sm:p-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold text-ink">{messages.workbench.directInputTitle}</p>
-                  <p className="mt-1 text-xs text-ink-muted">{messages.workbench.directInputDescription}</p>
+                  <p className="workspace-kicker">Direct input</p>
+                  <p className="mt-2 text-sm font-semibold text-ink">{messages.workbench.directInputTitle}</p>
+                  <p className="mt-1 text-sm text-ink-muted">{messages.workbench.directInputDescription}</p>
                 </div>
                 <span className={`badge border ${style.badge}`}>{category.nav}</span>
               </div>
 
-              <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
                 {toolOptions.map((option, optionIndex, allOptions) =>
                   renderOptionField(tool, option, optionIndex, allOptions, options, locale, updateOptionValue),
                 )}
@@ -856,11 +885,12 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
             </section>
           ) : (
             <>
-              <section className={cx('card space-y-4 p-5', showOptionsPanel && !showWideEditorLayout && 'xl:col-span-3')}>
+              <section className={cx('workspace-panel space-y-5 p-5 sm:p-6', showOptionsPanel && !showWideEditorLayout && 'xl:col-span-3')}>
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold text-ink">{messages.workbench.files}</p>
-                    <p className="mt-1 text-xs text-ink-muted">
+                    <p className="workspace-kicker">Input intake</p>
+                    <p className="mt-2 text-sm font-semibold text-ink">{messages.workbench.files}</p>
+                    <p className="mt-1 text-sm text-ink-muted">
                       {messages.workbench.acceptedInput}: {acceptLabel}
                     </p>
                   </div>
@@ -876,9 +906,9 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
                 />
 
                 {tool.id === 'pdf-merge' && files.length > 1 ? (
-                  <div className="flex flex-wrap gap-2 rounded-xl border border-border bg-base-elevated px-3 py-3">
+                  <div className="workspace-toolbar">
                     {files.map((file, index) => (
-                      <div key={`${file.name}-${index}`} className="flex items-center gap-2 rounded-full border border-border bg-base-subtle px-3 py-2 text-xs text-ink-muted">
+                      <div key={`${file.name}-${index}`} className="flex items-center gap-2 rounded-full border border-border bg-base-elevated px-3 py-2 text-xs text-ink-muted">
                         <span className="font-mono text-ink-faint">#{index + 1}</span>
                         <span className="max-w-[14rem] truncate">{file.name}</span>
                         <div className="flex gap-1">
@@ -905,15 +935,16 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
                 ) : null}
 
                 {files.length > 0 ? (
-                  <section className="rounded-xl border border-border-bright bg-base-subtle/70 p-4">
+                  <section className="editor-stage">
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-sm font-semibold text-ink">{messages.workbench.editorPreviewTitle}</p>
-                        <p className="mt-1 text-xs text-ink-muted">
+                        <p className="workspace-kicker">Workbench preview</p>
+                        <p className="mt-2 text-sm font-semibold text-ink">{messages.workbench.editorPreviewTitle}</p>
+                        <p className="mt-1 text-sm text-ink-muted">
                           {usesPdfEditor ? messages.workbench.mergePreviewDescription : messages.workbench.inputPreviewDescription}
                         </p>
                       </div>
-                      <span className="badge border border-border bg-base-elevated text-ink-muted">
+                      <span className="editor-chip normal-case tracking-normal text-ink-muted">
                         {formatMegaBytes(files.reduce((sum, file) => sum + file.size, 0))}
                       </span>
                     </div>
@@ -952,7 +983,7 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
                       />
                     ) : inputPreviewUrl ? (
                       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
-                        <div className="rounded-xl border border-border bg-base-elevated p-3">
+                        <div className="editor-frame">
                           {files[0]?.type.startsWith('image/') ? (
                             <img src={inputPreviewUrl} alt={files[0].name} className="max-h-[24rem] w-full rounded-lg object-contain" />
                           ) : null}
@@ -961,23 +992,23 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
                             <video src={inputPreviewUrl} controls className="max-h-[24rem] w-full rounded-lg" />
                           ) : null}
                         </div>
-                        <div className="space-y-3 rounded-xl border border-border bg-base-elevated p-3">
-                          <div>
+                        <div className="workspace-panel space-y-3 p-4">
+                          <div className="workspace-metric">
                             <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.selectedFile}</p>
                             <p className="mt-2 truncate text-sm font-semibold text-ink">{files[0]?.name}</p>
                           </div>
-                          <div>
+                          <div className="workspace-metric">
                             <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.fileCount}</p>
                             <p className="mt-2 text-sm font-semibold text-ink">{files.length}</p>
                           </div>
-                          <div>
+                          <div className="workspace-metric">
                             <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.firstFileSize}</p>
                             <p className="mt-2 text-sm font-semibold text-ink">{formatMegaBytes(files[0]?.size ?? 0)}</p>
                           </div>
                         </div>
                       </div>
                     ) : (
-                      <div className="rounded-xl border border-border bg-base-elevated px-4 py-3 text-sm text-ink-muted">
+                      <div className="workspace-section text-sm text-ink-muted">
                         {messages.workbench.readyToRunDescription}
                       </div>
                     )}
@@ -993,8 +1024,9 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
               </section>
 
               {showOptionsPanel ? (
-                <section className={cx('card p-5', !showWideEditorLayout && 'xl:col-span-2')}>
-                  <p className="text-sm font-semibold text-ink">{messages.workbench.options}</p>
+                <section className={cx('workspace-panel p-5 sm:p-6', !showWideEditorLayout && 'xl:col-span-2')}>
+                  <p className="workspace-kicker">Configuration</p>
+                  <p className="mt-2 text-sm font-semibold text-ink">{messages.workbench.options}</p>
                   {optionMemoryPanel ? <div className="mt-4">{optionMemoryPanel}</div> : null}
                   <div className="mt-4 space-y-4">
                     {toolOptions.map((option, optionIndex, allOptions) =>
@@ -1013,11 +1045,12 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
         </div>
 
         {showProgress ? (
-          <section className="card p-5">
+          <section className="workspace-panel p-5 sm:p-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-ink">{messages.workbench.progress}</p>
-                <p className="mt-1 text-xs text-ink-muted">{progress.stage}</p>
+                <p className="workspace-kicker">Execution</p>
+                <p className="mt-2 text-sm font-semibold text-ink">{messages.workbench.progress}</p>
+                <p className="mt-1 text-sm text-ink-muted">{progress.stage}</p>
               </div>
               <span className={`badge border ${style.badge}`}>{category.nav}</span>
             </div>
@@ -1031,19 +1064,19 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
               if (activeTab === 'inspector') {
                 return (
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <div className="card p-4">
+                    <div className="workspace-panel p-4">
                       <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.toolId}</p>
                       <p className="mt-2 text-sm font-semibold text-ink">{tool.id}</p>
                     </div>
-                    <div className="card p-4">
+                    <div className="workspace-panel p-4">
                       <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.acceptedInput}</p>
                       <p className="mt-2 text-sm font-semibold text-ink">{acceptLabel}</p>
                     </div>
-                    <div className="card p-4">
+                    <div className="workspace-panel p-4">
                       <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.outputFiles}</p>
                       <p className="mt-2 text-sm font-semibold text-ink">{results.length}</p>
                     </div>
-                    <div className="card p-4">
+                    <div className="workspace-panel p-4">
                       <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.tags}</p>
                       <div className="mt-2 flex flex-wrap gap-2">
                         {tool.tags.map((tag) => (
@@ -1060,7 +1093,10 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
               return (
                 <section className="space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-ink">{messages.workbench.results}</p>
+                    <div>
+                      <p className="workspace-kicker">Delivery</p>
+                      <p className="mt-2 text-sm font-semibold text-ink">{messages.workbench.results}</p>
+                    </div>
                     {results.length > 1 ? (
                       <button type="button" onClick={onDownloadAll} disabled={!results.length} className="btn-ghost disabled:opacity-60">
                         <Download size={16} />
@@ -1069,7 +1105,7 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
                     ) : null}
                   </div>
 
-                  {error ? <div className="card border-danger/30 bg-danger/10 p-4 text-sm text-danger">{error}</div> : null}
+                  {error ? <div className="workspace-panel border-danger/30 bg-danger/10 p-4 text-sm text-danger">{error}</div> : null}
 
                   {results.length > 0 ? (
                     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
