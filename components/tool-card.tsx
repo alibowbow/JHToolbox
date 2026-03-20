@@ -22,10 +22,10 @@ export function ToolCard({ tool, categoryId }: { tool: ToolDefinition; categoryI
       <motion.article
         whileHover={{ y: -4 }}
         whileTap={{ scale: 0.98 }}
-        className={`card group flex h-full flex-col gap-5 border ${style.border} bg-gradient-to-br ${style.gradient} p-5 transition-all`}
+        className={`card group flex h-full flex-col gap-5 ${style.border} bg-gradient-to-br ${style.gradient} p-5 transition-all`}
       >
         <div className="flex items-start justify-between gap-3">
-          <div className={`flex h-12 w-12 items-center justify-center rounded-[1.1rem] border border-border ${style.iconBg} ${style.icon}`}>
+          <div className={`flex h-12 w-12 items-center justify-center rounded-[1.1rem] border border-border/70 ${style.iconBg} ${style.icon}`}>
             <Icon size={18} />
           </div>
           <span className={`badge border ${style.badge}`}>{category.nav}</span>
@@ -39,7 +39,7 @@ export function ToolCard({ tool, categoryId }: { tool: ToolDefinition; categoryI
           <p className="text-sm leading-relaxed text-ink-muted">{localizedTool.description}</p>
         </div>
 
-        <div className="mt-auto flex items-center justify-between border-t border-border/50 pt-4 text-[11px] uppercase tracking-[0.18em] text-ink-faint">
+        <div className="mt-auto flex items-center justify-between border-t border-border/30 pt-4 text-[11px] uppercase tracking-[0.18em] text-ink-faint">
           <span>Open workspace</span>
           <span className="text-prime">Ready</span>
         </div>

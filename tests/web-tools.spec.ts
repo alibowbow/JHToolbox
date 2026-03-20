@@ -1,9 +1,17 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const oneByOnePng = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jJm8AAAAASUVORK5CYII=',
   'base64',
 );
+
+async function waitForClientReady(page: Page) {
+  await page.waitForFunction(() => {
+    const transitionRoot = document.querySelector('main > div.relative');
+    const style = transitionRoot?.getAttribute('style') ?? '';
+    return transitionRoot instanceof HTMLElement && !style.includes('opacity:0');
+  });
+}
 
 test('webpage capture encodes query parameters before calling the screenshot service', async ({ page }) => {
   let requestedUrl: string | null = null;
@@ -18,7 +26,10 @@ test('webpage capture encodes query parameters before calling the screenshot ser
   });
 
   await page.goto('/tools/web/url-image', { waitUntil: 'domcontentloaded' });
-  await page.getByLabel('Target URL').fill('https://example.com/path?q=1&x=2');
+  await waitForClientReady(page);
+  const urlInput = page.getByLabel('Target URL');
+  await urlInput.fill('https://example.com/path?q=1&x=2');
+  await expect(urlInput).toHaveValue('https://example.com/path?q=1&x=2');
   await page.getByRole('button', { name: 'Run tool' }).click();
 
   await expect.poll(async () => requestedUrl ?? '').toContain(
@@ -39,7 +50,10 @@ test('cms detection encodes query parameters before falling back to the mirror s
   });
 
   await page.goto('/tools/web/detect-cms', { waitUntil: 'domcontentloaded' });
-  await page.getByLabel('Target URL').fill('https://example.com/path?campaign=spring&ref=123');
+  await waitForClientReady(page);
+  const urlInput = page.getByLabel('Target URL');
+  await urlInput.fill('https://example.com/path?campaign=spring&ref=123');
+  await expect(urlInput).toHaveValue('https://example.com/path?campaign=spring&ref=123');
   await page.getByRole('button', { name: 'Run tool' }).click();
 
   await expect.poll(async () => requestedUrl ?? '').toContain(

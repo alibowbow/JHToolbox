@@ -54,7 +54,7 @@ export default function HomePage() {
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="surface-glow relative overflow-hidden rounded-[2rem] border border-border p-7 shadow-card sm:p-10"
+        className="surface-glow relative overflow-hidden rounded-[2rem] border border-border/70 p-7 shadow-card sm:p-10"
       >
         <div className="absolute inset-0 bg-grid-faint opacity-50" />
         <div className="relative z-10 grid gap-8 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.7fr)] lg:items-end">
@@ -148,9 +148,9 @@ export default function HomePage() {
             return (
               <motion.div key={category.id} variants={itemVariants}>
                 <Link href={`/tools/${category.id}`}>
-                  <div className={`card group h-full border ${style.border} bg-gradient-to-br ${style.gradient} p-5 transition-all`}>
+                  <div className={`card group h-full ${style.border} bg-gradient-to-br ${style.gradient} p-5 transition-all`}>
                     <div className="flex items-start justify-between gap-3">
-                      <div className={`flex h-10 w-10 items-center justify-center rounded-xl border border-border ${style.iconBg} ${style.icon}`}>
+                      <div className={`flex h-10 w-10 items-center justify-center rounded-xl border border-border/70 ${style.iconBg} ${style.icon}`}>
                         <Icon size={20} />
                       </div>
                       <span className="badge border border-border bg-base-subtle text-ink-muted">

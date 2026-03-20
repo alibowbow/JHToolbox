@@ -16,8 +16,8 @@ const config: Config = {
           elevated: 'rgb(var(--color-base-elevated) / <alpha-value>)',
         },
         border: {
-          DEFAULT: 'rgb(var(--color-border) / 0.08)',
-          bright: 'rgb(var(--color-border) / 0.16)',
+          DEFAULT: 'rgb(var(--color-border) / 0.055)',
+          bright: 'rgb(var(--color-border) / 0.11)',
         },
         ink: {
           DEFAULT: 'rgb(var(--color-ink) / 1)',

@@ -6,8 +6,7 @@ import { Tabs } from '@/components/ui/Tabs';
 import { useLocale } from '@/components/providers/locale-provider';
 import { formatToolCount, getCategoryCopy } from '@/lib/i18n';
 import { getRecentTools } from '@/lib/recent-tools';
-import { categories, getBrowsableTools, getToolsByBrowseGroup, getToolsByCategory, getToolById } from '@/lib/tool-registry';
-import { getBrowseGroupSections } from '@/lib/tool-presentation';
+import { categories, getBrowsableTools, getToolsByCategory, getToolById } from '@/lib/tool-registry';
 import { ToolDefinition } from '@/types/tool';
 
 function isToolDefinition(tool: ToolDefinition | undefined): tool is ToolDefinition {
@@ -24,14 +23,6 @@ export function ToolsDirectory() {
   }, []);
 
   const recentTools = recentToolIds.map((toolId) => getToolById(toolId)).filter(isToolDefinition);
-  const focusGroups = getBrowseGroupSections(messages.directory);
-
-  const focusSections = focusGroups
-    .map((group) => ({
-      ...group,
-      items: getToolsByBrowseGroup(group.id).slice(0, 6),
-    }))
-    .filter((section) => section.items.length > 0);
 
   const tabs = [
     { id: 'all', label: messages.directory.allTab },
@@ -97,36 +88,6 @@ export function ToolsDirectory() {
           </div>
         </section>
       ) : null}
-
-      <section className="space-y-4">
-        <div className="flex items-end justify-between gap-3">
-          <div>
-            <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{messages.directory.focusTitle}</h2>
-            <p className="mt-1 text-sm text-ink-muted">{messages.directory.focusDescription}</p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          {focusSections.map((section) => (
-            <section key={section.id} className="card p-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-lg font-semibold text-ink">{section.label}</h3>
-                  <p className="mt-1 text-sm text-ink-muted">{section.description}</p>
-                </div>
-                <span className="badge border border-border bg-base-subtle text-ink-muted">
-                  {formatToolCount(locale, section.items.length)}
-                </span>
-              </div>
-              <div className="mt-4 grid grid-cols-1 gap-3">
-                {section.items.map((tool) => (
-                  <ToolCard key={`${section.id}-${tool.id}`} tool={tool} />
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
-      </section>
 
       <Tabs tabs={tabs} storageKey="jhtoolbox.directory.activeTab">
         {(activeTab) => {
