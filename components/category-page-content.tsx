@@ -25,7 +25,7 @@ export function CategoryPageContent({
   return (
     <ToolPageLayout title={copy.title} description={copy.description} icon={Icon} iconColor={style.icon}>
       <div className="space-y-6">
-        <section className={`card border ${style.border} bg-gradient-to-br ${style.gradient} p-5 sm:p-6`}>
+        <section className={`card ${style.border} bg-gradient-to-br ${style.gradient} p-5 sm:p-6`}>
           <div className="flex flex-wrap items-center gap-3">
             <span className={`badge border ${style.badge}`}>{messages.categoryPage.summaryLabel}</span>
             <span className="badge border border-border bg-base-subtle text-ink-muted">{formatToolCount(locale, items.length)}</span>

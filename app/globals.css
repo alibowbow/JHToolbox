@@ -20,10 +20,10 @@
     --color-warn: 217 119 6;
     --color-danger: 239 68 68;
     --color-prime-contrast: 3 19 26;
-    --shadow-card: 0 28px 80px -44px rgba(15, 23, 42, 0.28), 0 1px 0 rgba(255, 255, 255, 0.92) inset;
-    --shadow-panel: 0 34px 90px -54px rgba(15, 23, 42, 0.4), 0 18px 36px -28px rgba(15, 23, 42, 0.2);
+    --shadow-card: 0 22px 58px -42px rgba(15, 23, 42, 0.18), 0 1px 0 rgba(255, 255, 255, 0.92) inset;
+    --shadow-panel: 0 28px 74px -50px rgba(15, 23, 42, 0.28), 0 14px 30px -24px rgba(15, 23, 42, 0.12);
     --surface-highlight: rgba(255, 255, 255, 0.88);
-    --surface-stroke: rgba(15, 23, 42, 0.08);
+    --surface-stroke: rgba(15, 23, 42, 0.055);
   }
 
   html.dark {
@@ -43,10 +43,10 @@
     --color-warn: 251 191 36;
     --color-danger: 248 113 113;
     --color-prime-contrast: 3 19 26;
-    --shadow-card: 0 32px 90px -58px rgba(0, 0, 0, 0.9), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
-    --shadow-panel: 0 36px 100px -64px rgba(0, 0, 0, 0.96), 0 22px 42px -30px rgba(0, 0, 0, 0.6);
+    --shadow-card: 0 24px 64px -46px rgba(0, 0, 0, 0.82), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+    --shadow-panel: 0 30px 80px -56px rgba(0, 0, 0, 0.9), 0 18px 36px -28px rgba(0, 0, 0, 0.54);
     --surface-highlight: rgba(255, 255, 255, 0.05);
-    --surface-stroke: rgba(255, 255, 255, 0.09);
+    --surface-stroke: rgba(255, 255, 255, 0.075);
   }
 
   * {
@@ -65,8 +65,8 @@
       radial-gradient(circle at 12% 0%, rgb(var(--color-prime) / 0.18), transparent 24%),
       radial-gradient(circle at 88% 12%, rgb(var(--color-accent) / 0.12), transparent 24%),
       radial-gradient(circle at 50% 100%, rgb(var(--color-prime) / 0.08), transparent 30%),
-      linear-gradient(rgb(var(--color-border) / 0.045) 1px, transparent 1px),
-      linear-gradient(90deg, rgb(var(--color-border) / 0.045) 1px, transparent 1px),
+      linear-gradient(rgb(var(--color-border) / 0.028) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(var(--color-border) / 0.028) 1px, transparent 1px),
       url('/noise.png');
     background-size: auto, auto, auto, 48px 48px, 48px 48px, 220px 220px;
     background-position: 0 0, 100% 0, 50% 100%, 0 0, 0 0, 0 0;
@@ -118,7 +118,12 @@
     @apply rounded-xl2 border border-border bg-base-elevated shadow-card;
     background-image:
       linear-gradient(180deg, rgb(var(--color-base-elevated) / 0.99), rgb(var(--color-base-elevated) / 0.93)),
-      radial-gradient(circle at top, rgb(var(--color-prime) / 0.07), transparent 45%);
+      radial-gradient(circle at top, rgb(var(--color-prime) / 0.05), transparent 48%);
+    transition: border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease, transform 180ms ease;
+  }
+
+  .card:hover {
+    box-shadow: 0 26px 58px -42px rgba(15, 23, 42, 0.16), 0 1px 0 rgba(255, 255, 255, 0.92) inset;
   }
 
   .badge {
@@ -164,7 +169,7 @@
     @apply rounded-xl3 border border-border bg-base-elevated;
     background-image:
       linear-gradient(180deg, rgb(var(--color-base-elevated) / 0.995), rgb(var(--color-base-elevated) / 0.93)),
-      radial-gradient(circle at top, rgb(var(--color-prime) / 0.09), transparent 48%);
+      radial-gradient(circle at top, rgb(var(--color-prime) / 0.06), transparent 52%);
     box-shadow: var(--shadow-panel);
   }
 
@@ -172,7 +177,7 @@
     @apply rounded-xl2 border border-border bg-base-elevated/80 p-5;
     box-shadow:
       inset 0 1px 0 var(--surface-highlight),
-      0 18px 44px -32px rgba(15, 23, 42, 0.24);
+      0 16px 40px -34px rgba(15, 23, 42, 0.14);
   }
 
   .workspace-toolbar {
@@ -197,7 +202,7 @@
     @apply rounded-xl3 border border-border bg-base-subtle/60 p-4;
     box-shadow:
       inset 0 1px 0 var(--surface-highlight),
-      0 24px 70px -48px rgba(15, 23, 42, 0.36);
+      0 20px 54px -42px rgba(15, 23, 42, 0.18);
   }
 
   .editor-frame {

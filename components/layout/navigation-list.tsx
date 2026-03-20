@@ -49,12 +49,16 @@ export function NavigationList({
               {active ? (
                 <motion.div
                   layoutId={activeIndicatorId}
-                  className="absolute inset-0 rounded-2xl border border-border/60 bg-base-elevated"
+                  className="absolute inset-0 rounded-2xl bg-base-elevated/95 shadow-card"
                   style={{ zIndex: -1 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 40 }}
                 />
               ) : null}
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-border/60 bg-base-subtle/75">
+              <div
+                className={`flex h-10 w-10 items-center justify-center rounded-2xl ${
+                  active ? 'bg-base text-ink shadow-card' : 'bg-base-subtle/75'
+                }`}
+              >
                 <Icon size={16} className={active ? iconClass : 'text-ink-muted'} />
               </div>
               <div className="min-w-0 flex-1">
