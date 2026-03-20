@@ -171,13 +171,40 @@ test('sidebar navigation remains stable after visiting a tool detail page', asyn
   }
 });
 
-test('audio converter quick action preset selects MP3 and keeps empty panels hidden', async ({ page }) => {
-  await page.goto('/tools/audio/audio-convert?outputFormat=mp3');
+test('legacy audio editor routes redirect to the unified audio editor', async ({ page }) => {
+  const redirectTargets = [
+    '/tools/audio/audio-cut',
+    '/tools/audio/audio-recorder',
+    '/tools/audio/audio-merge',
+    '/tools/audio/audio-fade',
+    '/tools/audio/audio-speed-change',
+    '/tools/audio/audio-pitch-change',
+  ];
 
-  await expect(page.getByRole('heading', { level: 2, name: 'Audio Converter' })).toBeVisible();
-  await expect(page.locator('select').first()).toHaveValue('mp3');
-  await expect(page.getByText('Progress')).toHaveCount(0);
-  await expect(page.getByText('Results')).toHaveCount(0);
+  for (const target of redirectTargets) {
+    await page.goto(target);
+    await expect(page).toHaveURL(/\/tools\/audio$/);
+  }
+});
+
+test('legacy audio converter routes redirect to the batch converter', async ({ page }) => {
+  await page.goto('/tools/audio/audio-convert?outputFormat=mp3');
+  await expect(page).toHaveURL(/\/tools\/audio\/batch$/);
+
+  await page.goto('/tools/audio/m4a-mp3');
+  await expect(page).toHaveURL(/\/tools\/audio\/batch\?outputFormat=mp3$/);
+
+  await page.goto('/tools/audio/m4a-wav');
+  await expect(page).toHaveURL(/\/tools\/audio\/batch\?outputFormat=wav$/);
+
+  await page.goto('/tools/audio/aac-mp3');
+  await expect(page).toHaveURL(/\/tools\/audio\/batch\?outputFormat=mp3$/);
+
+  await page.goto('/tools/audio/webm-mp3');
+  await expect(page).toHaveURL(/\/tools\/audio\/batch\?outputFormat=mp3$/);
+
+  await page.goto('/tools/audio/mp4-wav');
+  await expect(page).toHaveURL(/\/tools\/audio\/batch\?outputFormat=wav$/);
 });
 
 test('video converter preset selects the requested output format in one workflow', async ({ page }) => {
@@ -297,90 +324,17 @@ test('video trim uses the timeline editor without duplicate numeric inputs', asy
   await expect(page.locator('input[type="number"]')).toHaveCount(0);
 });
 
-test('audio cutter shows waveform editing before processing and exports a trimmed file', async ({ page }) => {
-  await page.goto('/tools/audio/audio-cut');
+test('audio editor route exposes the unified editor workspace', async ({ page }) => {
+  await page.goto('/tools/audio');
 
+  await expect(page).toHaveURL(/\/tools\/audio$/);
+  await expect(page.getByRole('main')).toBeVisible();
   await page.locator('input[type="file"]').setInputFiles('tests/fixtures/sample.wav');
-
-  await expect(
-    page.getByText('Drag on the waveform to set a selection. Space toggles playback and arrow keys nudge the playhead.'),
-  ).toBeVisible();
-  await expect(page.getByText('Selection length')).toBeVisible();
-  await expect(page.getByText('Results')).toHaveCount(0);
-  await expect(page.getByTestId('waveform-selection-overlay')).toBeVisible();
-  await expect(page.getByTestId('play-selection-from-start')).toBeVisible();
-
-  const waveformScrollArea = page.getByTestId('waveform-scroll-area');
-  const waveformWidth = await waveformScrollArea.evaluate((element) => Math.round(element.getBoundingClientRect().width));
-  expect(waveformWidth).toBeGreaterThan(600);
-
-  await page.locator('select').first().selectOption('remove');
-  await page.locator('input[type="number"]').first().fill('0.20');
-  await page.locator('input[type="number"]').nth(1).fill('0.60');
-  await expect(page.getByTestId('waveform-start-handle')).toBeVisible();
-  await expect(page.getByTestId('waveform-end-handle')).toBeVisible();
-
-  const endHandle = page.getByTestId('waveform-end-handle');
-  const endHandleBox = await endHandle.boundingBox();
-  if (!endHandleBox) {
-    throw new Error('Waveform end handle bounding box was not available.');
-  }
-
-  const endHandleCenterX = endHandleBox.x + endHandleBox.width / 2;
-  const endHandleCenterY = endHandleBox.y + endHandleBox.height / 2;
-  await page.mouse.move(endHandleCenterX, endHandleCenterY);
-  await page.mouse.down();
-  await page.mouse.move(endHandleCenterX + 42, endHandleCenterY, { steps: 8 });
-  await page.mouse.up();
-  expect(Number(await page.locator('input[type="number"]').nth(1).inputValue())).toBeGreaterThan(0.6);
-
-  const previewAudio = page.getByTestId('waveform-preview-audio');
-  const playheadHandle = page.getByTestId('waveform-playhead-handle');
-  const playheadBox = await playheadHandle.boundingBox();
-  const scrollAreaBox = await waveformScrollArea.boundingBox();
-  if (!playheadBox || !scrollAreaBox) {
-    throw new Error('Waveform playhead drag targets were not available.');
-  }
-
-  const playheadStartX = playheadBox.x + playheadBox.width / 2;
-  const playheadY = playheadBox.y + playheadBox.height / 2;
-  const playheadTargetX = scrollAreaBox.x + scrollAreaBox.width * 0.85;
-  await page.mouse.move(playheadStartX, playheadY);
-  await page.mouse.down();
-  await page.mouse.move(playheadTargetX, playheadY, { steps: 12 });
-  await page.mouse.up();
-  await page.waitForTimeout(200);
-
-  const freePreviewState = await previewAudio.evaluate((element) => {
-    const audio = element as HTMLAudioElement;
-    return { currentTime: audio.currentTime, paused: audio.paused };
-  });
-  expect(freePreviewState.currentTime).toBeGreaterThan(1.2);
-  expect(typeof freePreviewState.paused).toBe('boolean');
-
-  await page.getByTestId('play-selection-from-start').click();
-  await page.waitForTimeout(150);
-  const restartedTime = await previewAudio.evaluate((element) => (element as HTMLAudioElement).currentTime);
-  expect(restartedTime).toBeGreaterThanOrEqual(0.2);
-  expect(restartedTime).toBeLessThan(0.5);
-  await previewAudio.evaluate((element) => {
-    (element as HTMLAudioElement).pause();
-  });
-  await expect.poll(async () => previewAudio.evaluate((element) => (element as HTMLAudioElement).paused)).toBe(true);
-
-  await page.getByRole('button', { name: 'Zoom in' }).click();
-  await page.getByRole('button', { name: 'Zoom in' }).click();
-  const zoomedMetrics = await waveformScrollArea.evaluate((element) => ({
-    clientWidth: element.clientWidth,
-    scrollWidth: element.scrollWidth,
-  }));
-  expect(zoomedMetrics.scrollWidth).toBeGreaterThan(zoomedMetrics.clientWidth);
-
-  await page.locator('input[type="number"]').nth(1).fill('1.00');
-  await page.getByRole('button', { name: 'Run tool' }).click();
-
-  await expect(page.getByText('sample-output.wav')).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByRole('button', { name: 'Download' })).toBeVisible();
+  await expect(page.getByText('Import audio')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Keep selection' }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'WAV', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'MP3', exact: true })).toBeVisible();
+  await expect(page.getByText('Shape the audio before export')).toBeVisible();
 });
 
 test('pdf rearrange shows page editor controls before processing', async ({ page }) => {
@@ -708,17 +662,10 @@ test('screen capture tools render the browser capture workbench without a file d
   await expect(page.getByText(/Drag files here|Drop files here/)).toHaveCount(0);
 });
 
-test('audio recorder exposes waveform-first export options', async ({ page }) => {
+test('audio recorder legacy route redirects to the unified editor', async ({ page }) => {
   await page.goto('/tools/audio/audio-recorder');
 
-  await expect(page.getByText('Microphone preview')).toHaveCount(0);
-  await expect(page.getByTestId('live-audio-waveform')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Start recording' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Start capture' })).toHaveCount(0);
-  await expect(page.getByText('Progress')).toHaveCount(0);
-  await expect(page.getByText('Options')).toHaveCount(0);
-  await expect(page.locator('select')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Export edited audio' })).toHaveCount(0);
+  await expect(page).toHaveURL(/\/tools\/audio$/);
 });
 
 test.describe('mobile shell', () => {

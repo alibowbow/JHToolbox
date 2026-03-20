@@ -11,6 +11,18 @@ const legacyToolRedirects: Partial<Record<string, string>> = {
   'video-to-gif': '/tools/video/video-convert?outputFormat=gif',
   'video-to-webp': '/tools/video/video-convert?outputFormat=webp',
   'gif-to-video': '/tools/video/video-convert?outputFormat=mp4',
+  'audio-cut': '/tools/audio',
+  'audio-recorder': '/tools/audio',
+  'audio-merge': '/tools/audio',
+  'audio-fade': '/tools/audio',
+  'audio-speed-change': '/tools/audio',
+  'audio-pitch-change': '/tools/audio',
+  'audio-convert': '/tools/audio/batch',
+  'm4a-mp3': '/tools/audio/batch?outputFormat=mp3',
+  'm4a-wav': '/tools/audio/batch?outputFormat=wav',
+  'aac-mp3': '/tools/audio/batch?outputFormat=mp3',
+  'webm-mp3': '/tools/audio/batch?outputFormat=mp3',
+  'mp4-wav': '/tools/audio/batch?outputFormat=wav',
 };
 
 export function generateStaticParams() {
@@ -22,7 +34,11 @@ export function generateStaticParams() {
   );
 }
 
-export default function ToolPage({ params }: { params: { category: string; tool: string } }) {
+export default function ToolPage({
+  params,
+}: {
+  params: { category: string; tool: string };
+}) {
   const legacyRedirect = legacyToolRedirects[params.tool];
   if (legacyRedirect) {
     redirect(legacyRedirect);
