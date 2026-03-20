@@ -1,5 +1,6 @@
 'use client';
 
+import type { CSSProperties } from 'react';
 import { clampTime, formatTime } from '@/lib/audio';
 
 export type AudioEditorMode = 'editor' | 'batch';
@@ -24,6 +25,40 @@ export interface AudioEffectsState {
 }
 
 export { clampTime as clamp, formatTime };
+
+export function parseTimeInput(value: string, fallbackValue = 0) {
+  const normalized = value.trim().replace(',', '.');
+  if (!normalized) {
+    return fallbackValue;
+  }
+
+  if (normalized.includes(':')) {
+    const [minutesPart, secondsPart = '0'] = normalized.split(':');
+    const minutes = Number(minutesPart);
+    const seconds = Number(secondsPart);
+
+    if (Number.isFinite(minutes) && Number.isFinite(seconds)) {
+      return Math.max(0, minutes * 60 + seconds);
+    }
+  }
+
+  const numeric = Number(normalized);
+  if (Number.isFinite(numeric)) {
+    return Math.max(0, numeric);
+  }
+
+  return fallbackValue;
+}
+
+export function getRangeStyle(value: number, min: number, max: number): CSSProperties {
+  const safeMin = Number.isFinite(min) ? min : 0;
+  const safeMax = Number.isFinite(max) && max > safeMin ? max : safeMin + 1;
+  const ratio = ((value - safeMin) / (safeMax - safeMin)) * 100;
+
+  return {
+    ['--range-progress' as '--range-progress']: `${Math.min(Math.max(ratio, 0), 100)}%`,
+  } as CSSProperties;
+}
 
 export const AUDIO_ACCEPT = '.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,.mp4';
 

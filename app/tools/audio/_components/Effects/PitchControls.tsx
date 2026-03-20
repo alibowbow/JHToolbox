@@ -1,7 +1,10 @@
 'use client';
 
+import { Check, Sparkles } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { getAudioEditorCopy } from '../audio-editor-copy';
+import { getRangeStyle } from '../audio-editor-utils';
 
 interface PitchControlsProps {
   pitch: number;
@@ -13,11 +16,26 @@ interface PitchControlsProps {
 export function PitchControls({ pitch, onChange, onPreview, onApply }: PitchControlsProps) {
   const { locale } = useLocale();
   const copy = getAudioEditorCopy(locale);
+  const [applied, setApplied] = useState(false);
+
+  useEffect(() => {
+    if (!applied) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => setApplied(false), 800);
+    return () => window.clearTimeout(timeoutId);
+  }, [applied]);
 
   return (
-    <div className="space-y-4">
-      <label className="block text-xs uppercase tracking-[0.18em] text-ink-faint">
-        {copy.effects.pitchShift}
+    <div className="space-y-5">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <label className="audio-range-label">{copy.effects.pitchShift}</label>
+          <span className="audio-value">
+            {pitch > 0 ? `+${pitch}` : pitch} {copy.effects.semitones}
+          </span>
+        </div>
         <input
           type="range"
           min={-12}
@@ -25,23 +43,30 @@ export function PitchControls({ pitch, onChange, onPreview, onApply }: PitchCont
           step={1}
           value={pitch}
           onChange={(event) => onChange(Number(event.target.value))}
-          className="mt-2 w-full accent-cyan-400"
+          style={getRangeStyle(pitch, -12, 12)}
+          className="audio-range audio-focus-ring"
         />
-        <span className="mt-1 block text-sm font-semibold text-ink">
-          {pitch > 0 ? `+${pitch}` : pitch} {copy.effects.semitones}
-        </span>
-      </label>
+      </div>
 
-      <div className="rounded-xl border border-border bg-base-subtle/70 px-3 py-2 text-xs text-ink-muted">
+      <div className="audio-surface-muted rounded-[10px] px-3 py-2 text-xs leading-relaxed text-[var(--text-secondary)]">
         {copy.effects.pitchHint}
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={onPreview} className="btn-ghost px-3 py-2 text-xs">
+        <button type="button" onClick={onPreview} className="audio-button-secondary audio-focus-ring h-9 px-3">
+          <Sparkles size={14} strokeWidth={1.5} />
           {copy.effects.previewPitch}
         </button>
-        <button type="button" onClick={onApply} className="btn-primary px-3 py-2 text-xs">
-          {copy.effects.applyPitch}
+        <button
+          type="button"
+          onClick={() => {
+            onApply();
+            setApplied(true);
+          }}
+          className="audio-button-primary audio-focus-ring h-9 px-3"
+        >
+          <Check size={14} strokeWidth={1.5} />
+          {applied ? copy.effects.applied : copy.effects.applyPitch}
         </button>
       </div>
     </div>

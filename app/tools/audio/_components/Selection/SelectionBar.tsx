@@ -1,22 +1,20 @@
 'use client';
 
+import { Play, Scissors, Trash2, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
-import { formatTime } from '../audio-editor-utils';
 import { getAudioEditorCopy } from '../audio-editor-copy';
-import { SelectionControls } from './SelectionControls';
+import { formatTime, parseTimeInput } from '../audio-editor-utils';
 
 interface SelectionBarProps {
   start: number;
   end: number;
   duration: number;
-  trimMode: 'keep' | 'remove';
   onStartChange: (nextValue: number) => void;
   onEndChange: (nextValue: number) => void;
-  onTrimModeChange: (nextMode: 'keep' | 'remove') => void;
   onPlaySelection: () => void;
   onTrimSelection: () => void;
   onRemoveSelection: () => void;
-  onCopySelection: () => void;
   onClearSelection: () => void;
 }
 
@@ -24,82 +22,127 @@ export function SelectionBar({
   start,
   end,
   duration,
-  trimMode,
   onStartChange,
   onEndChange,
-  onTrimModeChange,
   onPlaySelection,
   onTrimSelection,
   onRemoveSelection,
-  onCopySelection,
   onClearSelection,
 }: SelectionBarProps) {
   const { locale } = useLocale();
   const copy = getAudioEditorCopy(locale);
+  const [startInput, setStartInput] = useState(formatTime(start));
+  const [endInput, setEndInput] = useState(formatTime(end));
   const selectionLength = Math.max(0, end - start);
+  const hasSelection = duration > 0 && (start > 0.001 || end < duration - 0.001);
+
+  useEffect(() => {
+    setStartInput(formatTime(start));
+  }, [start]);
+
+  useEffect(() => {
+    setEndInput(formatTime(end));
+  }, [end]);
+
+  const commitStart = () => {
+    onStartChange(parseTimeInput(startInput, start));
+    setStartInput(formatTime(parseTimeInput(startInput, start)));
+  };
+
+  const commitEnd = () => {
+    onEndChange(parseTimeInput(endInput, end));
+    setEndInput(formatTime(parseTimeInput(endInput, end)));
+  };
 
   return (
-    <div className="workspace-panel p-4">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div className="space-y-3">
-          <div>
-            <p className="workspace-kicker">{copy.selection.kicker}</p>
-            <h2 className="mt-2 text-base font-semibold text-ink">{copy.selection.title}</h2>
+    <section
+      className={`audio-panel rounded-[18px] px-4 py-3 transition-opacity ${
+        hasSelection ? 'border-[var(--selection-border)]' : 'opacity-70'
+      }`}
+    >
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="min-w-0">
+            <p className="audio-section-kicker">{copy.selection.kicker}</p>
+            <p className="mt-1 text-[13px] text-[var(--text-secondary)]">
+              {hasSelection ? copy.selection.activeDescription : copy.selection.inactiveDescription}
+            </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            <label className="text-xs uppercase tracking-[0.18em] text-ink-faint">
-              {copy.selection.start}
+          <div className="ml-auto flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2">
+              <span className="audio-range-label">{copy.selection.start}</span>
               <input
-                type="number"
-                min={0}
-                max={duration}
-                step={0.01}
-                value={start.toFixed(2)}
-                onChange={(event) => onStartChange(Number(event.target.value))}
-                className="input-surface mt-1 w-full"
+                type="text"
+                value={startInput}
+                onChange={(event) => setStartInput(event.target.value)}
+                onBlur={commitStart}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    commitStart();
+                  }
+                }}
+                className="audio-field audio-focus-ring w-[7.5rem]"
+                aria-label={copy.selection.start}
               />
             </label>
-            <label className="text-xs uppercase tracking-[0.18em] text-ink-faint">
-              {copy.selection.end}
+            <label className="flex items-center gap-2">
+              <span className="audio-range-label">{copy.selection.end}</span>
               <input
-                type="number"
-                min={0}
-                max={duration}
-                step={0.01}
-                value={end.toFixed(2)}
-                onChange={(event) => onEndChange(Number(event.target.value))}
-                className="input-surface mt-1 w-full"
+                type="text"
+                value={endInput}
+                onChange={(event) => setEndInput(event.target.value)}
+                onBlur={commitEnd}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    commitEnd();
+                  }
+                }}
+                className="audio-field audio-focus-ring w-[7.5rem]"
+                aria-label={copy.selection.end}
               />
             </label>
-            <div className="rounded-xl border border-border bg-base-subtle/80 p-3">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-ink-faint">{copy.selection.length}</p>
-              <p className="mt-1 text-sm font-semibold text-ink">{formatTime(selectionLength)}</p>
+            <div className="rounded-md border border-[var(--border)] bg-[rgba(255,255,255,0.02)] px-3 py-2">
+              <p className="audio-range-label">{copy.selection.length}</p>
+              <p className="audio-mono mt-1 text-[13px] text-[var(--text-secondary)]">{formatTime(selectionLength)}</p>
             </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {(['keep', 'remove'] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => onTrimModeChange(mode)}
-                className={trimMode === mode ? 'btn-primary px-3 py-2 text-xs' : 'btn-ghost px-3 py-2 text-xs'}
-              >
-                {mode === 'keep' ? copy.selection.keepMode : copy.selection.removeMode}
-              </button>
-            ))}
           </div>
         </div>
 
-        <SelectionControls
-          onPlaySelection={onPlaySelection}
-          onTrimSelection={onTrimSelection}
-          onRemoveSelection={onRemoveSelection}
-          onCopySelection={onCopySelection}
-          onClearSelection={onClearSelection}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={onPlaySelection}
+            disabled={!hasSelection}
+            className="audio-button-secondary audio-focus-ring h-9 px-3"
+          >
+            <Play size={14} strokeWidth={1.5} />
+            {copy.selection.playSelection}
+          </button>
+          <button
+            type="button"
+            onClick={onTrimSelection}
+            disabled={!hasSelection}
+            className="audio-button-secondary audio-focus-ring h-9 px-3"
+          >
+            <Scissors size={14} strokeWidth={1.5} />
+            {copy.selection.keepSelection}
+          </button>
+          <button
+            type="button"
+            onClick={onRemoveSelection}
+            disabled={!hasSelection}
+            className="audio-button-danger audio-focus-ring h-9 px-3"
+          >
+            <Trash2 size={14} strokeWidth={1.5} />
+            {copy.selection.removeSelection}
+          </button>
+          <button type="button" onClick={onClearSelection} className="audio-button-ghost audio-focus-ring h-9 px-3">
+            <X size={14} strokeWidth={1.5} />
+            {copy.selection.clear}
+          </button>
+        </div>
       </div>
-    </div>
+    </section>
   );
 }

@@ -88,42 +88,44 @@ export function FileDropZone({
           setIsDragging(false);
           handleFiles(event.dataTransfer.files);
         }}
-        className={`group w-full rounded-2xl border border-dashed p-6 text-left transition ${
-          isDragging ? 'border-prime bg-prime/10' : 'border-border bg-base-elevated hover:border-border-bright'
+        className={`group w-full rounded-[18px] border border-dashed p-6 text-left transition ${
+          isDragging
+            ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.08)]'
+            : 'border-[var(--border-strong)] bg-[rgba(30,32,35,0.92)] hover:border-[var(--accent-muted)]'
         }`}
       >
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-base-subtle text-accent">
-              <FileUp size={20} />
+            <div className="flex h-12 w-12 items-center justify-center rounded-[10px] border border-[var(--border)] bg-[rgba(255,255,255,0.03)] text-[var(--accent)]">
+              <FileUp size={18} strokeWidth={1.5} />
             </div>
             <div className="space-y-2">
-              <p className="text-xs uppercase tracking-[0.24em] text-ink-faint">{title}</p>
-              <p className="text-sm font-semibold text-ink">{description}</p>
-              <p className="text-sm text-ink-muted">{helperText}</p>
+              <p className="audio-section-kicker">{title}</p>
+              <p className="text-sm font-medium text-[var(--text-primary)]">{description}</p>
+              <p className="text-sm text-[var(--text-secondary)]">{helperText}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3 text-sm text-ink-muted">
-            <Music4 size={16} />
+          <div className="flex items-center gap-3 text-sm text-[var(--text-secondary)]">
+            <Music4 size={16} strokeWidth={1.5} />
             <span>{multiple ? copy.fileDrop.dragMultiple : copy.fileDrop.dragSingle}</span>
           </div>
         </div>
       </button>
 
       {files.length > 0 ? (
-        <div className="space-y-2 rounded-2xl border border-border bg-base-subtle/70 p-3">
-          <p className="text-xs uppercase tracking-[0.24em] text-ink-faint">{copy.fileDrop.loadedFiles}</p>
+        <div className="space-y-2 rounded-[14px] border border-[var(--border)] bg-[rgba(255,255,255,0.02)] p-3">
+          <p className="audio-section-kicker">{copy.fileDrop.loadedFiles}</p>
           <div className="space-y-2">
             {files.map((file) => (
               <div
                 key={`${file.name}-${file.size}`}
-                className="flex items-center justify-between gap-3 rounded-xl border border-border bg-base-elevated px-3 py-2 text-sm"
+                className="flex items-center justify-between gap-3 rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-2 text-sm"
               >
                 <div className="min-w-0">
-                  <p className="truncate font-semibold text-ink">{file.name}</p>
-                  <p className="text-xs text-ink-muted">{formatFileSize(file.size)}</p>
+                  <p className="truncate font-medium text-[var(--text-primary)]">{file.name}</p>
+                  <p className="audio-mono text-xs text-[var(--text-secondary)]">{formatFileSize(file.size)}</p>
                 </div>
-                <span className="badge border border-border bg-base-subtle text-ink-muted">
+                <span className="rounded-full border border-[var(--border)] bg-[rgba(255,255,255,0.02)] px-2 py-1 text-[10px] text-[var(--text-secondary)]">
                   {file.type || copy.fileDrop.defaultMime}
                 </span>
               </div>

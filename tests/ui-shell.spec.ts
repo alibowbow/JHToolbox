@@ -329,15 +329,19 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
 
   await expect(page).toHaveURL(/\/tools\/audio$/);
   await expect(page.getByRole('main')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open audio' })).toBeVisible();
   await page.locator('input[type="file"]').setInputFiles('tests/fixtures/sample.wav');
-  await expect(page.getByText('Import audio')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Keep selection' }).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Save WAV' }).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Save MP3' }).first()).toBeVisible();
+  await expect(page.getByText('Selected range')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Keep' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save WAV' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Save MP3' })).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Start recording' }).first()).toBeVisible();
   await expect(page.getByRole('button', { name: 'Amplify' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'File conversion' }).first()).toBeVisible();
-  await expect(page.getByText('Shape the audio before export')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start recording' })).toHaveCount(1);
+  await expect(page.getByText('Preview and apply focused processing')).toBeVisible();
+
+  await page.getByRole('button', { name: 'More actions' }).click();
+  await expect(page.getByRole('link', { name: 'Open file conversion' })).toBeVisible();
 });
 
 test('audio editor localizes save, record, and conversion actions in korean mode', async ({ page }) => {
@@ -346,13 +350,15 @@ test('audio editor localizes save, record, and conversion actions in korean mode
 
   await page.locator('input[type="file"]').setInputFiles('tests/fixtures/sample.wav');
 
-  await expect(page.getByText('오디오 불러오기')).toBeVisible();
+  await expect(page.getByRole('button', { name: '오디오 열기' })).toBeVisible();
   await expect(page.getByRole('button', { name: '녹음 시작' }).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'WAV 저장' }).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'MP3 저장' }).first()).toBeVisible();
-  await expect(page.getByRole('link', { name: '파일 변환' }).first()).toBeVisible();
-  await expect(page.getByRole('link', { name: '파일 변환 열기' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'WAV 저장' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'MP3 저장' })).toHaveCount(1);
+  await expect(page.getByText('선택 구간', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '앰플리파이' })).toBeVisible();
+
+  await page.getByRole('button', { name: '더보기' }).click();
+  await expect(page.getByRole('link', { name: '파일 변환 열기' })).toBeVisible();
 });
 
 test('pdf rearrange shows page editor controls before processing', async ({ page }) => {

@@ -12,23 +12,28 @@ interface WaveformTimelineProps {
 export function WaveformTimeline({ duration, zoom }: WaveformTimelineProps) {
   const { locale } = useLocale();
   const copy = getAudioEditorCopy(locale);
-  const segments = Math.max(6, Math.min(16, Math.floor(zoom * 2.5)));
+  const segments = Math.max(6, Math.min(20, Math.round(zoom * 1.6)));
   const step = duration > 0 ? duration / segments : 0;
 
   return (
-    <div className="rounded-t-2xl border border-border border-b-0 bg-base-subtle/80 px-4 py-3">
+    <div className="flex h-7 items-center border-b border-[var(--border)] bg-[rgba(14,15,17,0.88)] px-3">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] uppercase tracking-[0.22em] text-ink-faint">{copy.waveform.timeline}</span>
-        <span className="badge border border-border bg-base-elevated text-ink-muted">x{zoom.toFixed(1)}</span>
+        <span className="audio-section-kicker pr-3">{copy.waveform.timeline}</span>
       </div>
       <div
-        className="mt-3 grid gap-2 text-[11px] text-ink-muted"
+        className="grid flex-1 gap-1 text-[10px] text-[var(--text-tertiary)]"
         style={{ gridTemplateColumns: `repeat(${segments + 1}, minmax(0, 1fr))` }}
       >
         {Array.from({ length: segments + 1 }, (_, index) => (
           <div key={index} className="relative">
-            <span className="block h-2 border-l border-border-bright/60" />
-            <span className="mt-1 block truncate">{formatTime(step * index, false)}</span>
+            <span className={`block border-l ${index % 5 === 0 ? 'h-2 border-[var(--border-strong)]' : 'h-1 border-[var(--border)]'}`} />
+            {index < segments ? (
+              <span className={`audio-mono mt-1 block truncate ${index % 5 === 0 ? 'text-[var(--text-secondary)]' : ''}`}>
+                {formatTime(step * index, false)}
+              </span>
+            ) : (
+              <span className="audio-mono mt-1 block truncate text-[var(--text-secondary)]">{formatTime(duration, false)}</span>
+            )}
           </div>
         ))}
       </div>

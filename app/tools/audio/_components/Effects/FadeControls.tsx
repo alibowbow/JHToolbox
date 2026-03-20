@@ -1,7 +1,10 @@
 'use client';
 
+import { Check, Waves } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { getAudioEditorCopy } from '../audio-editor-copy';
+import { formatTime, getRangeStyle } from '../audio-editor-utils';
 
 interface FadeControlsProps {
   fadeIn: number;
@@ -14,11 +17,24 @@ interface FadeControlsProps {
 export function FadeControls({ fadeIn, fadeOut, onChange, onPreview, onApply }: FadeControlsProps) {
   const { locale } = useLocale();
   const copy = getAudioEditorCopy(locale);
+  const [applied, setApplied] = useState(false);
+
+  useEffect(() => {
+    if (!applied) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => setApplied(false), 800);
+    return () => window.clearTimeout(timeoutId);
+  }, [applied]);
 
   return (
-    <div className="space-y-4">
-      <label className="block text-xs uppercase tracking-[0.18em] text-ink-faint">
-        {copy.effects.fadeIn}
+    <div className="space-y-5">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <label className="audio-range-label">{copy.effects.fadeIn}</label>
+          <span className="audio-value">{formatTime(fadeIn)}</span>
+        </div>
         <input
           type="range"
           min={0}
@@ -26,12 +42,15 @@ export function FadeControls({ fadeIn, fadeOut, onChange, onPreview, onApply }: 
           step={0.05}
           value={fadeIn}
           onChange={(event) => onChange({ fadeIn: Number(event.target.value) })}
-          className="mt-2 w-full accent-cyan-400"
+          style={getRangeStyle(fadeIn, 0, 5)}
+          className="audio-range audio-focus-ring"
         />
-        <span className="mt-1 block text-sm font-semibold text-ink">{fadeIn.toFixed(2)}s</span>
-      </label>
-      <label className="block text-xs uppercase tracking-[0.18em] text-ink-faint">
-        {copy.effects.fadeOut}
+      </div>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <label className="audio-range-label">{copy.effects.fadeOut}</label>
+          <span className="audio-value">{formatTime(fadeOut)}</span>
+        </div>
         <input
           type="range"
           min={0}
@@ -39,17 +58,26 @@ export function FadeControls({ fadeIn, fadeOut, onChange, onPreview, onApply }: 
           step={0.05}
           value={fadeOut}
           onChange={(event) => onChange({ fadeOut: Number(event.target.value) })}
-          className="mt-2 w-full accent-cyan-400"
+          style={getRangeStyle(fadeOut, 0, 5)}
+          className="audio-range audio-focus-ring"
         />
-        <span className="mt-1 block text-sm font-semibold text-ink">{fadeOut.toFixed(2)}s</span>
-      </label>
+      </div>
 
       <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={onPreview} className="btn-ghost px-3 py-2 text-xs">
+        <button type="button" onClick={onPreview} className="audio-button-secondary audio-focus-ring h-9 px-3">
+          <Waves size={14} strokeWidth={1.5} />
           {copy.effects.previewFade}
         </button>
-        <button type="button" onClick={onApply} className="btn-primary px-3 py-2 text-xs">
-          {copy.effects.applyFade}
+        <button
+          type="button"
+          onClick={() => {
+            onApply();
+            setApplied(true);
+          }}
+          className="audio-button-primary audio-focus-ring h-9 px-3"
+        >
+          <Check size={14} strokeWidth={1.5} />
+          {applied ? copy.effects.applied : copy.effects.applyFade}
         </button>
       </div>
     </div>

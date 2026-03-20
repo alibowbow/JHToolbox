@@ -1,7 +1,10 @@
 'use client';
 
+import { Check, Gauge } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { getAudioEditorCopy } from '../audio-editor-copy';
+import { getRangeStyle } from '../audio-editor-utils';
 
 interface SpeedControlsProps {
   speed: number;
@@ -13,11 +16,24 @@ interface SpeedControlsProps {
 export function SpeedControls({ speed, onChange, onPreview, onApply }: SpeedControlsProps) {
   const { locale } = useLocale();
   const copy = getAudioEditorCopy(locale);
+  const [applied, setApplied] = useState(false);
+
+  useEffect(() => {
+    if (!applied) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => setApplied(false), 800);
+    return () => window.clearTimeout(timeoutId);
+  }, [applied]);
 
   return (
-    <div className="space-y-4">
-      <label className="block text-xs uppercase tracking-[0.18em] text-ink-faint">
-        {copy.effects.playbackSpeed}
+    <div className="space-y-5">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <label className="audio-range-label">{copy.effects.playbackSpeed}</label>
+          <span className="audio-value">{speed.toFixed(2)}x</span>
+        </div>
         <input
           type="range"
           min={0.25}
@@ -25,17 +41,26 @@ export function SpeedControls({ speed, onChange, onPreview, onApply }: SpeedCont
           step={0.05}
           value={speed}
           onChange={(event) => onChange(Number(event.target.value))}
-          className="mt-2 w-full accent-cyan-400"
+          style={getRangeStyle(speed, 0.25, 4)}
+          className="audio-range audio-focus-ring"
         />
-        <span className="mt-1 block text-sm font-semibold text-ink">{speed.toFixed(2)}x</span>
-      </label>
+      </div>
 
       <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={onPreview} className="btn-ghost px-3 py-2 text-xs">
+        <button type="button" onClick={onPreview} className="audio-button-secondary audio-focus-ring h-9 px-3">
+          <Gauge size={14} strokeWidth={1.5} />
           {copy.effects.previewSpeed}
         </button>
-        <button type="button" onClick={onApply} className="btn-primary px-3 py-2 text-xs">
-          {copy.effects.applySpeed}
+        <button
+          type="button"
+          onClick={() => {
+            onApply();
+            setApplied(true);
+          }}
+          className="audio-button-primary audio-focus-ring h-9 px-3"
+        >
+          <Check size={14} strokeWidth={1.5} />
+          {applied ? copy.effects.applied : copy.effects.applySpeed}
         </button>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import localFont from 'next/font/local';
+import { DM_Sans, JetBrains_Mono } from 'next/font/google';
 import { GeistMono } from 'geist/font/mono';
 import { GeistSans } from 'geist/font/sans';
 import './globals.css';
@@ -14,6 +15,20 @@ const calSans = localFont({
   variable: '--font-cal-sans',
   display: 'swap',
   weight: '600',
+});
+
+const dmSans = DM_Sans({
+  subsets: ['latin'],
+  weight: ['300', '400', '500'],
+  variable: '--font-audio-ui',
+  display: 'swap',
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500'],
+  variable: '--font-audio-mono',
+  display: 'swap',
 });
 
 export const metadata: Metadata = {
@@ -48,7 +63,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
-      className={`${GeistSans.variable} ${GeistMono.variable} ${calSans.variable}`}
+      className={`${GeistSans.variable} ${GeistMono.variable} ${calSans.variable} ${dmSans.variable} ${jetbrainsMono.variable}`}
       suppressHydrationWarning
     >
       <head>

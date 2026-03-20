@@ -1,21 +1,36 @@
 'use client';
 
-import { FastForward, Mic, Pause, Play, Rewind, Square } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Circle,
+  Pause,
+  Play,
+  Redo2,
+  SkipBack,
+  SkipForward,
+  Undo2,
+} from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { getAudioEditorCopy } from '../audio-editor-copy';
-import { TimeDisplay } from './TimeDisplay';
+import { formatTime, getRangeStyle } from '../audio-editor-utils';
 
 interface TransportBarProps {
   currentTime: number;
   duration: number;
   zoom: number;
   isPlaying: boolean;
-  loopEnabled: boolean;
   isRecording?: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
+  undoLabel?: string | null;
+  redoLabel?: string | null;
   onPlayPause: () => void;
-  onStop: () => void;
   onSeekBy: (delta: number) => void;
-  onLoopToggle: () => void;
+  onSeekToStart: () => void;
+  onSeekToEnd: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
   onZoomChange: (nextZoom: number) => void;
   onRecordToggle?: () => void;
 }
@@ -25,12 +40,17 @@ export function TransportBar({
   duration,
   zoom,
   isPlaying,
-  loopEnabled,
   isRecording = false,
+  canUndo,
+  canRedo,
+  undoLabel,
+  redoLabel,
   onPlayPause,
-  onStop,
   onSeekBy,
-  onLoopToggle,
+  onSeekToStart,
+  onSeekToEnd,
+  onUndo,
+  onRedo,
   onZoomChange,
   onRecordToggle,
 }: TransportBarProps) {
@@ -38,58 +58,111 @@ export function TransportBar({
   const copy = getAudioEditorCopy(locale);
 
   return (
-    <div className="workspace-panel p-4">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={() => onSeekBy(-5)} className="btn-ghost px-3 py-2 text-xs">
-            <Rewind size={14} />
-            {copy.transport.rewind}
+    <div className="audio-panel flex flex-col gap-3 rounded-[18px] px-3 py-3 sm:px-4">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <button
+            type="button"
+            title={undoLabel ? `${copy.transport.undo}: ${undoLabel}` : copy.transport.undo}
+            onClick={onUndo}
+            disabled={!canUndo}
+            className="audio-icon-button audio-focus-ring"
+            aria-label={copy.transport.undo}
+          >
+            <Undo2 size={15} strokeWidth={1.5} />
           </button>
-          <button type="button" onClick={onPlayPause} className="btn-primary px-4 py-2 text-xs">
-            {isPlaying ? <Pause size={14} /> : <Play size={14} />}
-            {isPlaying ? copy.transport.pause : copy.transport.play}
+          <button
+            type="button"
+            title={redoLabel ? `${copy.transport.redo}: ${redoLabel}` : copy.transport.redo}
+            onClick={onRedo}
+            disabled={!canRedo}
+            className="audio-icon-button audio-focus-ring"
+            aria-label={copy.transport.redo}
+          >
+            <Redo2 size={15} strokeWidth={1.5} />
           </button>
-          <button type="button" onClick={onStop} className="btn-ghost px-3 py-2 text-xs">
-            <Square size={14} />
-            {copy.transport.stop}
+
+          <span className="audio-divider mx-1 hidden h-7 sm:block" />
+
+          <button
+            type="button"
+            onClick={onSeekToStart}
+            className="audio-button-ghost audio-focus-ring h-8 w-8 p-0"
+            aria-label={copy.transport.jumpStart}
+          >
+            <SkipBack size={15} strokeWidth={1.5} />
           </button>
-          <button type="button" onClick={() => onSeekBy(5)} className="btn-ghost px-3 py-2 text-xs">
-            <FastForward size={14} />
-            {copy.transport.forward}
+          <button
+            type="button"
+            onClick={() => onSeekBy(-5)}
+            className="audio-button-ghost audio-focus-ring h-8 w-8 p-0"
+            aria-label={copy.transport.rewind}
+          >
+            <ChevronLeft size={15} strokeWidth={1.5} />
           </button>
+
+          <button
+            type="button"
+            onClick={onPlayPause}
+            className={`audio-play-button audio-focus-ring ${isPlaying ? 'is-playing' : ''}`}
+            aria-label={isPlaying ? copy.transport.pause : copy.transport.play}
+          >
+            {isPlaying ? <Pause size={18} strokeWidth={1.5} /> : <Play size={18} strokeWidth={1.5} className="ml-0.5" />}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onSeekBy(5)}
+            className="audio-button-ghost audio-focus-ring h-8 w-8 p-0"
+            aria-label={copy.transport.forward}
+          >
+            <ChevronRight size={15} strokeWidth={1.5} />
+          </button>
+          <button
+            type="button"
+            onClick={onSeekToEnd}
+            className="audio-button-ghost audio-focus-ring h-8 w-8 p-0"
+            aria-label={copy.transport.jumpEnd}
+          >
+            <SkipForward size={15} strokeWidth={1.5} />
+          </button>
+
           {onRecordToggle ? (
             <button
               type="button"
               onClick={onRecordToggle}
-              className={isRecording ? 'btn-primary px-3 py-2 text-xs' : 'btn-ghost px-3 py-2 text-xs'}
+              className={`audio-record-button audio-focus-ring ${isRecording ? 'is-recording' : ''}`}
+              aria-label={isRecording ? copy.toolbar.stopRecording : copy.toolbar.startRecording}
             >
-              <Mic size={14} />
-              {isRecording ? copy.toolbar.stopRecording : copy.toolbar.startRecording}
+              <Circle size={14} fill="currentColor" strokeWidth={1.5} />
             </button>
           ) : null}
-          <button
-            type="button"
-            onClick={onLoopToggle}
-            className={loopEnabled ? 'btn-primary px-3 py-2 text-xs' : 'btn-ghost px-3 py-2 text-xs'}
-          >
-            {loopEnabled ? copy.transport.loopOn : copy.transport.loopOff}
-          </button>
+
+          <div className="ml-1 flex items-center gap-2 rounded-full border border-[var(--border)] bg-[rgba(255,255,255,0.02)] px-2.5 py-1">
+            <span className="audio-section-kicker hidden sm:inline">{copy.time.label}</span>
+            <span className="audio-mono text-[13px] text-[var(--text-primary)]">
+              {formatTime(currentTime)} / {formatTime(duration)}
+            </span>
+          </div>
         </div>
 
-        <div className="flex flex-col gap-3 xl:min-w-[24rem]">
-          <TimeDisplay currentTime={currentTime} duration={duration} />
-          <label className="text-xs uppercase tracking-[0.18em] text-ink-faint">
-            {copy.transport.zoom} x{zoom.toFixed(1)}
-            <input
-              type="range"
-              min={1}
-              max={12}
-              step={0.25}
-              value={zoom}
-              onChange={(event) => onZoomChange(Number(event.target.value))}
-              className="mt-2 w-full accent-cyan-400"
-            />
-          </label>
+        <div className="flex items-center gap-3 xl:min-w-[18rem]">
+          <span className="audio-range-label">{copy.transport.zoom}</span>
+          <input
+            type="range"
+            min={1}
+            max={32}
+            step={0.25}
+            value={zoom}
+            onChange={(event) => onZoomChange(Number(event.target.value))}
+            style={getRangeStyle(zoom, 1, 32)}
+            className="audio-range audio-focus-ring"
+            aria-label={copy.transport.zoom}
+            aria-valuemin={1}
+            aria-valuemax={32}
+            aria-valuenow={zoom}
+          />
+          <span className="audio-value min-w-[3.5rem] text-right">x{zoom.toFixed(1)}</span>
         </div>
       </div>
     </div>

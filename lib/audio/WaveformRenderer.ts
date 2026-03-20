@@ -70,10 +70,11 @@ function drawWaveformBase(
   const sampleCount = buffer.length;
   const samplesPerPixel = Math.max(1, Math.floor(sampleCount / Math.max(width, 1)));
   const palette = {
-    background: theme === 'dark' ? 'rgba(8, 13, 24, 1)' : 'rgba(248, 250, 252, 1)',
-    grid: theme === 'dark' ? 'rgba(148, 163, 184, 0.14)' : 'rgba(100, 116, 139, 0.12)',
-    waveform: theme === 'dark' ? 'rgba(45, 212, 191, 0.88)' : 'rgba(0, 179, 214, 0.86)',
-    silence: theme === 'dark' ? 'rgba(148, 163, 184, 0.28)' : 'rgba(100, 116, 139, 0.28)',
+    background: theme === 'dark' ? '#0A1A19' : 'rgba(248, 250, 252, 1)',
+    grid: theme === 'dark' ? 'rgba(255, 255, 255, 0.06)' : 'rgba(100, 116, 139, 0.12)',
+    waveform: theme === 'dark' ? '#00D4C850' : 'rgba(0, 179, 214, 0.86)',
+    silence: theme === 'dark' ? 'rgba(255, 255, 255, 0.14)' : 'rgba(100, 116, 139, 0.28)',
+    waveformActive: theme === 'dark' ? '#00D4C8' : 'rgba(0, 179, 214, 1)',
   };
 
   context.clearRect(0, 0, width, height);
@@ -86,8 +87,6 @@ function drawWaveformBase(
   context.moveTo(0, centerLine);
   context.lineTo(width, centerLine);
   context.stroke();
-
-  let hasAudio = false;
 
   for (let column = 0; column < width; column += 1) {
     const startSample = column * samplesPerPixel;
@@ -103,24 +102,12 @@ function drawWaveformBase(
       }
     }
 
-    if (peak > 0.001) {
-      hasAudio = true;
-    }
-
-    const barHeight = Math.max(1, peak * (height * 0.84));
+    const barHeight = Math.max(1, peak * (height * 0.9));
     const x = column;
     const y = Math.round(halfHeight - barHeight / 2);
 
     context.fillStyle = peak > 0.001 ? palette.waveform : palette.silence;
     context.fillRect(x, y, 1, Math.max(1, Math.round(barHeight)));
-  }
-
-  if (!hasAudio) {
-    context.fillStyle = palette.silence;
-    context.font = '12px system-ui, sans-serif';
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    context.fillText('Silent audio', width / 2, height / 2);
   }
 }
 
@@ -179,11 +166,26 @@ export function renderWaveform(opts: AudioWaveformRenderOptions): void {
   const selectionRight = ((clampTime(normalizedSelectionEnd, safeStart, safeEnd) - safeStart) / (safeEnd - safeStart)) * width;
   const playheadLeft = playheadSec == null ? null : ((clampTime(playheadSec, safeStart, safeEnd) - safeStart) / (safeEnd - safeStart)) * width;
 
-  context.fillStyle = theme === 'dark' ? 'rgba(15, 23, 42, 0.45)' : 'rgba(248, 250, 252, 0.55)';
+  if (selectionRight > selectionLeft) {
+    context.save();
+    context.beginPath();
+    context.rect(selectionLeft, 0, Math.max(1, selectionRight - selectionLeft), height);
+    context.clip();
+    context.drawImage(source as CanvasImageSource, sourceStart, 0, sourceSliceWidth, source.height, 0, 0, width, height);
+    context.fillStyle = theme === 'dark' ? 'rgba(0, 212, 200, 0.55)' : 'rgba(0, 179, 214, 0.55)';
+    context.globalCompositeOperation = 'source-atop';
+    context.fillRect(selectionLeft, 0, Math.max(1, selectionRight - selectionLeft), height);
+    context.restore();
+  }
+
+  context.fillStyle = theme === 'dark' ? 'rgba(5, 8, 9, 0.42)' : 'rgba(248, 250, 252, 0.55)';
   context.fillRect(0, 0, Math.max(0, selectionLeft), height);
   context.fillRect(Math.max(0, selectionRight), 0, Math.max(0, width - selectionRight), height);
 
-  context.strokeStyle = 'rgba(45, 212, 191, 0.72)';
+  context.fillStyle = theme === 'dark' ? 'rgba(0, 212, 200, 0.1)' : 'rgba(0, 179, 214, 0.08)';
+  context.fillRect(selectionLeft, 0, Math.max(0, selectionRight - selectionLeft), height);
+
+  context.strokeStyle = theme === 'dark' ? '#00D4C880' : 'rgba(0, 179, 214, 0.72)';
   context.lineWidth = 2;
   context.strokeRect(
     Math.max(0, selectionLeft),
@@ -193,7 +195,7 @@ export function renderWaveform(opts: AudioWaveformRenderOptions): void {
   );
 
   if (playheadLeft != null) {
-    context.fillStyle = '#2DD4BF';
-    context.fillRect(Math.max(0, playheadLeft - 1), 0, 2, height);
+    context.fillStyle = theme === 'dark' ? '#00D4C8' : '#2DD4BF';
+    context.fillRect(Math.max(0, playheadLeft - 0.75), 0, 1.5, height);
   }
 }
