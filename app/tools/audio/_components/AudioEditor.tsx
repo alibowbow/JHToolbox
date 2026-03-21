@@ -23,7 +23,6 @@ import {
   DEFAULT_EFFECTS,
   DEFAULT_SELECTION,
   clamp,
-  formatFileSize,
   formatTime,
   normalizeSelection,
 } from './audio-editor-utils';
@@ -69,6 +68,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const [isSilent, setIsSilent] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
+  const [isRecordingPaused, setIsRecordingPaused] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [recordingPeaks, setRecordingPeaks] = useState<number[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -78,6 +78,8 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const recordingTimerRef = useRef<number | null>(null);
   const recordingStartRef = useRef<number | null>(null);
+  const recordingPausedRef = useRef(false);
+  const recordingAccumulatedDurationRef = useRef(0);
 
   const activeFile = files[activeIndex] ?? files[0] ?? null;
   const canUndo = historyRef.current.canUndo;
@@ -210,7 +212,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
         setCurrentTime(0);
         setLoopEnabled(false);
         setIsSilent(isSilentAudioBuffer(nextBuffer));
-        setStatusMessage(copy.status.loaded(activeFile.name, formatFileSize(activeFile.size)));
+        setStatusMessage(null);
       } catch (error) {
         if (cancelled) {
           return;
@@ -294,6 +296,26 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       window.clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
     }
+  };
+
+  const getRecordingElapsed = () => {
+    const activeSpan =
+      recordingPausedRef.current || recordingStartRef.current == null
+        ? 0
+        : (Date.now() - recordingStartRef.current) / 1000;
+
+    return recordingAccumulatedDurationRef.current + activeSpan;
+  };
+
+  const startRecordingTimer = () => {
+    clearRecordingTimer();
+    recordingTimerRef.current = window.setInterval(() => {
+      const elapsedSeconds = getRecordingElapsed();
+      setRecordingDuration(elapsedSeconds);
+      setStatusMessage(
+        recordingPausedRef.current ? copy.recording.pausedStatus(elapsedSeconds) : copy.recording.liveStatus(elapsedSeconds),
+      );
+    }, 100);
   };
 
   const stopRecordingStream = () => {
@@ -588,6 +610,9 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     setStatusMessage(copy.recording.starting);
     setRecordingDuration(0);
     setRecordingPeaks([]);
+    setIsRecordingPaused(false);
+    recordingPausedRef.current = false;
+    recordingAccumulatedDurationRef.current = 0;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -603,18 +628,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       recordingStartRef.current = Date.now();
       setIsRecording(true);
       setStatusMessage(copy.recording.liveStatus(0));
-
-      clearRecordingTimer();
-      recordingTimerRef.current = window.setInterval(() => {
-        const startedAt = recordingStartRef.current;
-        if (!startedAt) {
-          return;
-        }
-
-        const elapsedSeconds = (Date.now() - startedAt) / 1000;
-        setRecordingDuration(elapsedSeconds);
-        setStatusMessage(copy.recording.liveStatus(elapsedSeconds));
-      }, 100);
+      startRecordingTimer();
     } catch (error) {
       stopRecordingStream();
 
@@ -627,10 +641,52 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     }
   };
 
+  const handlePauseRecording = async () => {
+    const recordingSession = recordingSessionRef.current;
+    if (!recordingSession || !isRecording || recordingPausedRef.current) {
+      return;
+    }
+
+    try {
+      await recordingSession.pause();
+      recordingAccumulatedDurationRef.current = getRecordingElapsed();
+      recordingStartRef.current = null;
+      recordingPausedRef.current = true;
+      setIsRecordingPaused(true);
+      setRecordingDuration(recordingAccumulatedDurationRef.current);
+      setStatusMessage(copy.recording.pausedStatus(recordingAccumulatedDurationRef.current));
+      clearRecordingTimer();
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : copy.recording.startError);
+    }
+  };
+
+  const handleResumeRecording = async () => {
+    const recordingSession = recordingSessionRef.current;
+    if (!recordingSession || !isRecording || !recordingPausedRef.current) {
+      return;
+    }
+
+    try {
+      await recordingSession.resume();
+      recordingPausedRef.current = false;
+      recordingStartRef.current = Date.now();
+      setIsRecordingPaused(false);
+      setStatusMessage(copy.recording.liveStatus(recordingAccumulatedDurationRef.current));
+      startRecordingTimer();
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : copy.recording.startError);
+    }
+  };
+
   const handleStopRecording = async () => {
     const recordingSession = recordingSessionRef.current;
     if (!recordingSession) {
       setIsRecording(false);
+      setIsRecordingPaused(false);
+      recordingPausedRef.current = false;
+      recordingAccumulatedDurationRef.current = 0;
+      recordingStartRef.current = null;
       setStatusMessage(copy.recording.abandoned);
       clearRecordingTimer();
       stopRecordingStream();
@@ -639,6 +695,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
 
     setStatusMessage(copy.recording.finishing);
     setIsRecording(false);
+    setIsRecordingPaused(false);
     clearRecordingTimer();
 
     try {
@@ -652,8 +709,23 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     } finally {
       recordingSessionRef.current = null;
       recordingStartRef.current = null;
+      recordingPausedRef.current = false;
+      recordingAccumulatedDurationRef.current = 0;
       stopRecordingStream();
     }
+  };
+
+  const handleRecordPauseResume = () => {
+    if (!isRecording) {
+      return;
+    }
+
+    if (isRecordingPaused) {
+      void handleResumeRecording();
+      return;
+    }
+
+    void handlePauseRecording();
   };
 
   const handleRecordToggle = () => {
@@ -733,6 +805,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
           zoom={zoom}
           isPlaying={isPlaying}
           isRecording={isRecording}
+          isRecordingPaused={isRecordingPaused}
           canUndo={canUndo}
           canRedo={canRedo}
           undoLabel={undoLabel}
@@ -745,6 +818,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
           onRedo={handleRedo}
           onZoomChange={(nextZoom) => setZoom(clamp(nextZoom, 0.75, 6))}
           onRecordToggle={handleRecordToggle}
+          onRecordPauseResume={handleRecordPauseResume}
         />
       </div>
 
@@ -754,10 +828,14 @@ export function AudioEditor({ mode }: AudioEditorProps) {
             <div className="audio-panel rounded-[20px] p-4">
               <LiveAudioWaveform
                 peaks={recordingPeaks}
-                isRecording={isRecording}
+                isRecording={isRecording && !isRecordingPaused}
                 title={copy.recording.liveTitle}
                 description={copy.recording.liveDescription}
-                statusLabel={copy.recording.liveStatus(recordingDuration)}
+                statusLabel={
+                  isRecordingPaused
+                    ? copy.recording.pausedStatus(recordingDuration)
+                    : copy.recording.liveStatus(recordingDuration)
+                }
               />
             </div>
           ) : null}

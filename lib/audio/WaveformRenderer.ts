@@ -165,8 +165,12 @@ export function renderWaveform(opts: AudioWaveformRenderOptions): void {
   const selectionLeft = ((clampTime(normalizedSelectionStart, safeStart, safeEnd) - safeStart) / (safeEnd - safeStart)) * width;
   const selectionRight = ((clampTime(normalizedSelectionEnd, safeStart, safeEnd) - safeStart) / (safeEnd - safeStart)) * width;
   const playheadLeft = playheadSec == null ? null : ((clampTime(playheadSec, safeStart, safeEnd) - safeStart) / (safeEnd - safeStart)) * width;
+  const hasPartialSelection =
+    selectionStart != null &&
+    selectionEnd != null &&
+    normalizedSelectionEnd - normalizedSelectionStart < safeEnd - safeStart - 0.0005;
 
-  if (selectionRight > selectionLeft) {
+  if (hasPartialSelection && selectionRight > selectionLeft) {
     context.save();
     context.beginPath();
     context.rect(selectionLeft, 0, Math.max(1, selectionRight - selectionLeft), height);
@@ -178,21 +182,23 @@ export function renderWaveform(opts: AudioWaveformRenderOptions): void {
     context.restore();
   }
 
-  context.fillStyle = theme === 'dark' ? 'rgba(4, 8, 10, 0.68)' : 'rgba(248, 250, 252, 0.62)';
-  context.fillRect(0, 0, Math.max(0, selectionLeft), height);
-  context.fillRect(Math.max(0, selectionRight), 0, Math.max(0, width - selectionRight), height);
+  if (hasPartialSelection) {
+    context.fillStyle = theme === 'dark' ? 'rgba(4, 8, 10, 0.68)' : 'rgba(248, 250, 252, 0.62)';
+    context.fillRect(0, 0, Math.max(0, selectionLeft), height);
+    context.fillRect(Math.max(0, selectionRight), 0, Math.max(0, width - selectionRight), height);
 
-  context.fillStyle = theme === 'dark' ? 'rgba(0, 212, 200, 0.18)' : 'rgba(0, 179, 214, 0.14)';
-  context.fillRect(selectionLeft, 0, Math.max(0, selectionRight - selectionLeft), height);
+    context.fillStyle = theme === 'dark' ? 'rgba(0, 212, 200, 0.18)' : 'rgba(0, 179, 214, 0.14)';
+    context.fillRect(selectionLeft, 0, Math.max(0, selectionRight - selectionLeft), height);
 
-  context.strokeStyle = theme === 'dark' ? '#00F5E680' : 'rgba(0, 179, 214, 0.72)';
-  context.lineWidth = 2;
-  context.strokeRect(
-    Math.max(0, selectionLeft),
-    1,
-    Math.max(1, selectionRight - selectionLeft),
-    Math.max(1, height - 2),
-  );
+    context.strokeStyle = theme === 'dark' ? '#00F5E680' : 'rgba(0, 179, 214, 0.72)';
+    context.lineWidth = 2;
+    context.strokeRect(
+      Math.max(0, selectionLeft),
+      1,
+      Math.max(1, selectionRight - selectionLeft),
+      Math.max(1, height - 2),
+    );
+  }
 
   if (playheadLeft != null) {
     context.fillStyle = theme === 'dark' ? '#00D4C8' : '#2DD4BF';

@@ -2,13 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
-import { renderWaveformOffscreen } from '@/lib/audio';
+import { renderWaveform } from '@/lib/audio';
 import { clamp } from '../audio-editor-utils';
 import { getAudioEditorCopy } from '../audio-editor-copy';
 import { PlayheadOverlay } from './PlayheadOverlay';
 import { WaveformTimeline } from './WaveformTimeline';
 
-type DragMode = 'selection' | 'start' | 'end';
+type DragMode = 'selection' | 'start' | 'end' | 'playhead';
 
 interface WaveformCanvasProps {
   audioBuffer: AudioBuffer | null;
@@ -86,24 +86,28 @@ export function WaveformCanvas({
     canvasNode.style.width = `${canvasWidth}px`;
     canvasNode.style.height = `${height}px`;
 
-    const context = canvasNode.getContext('2d');
-    if (!context) {
-      return;
-    }
-
-    context.setTransform(1, 0, 0, 1, 0, 0);
-    context.scale(dpr, dpr);
-    context.clearRect(0, 0, canvasWidth, height);
-
     if (!audioBuffer) {
+      const context = canvasNode.getContext('2d');
+      if (!context) {
+        return;
+      }
+
+      context.setTransform(1, 0, 0, 1, 0, 0);
       context.fillStyle = '#0A1A19';
-      context.fillRect(0, 0, canvasWidth, height);
+      context.fillRect(0, 0, canvasNode.width, canvasNode.height);
       return;
     }
 
-    const source = renderWaveformOffscreen(audioBuffer, canvasWidth, height, theme);
-    context.drawImage(source as CanvasImageSource, 0, 0, source.width, source.height, 0, 0, canvasWidth, height);
-  }, [audioBuffer, canvasNode, canvasWidth, theme]);
+    renderWaveform({
+      buffer: audioBuffer,
+      canvas: canvasNode,
+      startSec: 0,
+      endSec: audioBuffer.duration,
+      selectionStart,
+      selectionEnd,
+      theme,
+    });
+  }, [audioBuffer, canvasNode, canvasWidth, selectionEnd, selectionStart, theme]);
 
   const getPositionFromClientX = (clientX: number) => {
     if (!scrollNode) {
@@ -145,7 +149,9 @@ export function WaveformCanvas({
     didDragRef.current = false;
     dragSelectionRef.current = { start: selectionStart, end: selectionEnd };
     event.currentTarget.setPointerCapture(event.pointerId);
-
+    if (mode === 'playhead') {
+      onSeek(time);
+    }
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -156,6 +162,11 @@ export function WaveformCanvas({
     const { time, x } = getPositionFromClientX(event.clientX);
     if (dragStartXRef.current != null && Math.abs(x - dragStartXRef.current) > 4) {
       didDragRef.current = true;
+    }
+
+    if (dragMode === 'playhead') {
+      onSeek(time);
+      return;
     }
 
     if (dragMode === 'start') {
@@ -213,32 +224,42 @@ export function WaveformCanvas({
           {isLoading ? <div className="audio-loading-skeleton absolute inset-0" /> : null}
           <canvas ref={setCanvasNode} className="absolute inset-0 h-full w-full" />
 
-          <button
-            type="button"
-            data-waveform-handle="start"
-            data-testid="audio-selection-handle-start"
-            className="absolute inset-y-2 z-20 w-4 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent"
-            style={{ left: `${startPercent * 100}%` }}
-            aria-label="Selection start"
-          >
-            <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-[var(--selection-border)]" />
-            <span className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[rgba(14,15,17,0.82)] bg-[var(--selection-border)]" />
-            <span className="absolute bottom-1.5 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[rgba(14,15,17,0.82)] bg-[var(--selection-border)]" />
-          </button>
-          <button
-            type="button"
-            data-waveform-handle="end"
-            data-testid="audio-selection-handle-end"
-            className="absolute inset-y-2 z-20 w-4 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent"
-            style={{ left: `${endPercent * 100}%` }}
-            aria-label="Selection end"
-          >
-            <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-[var(--selection-border)]" />
-            <span className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[rgba(14,15,17,0.82)] bg-[var(--selection-border)]" />
-            <span className="absolute bottom-1.5 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[rgba(14,15,17,0.82)] bg-[var(--selection-border)]" />
-          </button>
+          {!isFullSelection ? (
+            <>
+              <button
+                type="button"
+                data-waveform-handle="start"
+                data-testid="audio-selection-handle-start"
+                className="absolute inset-y-2 z-20 w-4 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent"
+                style={{ left: `${startPercent * 100}%` }}
+                aria-label="Selection start"
+              >
+                <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-[var(--selection-border)]" />
+                <span className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[rgba(14,15,17,0.82)] bg-[var(--selection-border)]" />
+                <span className="absolute bottom-1.5 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[rgba(14,15,17,0.82)] bg-[var(--selection-border)]" />
+              </button>
+              <button
+                type="button"
+                data-waveform-handle="end"
+                data-testid="audio-selection-handle-end"
+                className="absolute inset-y-2 z-20 w-4 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent"
+                style={{ left: `${endPercent * 100}%` }}
+                aria-label="Selection end"
+              >
+                <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-[var(--selection-border)]" />
+                <span className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[rgba(14,15,17,0.82)] bg-[var(--selection-border)]" />
+                <span className="absolute bottom-1.5 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[rgba(14,15,17,0.82)] bg-[var(--selection-border)]" />
+              </button>
+            </>
+          ) : null}
 
-          {showPlayhead ? <PlayheadOverlay positionPercent={playheadPercent} currentTime={currentTime} /> : null}
+          {showPlayhead ? (
+            <PlayheadOverlay
+              positionPercent={playheadPercent}
+              currentTime={currentTime}
+              isDragging={dragMode === 'playhead'}
+            />
+          ) : null}
 
           <div className="audio-mono absolute left-3 top-3 z-10 rounded-md border border-[var(--border)] bg-[rgba(30,32,35,0.94)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)]">
             {fileName}
@@ -260,7 +281,7 @@ export function WaveformCanvas({
             <div
               data-testid="audio-selection-overlay"
               aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0 border-y border-[var(--selection-border)] bg-[var(--selection-bg)]"
+              className="pointer-events-none absolute inset-y-0 bg-transparent"
               style={{
                 left: `${startPercent * 100}%`,
                 width: `${selectionWidth}%`,

@@ -356,6 +356,7 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   await expect(page.getByRole('button', { name: 'Start recording' })).toHaveCount(1);
   await expect(page.locator('button[aria-label="Play"], button[aria-label="Pause"]')).toHaveCount(1);
   await expect(page.getByTestId('audio-playhead')).toHaveCount(1, { timeout: 60_000 });
+  await expect(page.getByText(/^Loaded sample\.wav/)).toHaveCount(0);
 
   const waveformMetrics = await page.getByTestId('audio-waveform-scroll').evaluate((element) => ({
     clientWidth: element.clientWidth,
@@ -381,6 +382,21 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   }
   expect(soughtPlayheadBox.x + soughtPlayheadBox.width / 2).toBeGreaterThan(
     initialPlayheadBox.x + initialPlayheadBox.width / 2 + waveformBox.width * 0.2,
+  );
+
+  await page.mouse.move(
+    soughtPlayheadBox.x + soughtPlayheadBox.width / 2,
+    soughtPlayheadBox.y + soughtPlayheadBox.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(waveformBox.x + waveformBox.width * 0.36, waveformBox.y + 44, { steps: 10 });
+  await page.mouse.up();
+  const draggedPlayheadBox = await playhead.boundingBox();
+  if (!draggedPlayheadBox) {
+    throw new Error('Audio playhead was not available after dragging.');
+  }
+  expect(draggedPlayheadBox.x + draggedPlayheadBox.width / 2).toBeLessThan(
+    soughtPlayheadBox.x + soughtPlayheadBox.width / 2 - waveformBox.width * 0.18,
   );
 
   await page.mouse.move(waveformBox.x + 100, waveformBox.y + 60);
@@ -476,6 +492,63 @@ test('audio editor localizes save, record, and conversion actions in korean mode
 
   await page.getByRole('button', { name: '더보기' }).click();
   await expect(page.getByRole('link', { name: '파일 변환 열기' })).toBeVisible();
+});
+
+test('audio recording can pause and resume before opening the take in the editor', async ({ page }) => {
+  await page.addInitScript(() => {
+    const audioWindow = window as typeof window & {
+      webkitAudioContext?: typeof AudioContext;
+      __audioTestContexts?: Array<{ audioContext: AudioContext; oscillator: OscillatorNode }>;
+    };
+    const mediaDevices = navigator.mediaDevices ?? ({} as MediaDevices);
+
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: mediaDevices,
+    });
+
+    navigator.mediaDevices.getUserMedia = async () => {
+      const AudioContextCtor = audioWindow.AudioContext || audioWindow.webkitAudioContext;
+      if (!AudioContextCtor) {
+        throw new Error('AudioContext was unavailable for the recording test.');
+      }
+
+      const audioContext = new AudioContextCtor();
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      const destination = audioContext.createMediaStreamDestination();
+
+      oscillator.type = 'sine';
+      oscillator.frequency.value = 220;
+      gain.gain.value = 0.18;
+      oscillator.connect(gain);
+      gain.connect(destination);
+      oscillator.start();
+
+      audioWindow.__audioTestContexts ??= [];
+      audioWindow.__audioTestContexts.push({ audioContext, oscillator });
+
+      return destination.stream;
+    };
+  });
+
+  await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
+
+  await page.getByRole('button', { name: 'Start recording' }).click();
+  await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole('button', { name: 'Pause recording' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Pause recording' }).click();
+  await expect(page.getByRole('button', { name: 'Resume recording' })).toBeVisible();
+  await expect(page.getByText(/Recording paused/).first()).toBeVisible();
+
+  await page.getByRole('button', { name: 'Resume recording' }).click();
+  await expect(page.getByRole('button', { name: 'Pause recording' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Stop recording' }).click();
+  await expect(page.getByRole('button', { name: 'Save WAV' })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/^Loaded audio-recording-/)).toHaveCount(0);
 });
 
 test('pdf rearrange shows page editor controls before processing', async ({ page }) => {
