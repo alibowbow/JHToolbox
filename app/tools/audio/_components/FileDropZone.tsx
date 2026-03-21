@@ -12,6 +12,7 @@ interface FileDropZoneProps {
   helperText: string;
   files: File[];
   multiple?: boolean;
+  renderInput?: boolean;
   inputRef?: RefObject<HTMLInputElement>;
   maxFileSizeBytes?: number;
   warningFileSizeBytes?: number;
@@ -26,6 +27,7 @@ export function FileDropZone({
   helperText,
   files,
   multiple = false,
+  renderInput = true,
   inputRef: externalInputRef,
   maxFileSizeBytes = 500 * 1024 * 1024,
   warningFileSizeBytes = 100 * 1024 * 1024,
@@ -45,7 +47,14 @@ export function FileDropZone({
     };
   }, []);
 
-  const openPicker = () => resolvedInputRef.current?.click();
+  const openPicker = () => {
+    if (!resolvedInputRef.current) {
+      return;
+    }
+
+    resolvedInputRef.current.value = '';
+    resolvedInputRef.current.click();
+  };
 
   const handleFiles = (nextList: FileList | File[] | null) => {
     if (!nextList || nextList.length === 0) {
@@ -62,18 +71,23 @@ export function FileDropZone({
     const largeFiles = nextFiles.filter((file) => file.size > warningFileSizeBytes);
     onWarning?.(largeFiles.length > 0 ? copy.fileDrop.largeFileWarning : null);
     onFiles(multiple ? nextFiles : nextFiles.slice(0, 1));
+    if (resolvedInputRef.current) {
+      resolvedInputRef.current.value = '';
+    }
   };
 
   return (
     <div className="space-y-4">
-      <input
-        ref={resolvedInputRef}
-        type="file"
-        accept={AUDIO_ACCEPT}
-        multiple={multiple}
-        onChange={(event) => handleFiles(event.target.files)}
-        className="hidden"
-      />
+      {renderInput ? (
+        <input
+          ref={resolvedInputRef}
+          type="file"
+          accept={AUDIO_ACCEPT}
+          multiple={multiple}
+          onChange={(event) => handleFiles(event.target.files)}
+          className="hidden"
+        />
+      ) : null}
 
       <button
         type="button"

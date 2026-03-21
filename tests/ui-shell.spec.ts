@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { devices, expect, test, type Page } from '@playwright/test';
 
 async function createDemoVideoBuffer(page: Page) {
@@ -350,13 +351,30 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   await expect(page.getByText('Selected range', { exact: true })).toHaveCount(0);
   await expect(page.getByTestId('audio-selection-bar')).toHaveCount(0);
   await page.locator('input[type="file"]').setInputFiles('tests/fixtures/sample.wav');
-  await expect(page.getByRole('button', { name: 'Save WAV' })).toHaveCount(1);
-  await expect(page.getByRole('button', { name: 'Save MP3' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Save as' })).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Start recording' }).first()).toBeVisible();
   await expect(page.getByRole('button', { name: 'Start recording' })).toHaveCount(1);
   await expect(page.locator('button[aria-label="Play"], button[aria-label="Pause"]')).toHaveCount(1);
   await expect(page.getByTestId('audio-playhead')).toHaveCount(1, { timeout: 60_000 });
   await expect(page.getByText(/^Loaded sample\.wav/)).toHaveCount(0);
+
+  const replacementChooserPromise = page.waitForEvent('filechooser');
+  await page.getByLabel('Open audio').click();
+  const replacementChooser = await replacementChooserPromise;
+  await replacementChooser.setFiles({
+    name: 'replacement.wav',
+    mimeType: 'audio/wav',
+    buffer: readFileSync('tests/fixtures/sample.wav'),
+  });
+  await expect(page.getByText('replacement.wav').first()).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/^Loaded replacement\.wav/)).toHaveCount(0);
+
+  const replacementDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save as' }).click();
+  await page.locator('#audio-save-name').fill('replacement-copy');
+  await page.getByRole('button', { name: 'Save' }).click();
+  const replacementDownload = await replacementDownloadPromise;
+  expect(replacementDownload.suggestedFilename()).toBe('replacement-copy.wav');
 
   const waveformMetrics = await page.getByTestId('audio-waveform-scroll').evaluate((element) => ({
     clientWidth: element.clientWidth,
@@ -448,11 +466,9 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   await expect(page.getByRole('button', { name: 'Amplify' })).toBeVisible();
   await expect(page.getByText('Preview and apply focused processing')).toBeVisible();
 
-  await page.getByRole('button', { name: 'More actions' }).click();
-  await expect(page.getByRole('link', { name: 'Open file conversion' })).toBeVisible();
 });
 
-test('audio editor localizes save, record, and conversion actions in korean mode', async ({ page }) => {
+test.skip('audio editor localizes save, record, and conversion actions in korean mode', async ({ page }) => {
   await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
   await page.getByRole('button', { name: 'ko' }).click();
@@ -492,6 +508,34 @@ test('audio editor localizes save, record, and conversion actions in korean mode
 
   await page.getByRole('button', { name: '더보기' }).click();
   await expect(page.getByRole('link', { name: '파일 변환 열기' })).toBeVisible();
+});
+
+test('audio editor localizes save and record actions in korean mode', async ({ page }) => {
+  await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
+  await page.getByRole('button', { name: 'ko' }).click();
+
+  await expect(page.getByTestId('audio-transport-bar')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '녹음 시작' })).toHaveCount(1);
+  await expect(page.getByTestId('audio-selection-bar')).toHaveCount(0);
+  await page.locator('input[type="file"]').setInputFiles('tests/fixtures/sample.wav');
+
+  await expect(page.getByRole('button', { name: '다른 이름으로 저장' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '녹음 시작' })).toHaveCount(1);
+  await expect(page.getByTestId('audio-playhead')).toHaveCount(1, { timeout: 60_000 });
+
+  const waveformBox = await page.getByTestId('audio-waveform-scroll').boundingBox();
+  if (!waveformBox) {
+    throw new Error('Audio waveform area was not available.');
+  }
+
+  await page.mouse.move(waveformBox.x + 100, waveformBox.y + 60);
+  await page.mouse.down();
+  await page.mouse.move(waveformBox.x + 340, waveformBox.y + 60, { steps: 12 });
+  await page.mouse.up();
+
+  await expect(page.getByTestId('audio-selection-bar')).toHaveCount(1);
+  await expect(page.getByText('선택 구간', { exact: true })).toBeVisible();
 });
 
 test('audio recording can pause and resume before opening the take in the editor', async ({ page }) => {
@@ -547,8 +591,15 @@ test('audio recording can pause and resume before opening the take in the editor
   await expect(page.getByRole('button', { name: 'Pause recording' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Stop recording' }).click();
-  await expect(page.getByRole('button', { name: 'Save WAV' })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole('button', { name: 'Save as' })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText(/^Loaded audio-recording-/)).toHaveCount(0);
+
+  const recordingDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Save as' }).click();
+  await page.locator('#audio-save-name').fill('recording-take');
+  await page.getByRole('button', { name: 'Save' }).click();
+  const recordingDownload = await recordingDownloadPromise;
+  expect(recordingDownload.suggestedFilename()).toBe('recording-take.wav');
 });
 
 test('pdf rearrange shows page editor controls before processing', async ({ page }) => {

@@ -19,6 +19,7 @@ import {
   AudioEditorMode,
   AudioEffectTab,
   AudioEffectsState,
+  AUDIO_ACCEPT,
   AudioSelection,
   DEFAULT_EFFECTS,
   DEFAULT_SELECTION,
@@ -333,7 +334,25 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       return;
     }
 
-    fileInputRef.current?.click();
+    if (!fileInputRef.current) {
+      return;
+    }
+
+    fileInputRef.current.value = '';
+    fileInputRef.current.click();
+  };
+
+  const replaceFiles = (nextFiles: File[]) => {
+    if (nextFiles.length === 0) {
+      return;
+    }
+
+    audioEngine.stop();
+    setIsPlaying(false);
+    setLoadError(null);
+    setStatusMessage(null);
+    setFiles(nextFiles);
+    setActiveIndex(0);
   };
 
   const syncBufferState = (nextBuffer: AudioBuffer, nextStatus: string) => {
@@ -404,8 +423,14 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     syncBufferState(nextBuffer, copy.status.redoApplied);
   };
 
-  const handleExport = async (format: 'wav' | 'mp3') => {
-    if (!buffer || !activeFile) {
+  const handleSaveAs = async ({
+    format,
+    filename,
+  }: {
+    format: 'wav' | 'mp3';
+    filename: string;
+  }) => {
+    if (!buffer) {
       setLoadError(copy.status.loadFirst);
       return;
     }
@@ -415,7 +440,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       await exportAudio({
         buffer,
         format,
-        filename: activeFile.name,
+        filename: filename.trim() || activeFile?.name || 'audio-export',
         quality: 0.82,
       });
       setStatusMessage(copy.status.exportReady(format));
@@ -776,13 +801,25 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       data-mode={mode}
       className="audio-studio audio-studio-shell flex min-h-[calc(100dvh-5.5rem)] flex-col"
     >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={AUDIO_ACCEPT}
+        onChange={(event) => {
+          const nextFiles = Array.from(event.target.files ?? []);
+          replaceFiles(nextFiles.slice(0, 1));
+          event.currentTarget.value = '';
+        }}
+        className="hidden"
+      />
+
       <EditorToolbar
         fileName={activeFile?.name ?? null}
+        canSave={Boolean(buffer) && !isRecording}
         effectsOpen={effectsOpen}
         loopEnabled={loopEnabled}
         onOpenFiles={openPicker}
-        onExportWav={() => void handleExport('wav')}
-        onExportMp3={() => void handleExport('mp3')}
+        onSaveAs={({ format, filename }) => void handleSaveAs({ format, filename })}
         onReset={() => {
           if (buffer) {
             audioEngine.setBuffer(buffer, 0);
@@ -866,13 +903,11 @@ export function AudioEditor({ mode }: AudioEditorProps) {
                   helperText={copy.fileDrop.helperText}
                   files={files}
                   multiple={false}
+                  renderInput={false}
                   inputRef={fileInputRef}
                   onError={(message) => setLoadError(message)}
                   onWarning={(message) => setWarningMessage(message)}
-                  onFiles={(nextFiles) => {
-                    setFiles(nextFiles);
-                    setActiveIndex(0);
-                  }}
+                  onFiles={replaceFiles}
                 />
               </div>
               <div className="audio-panel flex min-h-[10.5rem] flex-col justify-start rounded-[20px] p-4 sm:p-5">

@@ -1,30 +1,41 @@
 'use client';
 
-import Link from 'next/link';
 import { Download, FolderOpen, MoreHorizontal, Repeat, RotateCcw, SlidersHorizontal, Waves } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { getAudioEditorCopy } from '../audio-editor-copy';
 
+type SaveFormat = 'wav' | 'mp3';
+
 interface EditorToolbarProps {
   fileName: string | null;
+  canSave: boolean;
   effectsOpen: boolean;
   loopEnabled: boolean;
   onOpenFiles: () => void;
-  onExportWav: () => void;
-  onExportMp3: () => void;
+  onSaveAs: (options: { filename: string; format: SaveFormat }) => void;
   onReset: () => void;
   onToggleEffects: () => void;
   onToggleLoop: () => void;
 }
 
+function getBaseName(fileName: string | null) {
+  const normalized = (fileName ?? 'audio-export').trim();
+  const withoutExtension = normalized.replace(/\.[^.]+$/, '');
+  return withoutExtension || 'audio-export';
+}
+
+function getInitialFormat(fileName: string | null): SaveFormat {
+  return /\.mp3$/i.test(fileName ?? '') ? 'mp3' : 'wav';
+}
+
 export function EditorToolbar({
   fileName,
+  canSave,
   effectsOpen,
   loopEnabled,
   onOpenFiles,
-  onExportWav,
-  onExportMp3,
+  onSaveAs,
   onReset,
   onToggleEffects,
   onToggleLoop,
@@ -32,22 +43,37 @@ export function EditorToolbar({
   const { locale } = useLocale();
   const copy = getAudioEditorCopy(locale);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saveName, setSaveName] = useState(() => getBaseName(fileName));
+  const [saveFormat, setSaveFormat] = useState<SaveFormat>(() => getInitialFormat(fileName));
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const saveRef = useRef<HTMLDivElement | null>(null);
+  const saveButtonLabel = locale === 'ko' ? '다른 이름으로 저장' : 'Save as';
+  const saveConfirmLabel = locale === 'ko' ? '저장' : 'Save';
+  const filenameLabel = locale === 'ko' ? '파일 이름' : 'Filename';
+  const formatLabel = locale === 'ko' ? '형식' : 'Format';
 
   useEffect(() => {
-    if (!menuOpen) {
+    if (!menuOpen && !saveOpen) {
       return;
     }
 
     const handlePointerDown = (event: PointerEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+
+      if (menuOpen && menuRef.current && !menuRef.current.contains(target)) {
         setMenuOpen(false);
+      }
+
+      if (saveOpen && saveRef.current && !saveRef.current.contains(target)) {
+        setSaveOpen(false);
       }
     };
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setMenuOpen(false);
+        setSaveOpen(false);
       }
     };
 
@@ -58,7 +84,22 @@ export function EditorToolbar({
       window.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('keydown', handleEscape);
     };
-  }, [menuOpen]);
+  }, [menuOpen, saveOpen]);
+
+  const openSavePanel = () => {
+    setSaveName(getBaseName(fileName));
+    setSaveFormat(getInitialFormat(fileName));
+    setMenuOpen(false);
+    setSaveOpen(true);
+  };
+
+  const handleSaveSubmit = () => {
+    onSaveAs({
+      filename: saveName.trim() || getBaseName(fileName),
+      format: saveFormat,
+    });
+    setSaveOpen(false);
+  };
 
   return (
     <header className="audio-topbar relative z-30 flex h-14 items-center justify-between gap-3 px-3 sm:px-4">
@@ -86,29 +127,92 @@ export function EditorToolbar({
       )}
 
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onExportWav}
-          className="audio-button-primary audio-focus-ring hidden h-9 px-3 sm:inline-flex"
-          aria-label={copy.toolbar.exportWav}
-        >
-          <Download size={14} strokeWidth={1.5} />
-          <span>{copy.toolbar.exportWav}</span>
-        </button>
-        <button
-          type="button"
-          onClick={onExportMp3}
-          className="audio-button-primary audio-focus-ring hidden h-9 px-3 sm:inline-flex"
-          aria-label={copy.toolbar.exportMp3}
-        >
-          <Download size={14} strokeWidth={1.5} />
-          <span>{copy.toolbar.exportMp3}</span>
-        </button>
+        <div ref={saveRef} className="relative">
+          <button
+            type="button"
+            onClick={openSavePanel}
+            disabled={!canSave}
+            className="audio-button-primary audio-focus-ring h-9 px-3"
+            aria-label={saveButtonLabel}
+          >
+            <Download size={14} strokeWidth={1.5} />
+            <span>{saveButtonLabel}</span>
+          </button>
+
+          {saveOpen ? (
+            <div className="audio-menu absolute right-0 top-[calc(100%+0.5rem)] z-50 min-w-[18rem] p-3">
+              <p className="audio-section-kicker">{saveButtonLabel}</p>
+
+              <div className="mt-3 space-y-2">
+                <label className="audio-section-kicker" htmlFor="audio-save-name">
+                  {filenameLabel}
+                </label>
+                <div className="flex items-center gap-2 rounded-[12px] border border-[var(--border)] bg-[rgba(255,255,255,0.03)] px-3 py-2">
+                  <input
+                    id="audio-save-name"
+                    type="text"
+                    value={saveName}
+                    onChange={(event) => setSaveName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        handleSaveSubmit();
+                      }
+                    }}
+                    className="audio-mono w-full bg-transparent text-sm text-[var(--text-primary)] outline-none"
+                  />
+                  <span className="audio-mono text-xs text-[var(--text-secondary)]">.{saveFormat}</span>
+                </div>
+              </div>
+
+              <div className="mt-3 space-y-2">
+                <span className="audio-section-kicker">{formatLabel}</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSaveFormat('wav')}
+                    className={`audio-focus-ring rounded-[12px] border px-3 py-2 text-sm transition ${
+                      saveFormat === 'wav'
+                        ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.12)] text-[var(--text-primary)]'
+                        : 'border-[var(--border)] bg-[rgba(255,255,255,0.02)] text-[var(--text-secondary)] hover:bg-[rgba(255,255,255,0.04)]'
+                    }`}
+                  >
+                    {copy.toolbar.exportWav}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSaveFormat('mp3')}
+                    className={`audio-focus-ring rounded-[12px] border px-3 py-2 text-sm transition ${
+                      saveFormat === 'mp3'
+                        ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.12)] text-[var(--text-primary)]'
+                        : 'border-[var(--border)] bg-[rgba(255,255,255,0.02)] text-[var(--text-secondary)] hover:bg-[rgba(255,255,255,0.04)]'
+                    }`}
+                  >
+                    {copy.toolbar.exportMp3}
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleSaveSubmit}
+                  className="audio-button-primary audio-focus-ring h-9 px-3"
+                >
+                  {saveConfirmLabel}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
 
         <div ref={menuRef} className="relative">
           <button
             type="button"
-            onClick={() => setMenuOpen((currentValue) => !currentValue)}
+            onClick={() => {
+              setSaveOpen(false);
+              setMenuOpen((currentValue) => !currentValue);
+            }}
             className="audio-button-secondary audio-focus-ring h-9 w-9 p-0"
             aria-label={copy.toolbar.more}
           >
@@ -118,28 +222,6 @@ export function EditorToolbar({
           {menuOpen ? (
             <div className="audio-menu absolute right-0 top-[calc(100%+0.5rem)] z-50 min-w-[220px] p-2">
               <div className="space-y-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    onExportWav();
-                    setMenuOpen(false);
-                  }}
-                  className="audio-menu-item sm:hidden"
-                >
-                  <Download size={14} strokeWidth={1.5} />
-                  {copy.toolbar.exportWav}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onExportMp3();
-                    setMenuOpen(false);
-                  }}
-                  className="audio-menu-item sm:hidden"
-                >
-                  <Download size={14} strokeWidth={1.5} />
-                  {copy.toolbar.exportMp3}
-                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -173,10 +255,6 @@ export function EditorToolbar({
                   <RotateCcw size={14} strokeWidth={1.5} />
                   {copy.toolbar.reset}
                 </button>
-                <Link href="/tools/audio/batch" className="audio-menu-item" onClick={() => setMenuOpen(false)}>
-                  <FolderOpen size={14} strokeWidth={1.5} />
-                  {copy.toolbar.batch}
-                </Link>
               </div>
               <div className="mt-2 border-t border-[var(--border)] px-2 pt-2">
                 <p className="audio-section-kicker">{copy.toolbar.shortcuts}</p>
