@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { renderWaveform } from '@/lib/audio';
 import { clamp } from '../audio-editor-utils';
@@ -39,17 +39,21 @@ export function WaveformCanvas({
 }: WaveformCanvasProps) {
   const { locale } = useLocale();
   const copy = getAudioEditorCopy(locale);
-  const [baseWidth, setBaseWidth] = useState(760);
+  const [baseWidth, setBaseWidth] = useState(0);
   const [dragMode, setDragMode] = useState<DragMode | null>(null);
   const [scrollNode, setScrollNode] = useState<HTMLDivElement | null>(null);
   const [canvasNode, setCanvasNode] = useState<HTMLCanvasElement | null>(null);
+  const dragAnchorRef = useRef<number | null>(null);
+  const dragSelectionRef = useRef({ start: 0, end: 0 });
   const theme: 'light' | 'dark' = 'dark';
-  const canvasWidth = Math.max(baseWidth, Math.round(baseWidth * zoom));
+  const viewportWidth = Math.max(baseWidth || 0, 320);
+  const canvasWidth = Math.max(280, Math.round(viewportWidth * zoom));
   const safeDuration = Math.max(duration, 0.001);
   const startPercent = clamp(selectionStart / safeDuration, 0, 1);
   const endPercent = clamp(selectionEnd / safeDuration, 0, 1);
   const playheadPercent = clamp(currentTime / safeDuration, 0, 1);
   const selectionWidth = Math.max((endPercent - startPercent) * 100, 0.4);
+  const needsHorizontalScroll = canvasWidth > viewportWidth + 1;
 
   useEffect(() => {
     if (!scrollNode || typeof ResizeObserver === 'undefined') {
@@ -57,8 +61,8 @@ export function WaveformCanvas({
     }
 
     const observer = new ResizeObserver((entries) => {
-      const nextWidth = entries[0]?.contentRect.width ?? 760;
-      setBaseWidth(Math.max(360, Math.floor(nextWidth)));
+      const nextWidth = entries[0]?.contentRect.width ?? 0;
+      setBaseWidth(Math.max(280, Math.floor(nextWidth)));
     });
 
     observer.observe(scrollNode);
@@ -104,25 +108,39 @@ export function WaveformCanvas({
     });
   }, [audioBuffer, canvasNode, canvasWidth, currentTime, selectionEnd, selectionStart, theme]);
 
-  const getTimeFromClientX = (clientX: number) => {
+  const getPositionFromClientX = (clientX: number) => {
     if (!scrollNode) {
-      return 0;
+      return { time: 0, x: 0 };
     }
 
     const rect = scrollNode.getBoundingClientRect();
-    const x = clientX - rect.left + scrollNode.scrollLeft;
+    const x = clamp(clientX - rect.left + scrollNode.scrollLeft, 0, canvasWidth);
     const ratio = clamp(x / canvasWidth, 0, 1);
-    return ratio * safeDuration;
+
+    return {
+      x,
+      time: ratio * safeDuration,
+    };
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    const time = getTimeFromClientX(event.clientX);
+    if (!audioBuffer) {
+      return;
+    }
+
+    const { time, x } = getPositionFromClientX(event.clientX);
     const target = event.target as HTMLElement;
     const handle = target.closest<HTMLElement>('[data-waveform-handle]')?.dataset.waveformHandle as DragMode | undefined;
+    const startX = startPercent * canvasWidth;
+    const endX = endPercent * canvasWidth;
+    const thresholdPx = 14;
     const mode: DragMode =
-      handle ?? (Math.abs(time - selectionStart) < 0.35 ? 'start' : Math.abs(time - selectionEnd) < 0.35 ? 'end' : 'selection');
+      handle ??
+      (Math.abs(x - startX) <= thresholdPx ? 'start' : Math.abs(x - endX) <= thresholdPx ? 'end' : 'selection');
 
     setDragMode(mode);
+    dragAnchorRef.current = time;
+    dragSelectionRef.current = { start: selectionStart, end: selectionEnd };
     event.currentTarget.setPointerCapture(event.pointerId);
 
     if (mode === 'playhead') {
@@ -141,7 +159,7 @@ export function WaveformCanvas({
       return;
     }
 
-    const time = getTimeFromClientX(event.clientX);
+    const { time } = getPositionFromClientX(event.clientX);
 
     if (dragMode === 'playhead') {
       onSeek(time);
@@ -149,16 +167,22 @@ export function WaveformCanvas({
     }
 
     if (dragMode === 'start') {
-      onSelectionChange({ start: time, end: selectionEnd });
+      onSelectionChange({ start: time, end: dragSelectionRef.current.end });
       return;
     }
 
     if (dragMode === 'end') {
-      onSelectionChange({ start: selectionStart, end: time });
+      onSelectionChange({ start: dragSelectionRef.current.start, end: time });
       return;
     }
 
-    onSelectionChange({ start: selectionStart, end: time });
+    const anchor = dragAnchorRef.current ?? selectionStart;
+    onSelectionChange({ start: anchor, end: time });
+  };
+
+  const handlePointerEnd = () => {
+    setDragMode(null);
+    dragAnchorRef.current = null;
   };
 
   return (
@@ -166,7 +190,7 @@ export function WaveformCanvas({
       <WaveformTimeline duration={duration} zoom={zoom} />
       <div
         ref={setScrollNode}
-        className="overflow-x-auto rounded-b-[18px] bg-[var(--waveform-bg)]"
+        className={`rounded-b-[18px] bg-[var(--waveform-bg)] ${needsHorizontalScroll ? 'overflow-x-auto' : 'overflow-x-hidden'}`}
         data-testid="audio-waveform-scroll"
       >
         <div
@@ -174,8 +198,8 @@ export function WaveformCanvas({
           style={{ width: `${canvasWidth}px` }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
-          onPointerUp={() => setDragMode(null)}
-          onPointerCancel={() => setDragMode(null)}
+          onPointerUp={handlePointerEnd}
+          onPointerCancel={handlePointerEnd}
         >
           {isLoading ? <div className="audio-loading-skeleton absolute inset-0" /> : null}
           <canvas ref={setCanvasNode} className="absolute inset-0 h-full w-full" />
@@ -183,14 +207,14 @@ export function WaveformCanvas({
           <button
             type="button"
             data-waveform-handle="start"
-            className="absolute inset-y-2 z-20 w-1.5 -translate-x-1/2 rounded-full bg-[var(--selection-border)]"
+            className="absolute inset-y-2 z-20 w-2.5 -translate-x-1/2 cursor-col-resize rounded-full bg-[var(--selection-border)]"
             style={{ left: `${startPercent * 100}%` }}
             aria-label="Selection start"
           />
           <button
             type="button"
             data-waveform-handle="end"
-            className="absolute inset-y-2 z-20 w-1.5 -translate-x-1/2 rounded-full bg-[var(--selection-border)]"
+            className="absolute inset-y-2 z-20 w-2.5 -translate-x-1/2 cursor-col-resize rounded-full bg-[var(--selection-border)]"
             style={{ left: `${endPercent * 100}%` }}
             aria-label="Selection end"
           />

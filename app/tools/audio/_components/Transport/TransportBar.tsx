@@ -56,6 +56,7 @@ export function TransportBar({
 }: TransportBarProps) {
   const { locale } = useLocale();
   const copy = getAudioEditorCopy(locale);
+  const canControlPlayback = duration > 0 && !isRecording;
 
   return (
     <div className="audio-panel flex flex-col gap-3 rounded-[18px] px-3 py-3 sm:px-4">
@@ -89,6 +90,7 @@ export function TransportBar({
             onClick={onSeekToStart}
             className="audio-button-ghost audio-focus-ring h-8 w-8 p-0"
             aria-label={copy.transport.jumpStart}
+            disabled={!canControlPlayback}
           >
             <SkipBack size={15} strokeWidth={1.5} />
           </button>
@@ -97,6 +99,7 @@ export function TransportBar({
             onClick={() => onSeekBy(-5)}
             className="audio-button-ghost audio-focus-ring h-8 w-8 p-0"
             aria-label={copy.transport.rewind}
+            disabled={!canControlPlayback}
           >
             <ChevronLeft size={15} strokeWidth={1.5} />
           </button>
@@ -106,6 +109,7 @@ export function TransportBar({
             onClick={onPlayPause}
             className={`audio-play-button audio-focus-ring ${isPlaying ? 'is-playing' : ''}`}
             aria-label={isPlaying ? copy.transport.pause : copy.transport.play}
+            disabled={!canControlPlayback}
           >
             {isPlaying ? <Pause size={18} strokeWidth={1.5} /> : <Play size={18} strokeWidth={1.5} className="ml-0.5" />}
           </button>
@@ -115,6 +119,7 @@ export function TransportBar({
             onClick={() => onSeekBy(5)}
             className="audio-button-ghost audio-focus-ring h-8 w-8 p-0"
             aria-label={copy.transport.forward}
+            disabled={!canControlPlayback}
           >
             <ChevronRight size={15} strokeWidth={1.5} />
           </button>
@@ -123,6 +128,7 @@ export function TransportBar({
             onClick={onSeekToEnd}
             className="audio-button-ghost audio-focus-ring h-8 w-8 p-0"
             aria-label={copy.transport.jumpEnd}
+            disabled={!canControlPlayback}
           >
             <SkipForward size={15} strokeWidth={1.5} />
           </button>
@@ -150,17 +156,18 @@ export function TransportBar({
           <span className="audio-range-label">{copy.transport.zoom}</span>
           <input
             type="range"
-            min={1}
-            max={32}
+            min={0.75}
+            max={6}
             step={0.25}
             value={zoom}
             onChange={(event) => onZoomChange(Number(event.target.value))}
-            style={getRangeStyle(zoom, 1, 32)}
+            style={getRangeStyle(zoom, 0.75, 6)}
             className="audio-range audio-focus-ring"
             aria-label={copy.transport.zoom}
-            aria-valuemin={1}
-            aria-valuemax={32}
+            aria-valuemin={0.75}
+            aria-valuemax={6}
             aria-valuenow={zoom}
+            disabled={duration <= 0}
           />
           <span className="audio-value min-w-[3.5rem] text-right">x{zoom.toFixed(1)}</span>
         </div>

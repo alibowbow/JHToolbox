@@ -59,7 +59,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(1.25);
+  const [zoom, setZoom] = useState(1);
   const [selection, setSelection] = useState<AudioSelection>(DEFAULT_SELECTION);
   const [effects, setEffects] = useState<AudioEffectsState>(DEFAULT_EFFECTS);
   const [activeTab, setActiveTab] = useState<AudioEffectTab>('fade');
@@ -100,7 +100,6 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     const syncLayout = (event?: MediaQueryListEvent) => {
       const matches = event?.matches ?? mediaQuery.matches;
       setIsDesktopLayout(matches);
-      setEffectsOpen(matches);
     };
 
     syncLayout();
@@ -707,7 +706,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
           setSelection(buffer ? normalizeSelection(0, buffer.duration, buffer.duration, 'keep') : DEFAULT_SELECTION);
           setEffects(DEFAULT_EFFECTS);
           setActiveTab('fade');
-          setZoom(1.25);
+          setZoom(1);
           setLoopEnabled(false);
           setStatusMessage(copy.status.resetDefaults);
         }}
@@ -771,27 +770,25 @@ export function AudioEditor({ mode }: AudioEditorProps) {
             </div>
           )}
 
-          {buffer ? (
-            <TransportBar
-              currentTime={currentTime}
-              duration={duration}
-              zoom={zoom}
-              isPlaying={isPlaying}
-              isRecording={isRecording}
-              canUndo={canUndo}
-              canRedo={canRedo}
-              undoLabel={undoLabel}
-              redoLabel={redoLabel}
-              onPlayPause={() => void handlePlayPause()}
-              onSeekBy={seekBy}
-              onSeekToStart={() => seekToBoundary('start')}
-              onSeekToEnd={() => seekToBoundary('end')}
-              onUndo={handleUndo}
-              onRedo={handleRedo}
-              onZoomChange={(nextZoom) => setZoom(clamp(nextZoom, 1, 32))}
-              onRecordToggle={handleRecordToggle}
-            />
-          ) : null}
+          <TransportBar
+            currentTime={currentTime}
+            duration={duration}
+            zoom={zoom}
+            isPlaying={isPlaying}
+            isRecording={isRecording}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            undoLabel={undoLabel}
+            redoLabel={redoLabel}
+            onPlayPause={() => void handlePlayPause()}
+            onSeekBy={seekBy}
+            onSeekToStart={() => seekToBoundary('start')}
+            onSeekToEnd={() => seekToBoundary('end')}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            onZoomChange={(nextZoom) => setZoom(clamp(nextZoom, 0.75, 6))}
+            onRecordToggle={handleRecordToggle}
+          />
 
           {buffer ? (
             <SelectionBar
@@ -818,7 +815,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
             />
           ) : null}
 
-          {!effectsOpen ? <div className="lg:hidden">{statusLines}</div> : null}
+          {!effectsOpen ? <div>{statusLines}</div> : null}
         </div>
 
         {effectsOpen && isDesktopLayout ? (

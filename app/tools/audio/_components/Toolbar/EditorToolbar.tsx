@@ -61,7 +61,7 @@ export function EditorToolbar({
   }, [menuOpen]);
 
   return (
-    <header className="audio-topbar flex h-14 items-center justify-between gap-3 px-3 sm:px-4">
+    <header className="audio-topbar relative z-30 flex h-14 items-center justify-between gap-3 px-3 sm:px-4">
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border-strong)] bg-[var(--bg-surface)] text-[var(--accent)]">
           <Waves size={14} strokeWidth={1.5} />
@@ -116,7 +116,7 @@ export function EditorToolbar({
           </button>
 
           {menuOpen ? (
-            <div className="audio-menu absolute right-0 top-[calc(100%+0.5rem)] z-30 min-w-[220px] p-2">
+            <div className="audio-menu absolute right-0 top-[calc(100%+0.5rem)] z-50 min-w-[220px] p-2">
               <div className="space-y-1">
                 <button
                   type="button"

@@ -330,14 +330,25 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   await expect(page).toHaveURL(/\/tools\/audio$/);
   await expect(page.getByRole('main')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open audio' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start recording' })).toHaveCount(1);
+  await expect(page.getByText('Preview and apply focused processing')).toHaveCount(0);
   await page.locator('input[type="file"]').setInputFiles('tests/fixtures/sample.wav');
   await expect(page.getByText('Selected range')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Keep' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Save WAV' })).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Save MP3' })).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Start recording' }).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Amplify' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Start recording' })).toHaveCount(1);
+
+  const waveformMetrics = await page.getByTestId('audio-waveform-scroll').evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+  }));
+  expect(waveformMetrics.scrollWidth - waveformMetrics.clientWidth).toBeLessThanOrEqual(8);
+
+  await page.getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('button', { name: 'Show effects' }).click();
+  await expect(page.getByRole('button', { name: 'Amplify' })).toBeVisible();
   await expect(page.getByText('Preview and apply focused processing')).toBeVisible();
 
   await page.getByRole('button', { name: 'More actions' }).click();
@@ -348,6 +359,7 @@ test('audio editor localizes save, record, and conversion actions in korean mode
   await page.goto('/tools/audio');
   await page.getByRole('button', { name: 'ko' }).click();
 
+  await expect(page.getByRole('button', { name: '녹음 시작' })).toHaveCount(1);
   await page.locator('input[type="file"]').setInputFiles('tests/fixtures/sample.wav');
 
   await expect(page.getByRole('button', { name: '오디오 열기' })).toBeVisible();
@@ -355,6 +367,9 @@ test('audio editor localizes save, record, and conversion actions in korean mode
   await expect(page.getByRole('button', { name: 'WAV 저장' })).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'MP3 저장' })).toHaveCount(1);
   await expect(page.getByText('선택 구간', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: '더보기' }).click();
+  await page.getByRole('button', { name: '효과 열기' }).click();
   await expect(page.getByRole('button', { name: '앰플리파이' })).toBeVisible();
 
   await page.getByRole('button', { name: '더보기' }).click();
