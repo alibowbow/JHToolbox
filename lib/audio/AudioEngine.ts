@@ -419,7 +419,7 @@ export class AudioEngine {
         return;
       }
 
-      this.currentTimeSec = shouldLoop ? this.currentTimeSec : plan.endSec;
+      this.currentTimeSec = shouldLoop ? this.currentTimeSec : 0;
       this.stopPlayback(false);
       this.emitTimeUpdate();
       this.emitEnded();

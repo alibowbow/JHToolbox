@@ -182,28 +182,28 @@ test('legacy audio editor routes redirect to the unified audio editor', async ({
   ];
 
   for (const target of redirectTargets) {
-    await page.goto(target, { waitUntil: 'domcontentloaded' });
+    await page.goto(target, { waitUntil: 'commit' });
     await expect(page).toHaveURL(/\/tools\/audio$/);
   }
 });
 
 test('legacy audio converter routes redirect to the batch converter', async ({ page }) => {
-  await page.goto('/tools/audio/audio-convert?outputFormat=mp3');
+  await page.goto('/tools/audio/audio-convert?outputFormat=mp3', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveURL(/\/tools\/audio\/batch$/);
 
-  await page.goto('/tools/audio/m4a-mp3');
+  await page.goto('/tools/audio/m4a-mp3', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveURL(/\/tools\/audio\/batch\?outputFormat=mp3$/);
 
-  await page.goto('/tools/audio/m4a-wav');
+  await page.goto('/tools/audio/m4a-wav', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveURL(/\/tools\/audio\/batch\?outputFormat=wav$/);
 
-  await page.goto('/tools/audio/aac-mp3');
+  await page.goto('/tools/audio/aac-mp3', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveURL(/\/tools\/audio\/batch\?outputFormat=mp3$/);
 
-  await page.goto('/tools/audio/webm-mp3');
+  await page.goto('/tools/audio/webm-mp3', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveURL(/\/tools\/audio\/batch\?outputFormat=mp3$/);
 
-  await page.goto('/tools/audio/mp4-wav');
+  await page.goto('/tools/audio/mp4-wav', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveURL(/\/tools\/audio\/batch\?outputFormat=wav$/);
 });
 
@@ -324,12 +324,26 @@ test('video trim uses the timeline editor without duplicate numeric inputs', asy
   await expect(page.locator('input[type="number"]')).toHaveCount(0);
 });
 
+test('audio editor empty state keeps a single transport bar and hides playback affordances', async ({ page }) => {
+  await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
+
+  await expect(page.getByLabel(/Open audio|오디오 열기/)).toBeVisible();
+  await expect(page.getByTestId('audio-transport-bar')).toHaveCount(1);
+  await expect(page.getByTestId('audio-selection-bar')).toHaveCount(0);
+  await expect(page.getByTestId('audio-playhead')).toHaveCount(0);
+  await expect(page.locator('button[aria-label="Start recording"], button[aria-label="녹음 시작"]')).toHaveCount(1);
+  await expect(page.getByText('Import audio').first()).toBeVisible();
+  await expect(page.getByText('Open an audio file or start a microphone recording to enter the editor.')).toBeVisible();
+});
+
 test('audio editor route exposes the unified editor workspace', async ({ page }) => {
-  await page.goto('/tools/audio');
+  await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
 
   await expect(page).toHaveURL(/\/tools\/audio$/);
   await expect(page.getByRole('main')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Open audio' })).toBeVisible();
+  await expect(page.getByLabel(/Open audio|오디오 열기/)).toBeVisible();
   await expect(page.getByTestId('audio-transport-bar')).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Start recording' })).toHaveCount(1);
   await expect(page.getByText('Preview and apply focused processing')).toHaveCount(0);
@@ -341,7 +355,7 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   await expect(page.getByRole('button', { name: 'Start recording' }).first()).toBeVisible();
   await expect(page.getByRole('button', { name: 'Start recording' })).toHaveCount(1);
   await expect(page.locator('button[aria-label="Play"], button[aria-label="Pause"]')).toHaveCount(1);
-  await expect(page.getByTestId('audio-playhead')).toHaveCount(0);
+  await expect(page.getByTestId('audio-playhead')).toHaveCount(1, { timeout: 60_000 });
 
   const waveformMetrics = await page.getByTestId('audio-waveform-scroll').evaluate((element) => ({
     clientWidth: element.clientWidth,
@@ -353,6 +367,21 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   if (!waveformBox) {
     throw new Error('Audio waveform area was not available.');
   }
+
+  const playhead = page.getByTestId('audio-playhead');
+  const initialPlayheadBox = await playhead.boundingBox();
+  if (!initialPlayheadBox) {
+    throw new Error('Audio playhead was not available before seeking.');
+  }
+
+  await page.mouse.click(waveformBox.x + waveformBox.width * 0.72, waveformBox.y + 44);
+  const soughtPlayheadBox = await playhead.boundingBox();
+  if (!soughtPlayheadBox) {
+    throw new Error('Audio playhead was not available after seeking.');
+  }
+  expect(soughtPlayheadBox.x + soughtPlayheadBox.width / 2).toBeGreaterThan(
+    initialPlayheadBox.x + initialPlayheadBox.width / 2 + waveformBox.width * 0.2,
+  );
 
   await page.mouse.move(waveformBox.x + 100, waveformBox.y + 60);
   await page.mouse.down();
@@ -378,6 +407,24 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   expect(Math.abs(startHandleCenter - selectionOverlay.x)).toBeLessThanOrEqual(4);
   expect(Math.abs(endHandleCenter - (selectionOverlay.x + selectionOverlay.width))).toBeLessThanOrEqual(4);
 
+  await page.getByRole('button', { name: 'Jump to end' }).click();
+  const endPlayheadBox = await playhead.boundingBox();
+  if (!endPlayheadBox) {
+    throw new Error('Audio playhead was not available at the end position.');
+  }
+  expect(endPlayheadBox.x + endPlayheadBox.width / 2).toBeGreaterThan(waveformBox.x + waveformBox.width * 0.85);
+
+  const transport = page.getByTestId('audio-transport-bar');
+  await transport.getByRole('button', { name: 'Play' }).click();
+  await expect(transport.getByRole('button', { name: 'Pause' })).toBeVisible();
+  await expect(transport.getByRole('button', { name: 'Play' })).toBeVisible({ timeout: 10_000 });
+  const resetPlayheadBox = await playhead.boundingBox();
+  if (!resetPlayheadBox) {
+    throw new Error('Audio playhead was not available after replay reset.');
+  }
+  expect(resetPlayheadBox.x + resetPlayheadBox.width / 2).toBeLessThan(waveformBox.x + waveformBox.width * 0.15);
+  await expect(page.getByText(/^0:00\.000 \//)).toBeVisible();
+
   await page.getByRole('button', { name: 'More actions' }).click();
   await expect(page.getByRole('button', { name: 'Show effects' })).toHaveCount(1);
   await page.getByRole('button', { name: 'Show effects' }).click();
@@ -390,22 +437,23 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
 });
 
 test('audio editor localizes save, record, and conversion actions in korean mode', async ({ page }) => {
-  await page.goto('/tools/audio');
+  await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
   await page.getByRole('button', { name: 'ko' }).click();
 
   await expect(page.getByTestId('audio-transport-bar')).toHaveCount(1);
-  await expect(page.getByRole('button', { name: '녹음 시작' })).toHaveCount(1);
+  await expect(page.locator('button[aria-label="녹음 시작"], button[aria-label="Start recording"]')).toHaveCount(1);
   await expect(page.getByText('선택 구간', { exact: true })).toHaveCount(0);
   await expect(page.getByTestId('audio-selection-bar')).toHaveCount(0);
   await page.locator('input[type="file"]').setInputFiles('tests/fixtures/sample.wav');
 
-  await expect(page.getByRole('button', { name: '오디오 열기' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '녹음 시작' }).first()).toBeVisible();
+  await expect(page.getByLabel(/Open audio|오디오 열기/)).toBeVisible();
+  await expect(page.locator('button[aria-label="녹음 시작"], button[aria-label="Start recording"]').first()).toBeVisible();
   await expect(page.getByRole('button', { name: 'WAV 저장' })).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'MP3 저장' })).toHaveCount(1);
   await expect(page.locator('button[aria-label="재생"], button[aria-label="Play"]')).toHaveCount(1);
   await expect(page.locator('button[aria-label="녹음 시작"], button[aria-label="Start recording"]')).toHaveCount(1);
-  await expect(page.getByTestId('audio-playhead')).toHaveCount(0);
+  await expect(page.getByTestId('audio-playhead')).toHaveCount(1, { timeout: 60_000 });
 
   const waveformBox = await page.getByTestId('audio-waveform-scroll').boundingBox();
   if (!waveformBox) {
@@ -756,7 +804,7 @@ test('screen capture tools render the browser capture workbench without a file d
 });
 
 test('audio recorder legacy route redirects to the unified editor', async ({ page }) => {
-  await page.goto('/tools/audio/audio-recorder');
+  await page.goto('/tools/audio/audio-recorder', { waitUntil: 'domcontentloaded' });
 
   await expect(page).toHaveURL(/\/tools\/audio$/);
 });

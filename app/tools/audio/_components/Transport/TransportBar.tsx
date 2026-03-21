@@ -146,7 +146,7 @@ export function TransportBar({
 
           <div className="ml-1 flex items-center gap-2 rounded-full border border-[var(--border)] bg-[rgba(255,255,255,0.02)] px-2.5 py-1">
             <span className="audio-section-kicker hidden sm:inline">{copy.time.label}</span>
-            <span className="audio-mono text-[13px] text-[var(--text-primary)]">
+            <span data-testid="audio-time-display" className="audio-mono text-[13px] text-[var(--text-primary)]">
               {formatTime(currentTime)} / {formatTime(duration)}
             </span>
           </div>

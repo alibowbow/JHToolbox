@@ -35,7 +35,7 @@ export function WaveformCanvas({
   zoom,
   isSilent,
   isLoading = false,
-  showPlayhead = false,
+  showPlayhead = true,
   onSeek,
   onSelectionChange,
 }: WaveformCanvasProps) {
@@ -133,7 +133,11 @@ export function WaveformCanvas({
     const thresholdPx = 14;
     const mode: DragMode =
       handle ??
-      (Math.abs(x - startX) <= thresholdPx ? 'start' : Math.abs(x - endX) <= thresholdPx ? 'end' : 'selection');
+      (Math.abs(x - startX) <= thresholdPx
+        ? 'start'
+        : Math.abs(x - endX) <= thresholdPx
+          ? 'end'
+          : 'selection');
 
     setDragMode(mode);
     dragAnchorRef.current = time;
@@ -141,6 +145,7 @@ export function WaveformCanvas({
     didDragRef.current = false;
     dragSelectionRef.current = { start: selectionStart, end: selectionEnd };
     event.currentTarget.setPointerCapture(event.pointerId);
+
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {

@@ -134,10 +134,16 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     });
     const unsubscribeEnded = audioEngine.onEnded(() => {
       setIsPlaying(false);
+      setCurrentTime(0);
 
       const activeBuffer = bufferRef.current;
       if (activeBuffer && audioEngine.buffer !== activeBuffer) {
         audioEngine.setBuffer(activeBuffer, 0);
+        return;
+      }
+
+      if (activeBuffer) {
+        audioEngine.seekTo(0);
       }
     });
 
@@ -408,13 +414,16 @@ export function AudioEditor({ mode }: AudioEditorProps) {
         return;
       }
 
+      const playbackStart = currentTime >= duration - 0.001 ? 0 : currentTime;
+
       if (audioEngine.buffer !== buffer) {
-        audioEngine.setBuffer(buffer, currentTime);
+        audioEngine.setBuffer(buffer, playbackStart);
       } else {
-        audioEngine.seekTo(currentTime);
+        audioEngine.seekTo(playbackStart);
       }
 
-      audioEngine.play(currentTime);
+      setCurrentTime(playbackStart);
+      audioEngine.play(playbackStart);
       setIsPlaying(true);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : copy.status.playbackFailed);
@@ -719,23 +728,6 @@ export function AudioEditor({ mode }: AudioEditorProps) {
 
       <div className={`grid min-h-0 flex-1 ${effectsOpen && isDesktopLayout ? 'lg:grid-cols-[minmax(0,1fr)_18rem]' : 'grid-cols-1'}`}>
         <div className="flex min-h-0 flex-col gap-3 p-3 sm:p-4">
-          {!activeFile && !isRecording ? (
-            <FileDropZone
-              title={copy.fileDrop.title}
-              description={copy.fileDrop.description}
-              helperText={copy.fileDrop.helperText}
-              files={files}
-              multiple={false}
-              inputRef={fileInputRef}
-              onError={(message) => setLoadError(message)}
-              onWarning={(message) => setWarningMessage(message)}
-              onFiles={(nextFiles) => {
-                setFiles(nextFiles);
-                setActiveIndex(0);
-              }}
-            />
-          ) : null}
-
           {isRecording ? (
             <div className="audio-panel rounded-[20px] p-4">
               <LiveAudioWaveform
@@ -749,7 +741,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
           ) : null}
 
           {activeFile ? (
-            <section className="audio-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-[20px]">
+            <section className="audio-panel flex flex-col overflow-hidden rounded-[20px]">
               <WaveformCanvas
                 audioBuffer={buffer}
                 fileName={activeFile.name}
@@ -760,16 +752,45 @@ export function AudioEditor({ mode }: AudioEditorProps) {
                 zoom={zoom}
                 isSilent={isSilent}
                 isLoading={isLoading}
-                showPlayhead={isPlaying}
+                showPlayhead={Boolean(buffer)}
                 onSeek={handleWaveformSeek}
                 onSelectionChange={commitSelection}
               />
             </section>
           ) : (
-            <div className="audio-panel flex min-h-[16rem] items-center justify-center rounded-[20px] px-6">
-              <div className="max-w-md text-center">
-                <p className="audio-section-kicker">{copy.fileDrop.title}</p>
-                <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">{copy.fileDrop.emptyState}</p>
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)]">
+              <div className="audio-panel rounded-[20px] p-4 sm:p-5">
+                <FileDropZone
+                  title={copy.fileDrop.title}
+                  description={copy.fileDrop.description}
+                  helperText={copy.fileDrop.helperText}
+                  files={files}
+                  multiple={false}
+                  inputRef={fileInputRef}
+                  onError={(message) => setLoadError(message)}
+                  onWarning={(message) => setWarningMessage(message)}
+                  onFiles={(nextFiles) => {
+                    setFiles(nextFiles);
+                    setActiveIndex(0);
+                  }}
+                />
+              </div>
+              <div className="audio-panel flex min-h-[14rem] flex-col justify-between rounded-[20px] p-4 sm:p-5">
+                <div className="space-y-3">
+                  <p className="audio-section-kicker">{copy.fileDrop.title}</p>
+                  <div className="space-y-2">
+                    <h2 className="text-base font-medium text-[var(--text-primary)]">{copy.fileDrop.emptyState}</h2>
+                    <p className="text-sm leading-relaxed text-[var(--text-secondary)]">{copy.fileDrop.helperText}</p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="rounded-[12px] border border-[var(--border)] bg-[rgba(255,255,255,0.02)] px-3 py-2 text-xs leading-relaxed text-[var(--text-secondary)]">
+                    {copy.recording.liveDescription}
+                  </div>
+                  <div className="audio-status-line rounded-[10px] px-3 py-2 text-sm text-[var(--text-secondary)]">
+                    {copy.recording.idleStatus}
+                  </div>
+                </div>
               </div>
             </div>
           )}
