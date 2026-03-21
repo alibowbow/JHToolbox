@@ -63,8 +63,6 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const [selection, setSelection] = useState<AudioSelection>(DEFAULT_SELECTION);
   const [effects, setEffects] = useState<AudioEffectsState>(DEFAULT_EFFECTS);
   const [activeTab, setActiveTab] = useState<AudioEffectTab>('fade');
-  const [effectsOpen, setEffectsOpen] = useState(false);
-  const [isDesktopLayout, setIsDesktopLayout] = useState(false);
   const [loopEnabled, setLoopEnabled] = useState(false);
   const [isSilent, setIsSilent] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
@@ -96,22 +94,6 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   useEffect(() => {
     bufferRef.current = buffer;
   }, [buffer]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const mediaQuery = window.matchMedia('(min-width: 1024px)');
-    const syncLayout = (event?: MediaQueryListEvent) => {
-      const matches = event?.matches ?? mediaQuery.matches;
-      setIsDesktopLayout(matches);
-    };
-
-    syncLayout();
-    mediaQuery.addEventListener('change', syncLayout);
-    return () => mediaQuery.removeEventListener('change', syncLayout);
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -437,13 +419,17 @@ export function AudioEditor({ mode }: AudioEditorProps) {
 
     try {
       setStatusMessage(copy.status.exportPreparing(format));
-      await exportAudio({
+      const saved = await exportAudio({
         buffer,
         format,
         filename: filename.trim() || activeFile?.name || 'audio-export',
         quality: 0.82,
       });
-      setStatusMessage(copy.status.exportReady(format));
+      if (saved) {
+        setStatusMessage(copy.status.exportReady(format));
+      } else {
+        setStatusMessage(null);
+      }
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : copy.status.exportFailed);
     }
@@ -816,7 +802,6 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       <EditorToolbar
         fileName={activeFile?.name ?? null}
         canSave={Boolean(buffer) && !isRecording}
-        effectsOpen={effectsOpen}
         loopEnabled={loopEnabled}
         onOpenFiles={openPicker}
         onSaveAs={({ format, filename }) => void handleSaveAs({ format, filename })}
@@ -831,7 +816,6 @@ export function AudioEditor({ mode }: AudioEditorProps) {
           setLoopEnabled(false);
           setStatusMessage(copy.status.resetDefaults);
         }}
-        onToggleEffects={() => setEffectsOpen((open) => !open)}
         onToggleLoop={() => setLoopEnabled((currentValue) => !currentValue)}
       />
 
@@ -859,107 +843,103 @@ export function AudioEditor({ mode }: AudioEditorProps) {
         />
       </div>
 
-      <div className={`grid min-h-0 flex-1 ${effectsOpen && isDesktopLayout ? 'lg:grid-cols-[minmax(0,1fr)_18rem]' : 'grid-cols-1'}`}>
-        <div className="flex min-h-0 flex-col gap-3 p-3 sm:p-4">
-          {isRecording ? (
-            <div className="audio-panel rounded-[20px] p-4">
-              <LiveAudioWaveform
-                peaks={recordingPeaks}
-                isRecording={isRecording && !isRecordingPaused}
-                title={copy.recording.liveTitle}
-                description={copy.recording.liveDescription}
-                statusLabel={
-                  isRecordingPaused
-                    ? copy.recording.pausedStatus(recordingDuration)
-                    : copy.recording.liveStatus(recordingDuration)
-                }
-              />
-            </div>
-          ) : null}
-
-          {activeFile ? (
-            <section className="audio-panel flex flex-col overflow-hidden rounded-[20px]">
-              <WaveformCanvas
-                audioBuffer={buffer}
-                fileName={activeFile.name}
-                duration={duration || selection.end || 0}
-                currentTime={currentTime}
-                selectionStart={selection.start}
-                selectionEnd={selection.end}
-                zoom={zoom}
-                isSilent={isSilent}
-                isLoading={isLoading}
-                showPlayhead={Boolean(buffer)}
-                onSeek={handleWaveformSeek}
-                onSelectionChange={commitSelection}
-              />
-            </section>
-          ) : (
-            <div className="grid gap-3 lg:grid-cols-[minmax(0,1.45fr)_minmax(16rem,0.55fr)]">
-              <div className="audio-panel rounded-[20px] p-4 sm:p-5">
-                <FileDropZone
-                  title={copy.fileDrop.title}
-                  description={copy.fileDrop.description}
-                  helperText={copy.fileDrop.helperText}
-                  files={files}
-                  multiple={false}
-                  renderInput={false}
-                  inputRef={fileInputRef}
-                  onError={(message) => setLoadError(message)}
-                  onWarning={(message) => setWarningMessage(message)}
-                  onFiles={replaceFiles}
-                />
-              </div>
-              <div className="audio-panel flex min-h-[10.5rem] flex-col justify-start rounded-[20px] p-4 sm:p-5">
-                <div className="space-y-3">
-                  <p className="audio-section-kicker">{copy.fileDrop.title}</p>
-                  <div className="space-y-2">
-                    <h2 className="text-base font-medium text-[var(--text-primary)]">{copy.fileDrop.emptyState}</h2>
-                    <p className="text-sm leading-relaxed text-[var(--text-secondary)]">{copy.fileDrop.helperText}</p>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <div className="rounded-[12px] border border-[var(--border)] bg-[rgba(255,255,255,0.02)] px-3 py-2 text-xs leading-relaxed text-[var(--text-secondary)]">
-                    {copy.recording.liveDescription}
-                  </div>
-                  <div className="audio-status-line rounded-[10px] px-3 py-2 text-sm text-[var(--text-secondary)]">
-                    {copy.recording.idleStatus}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {buffer && hasActiveSelection ? (
-            <SelectionBar
-              start={selection.start}
-              end={selection.end}
-              duration={duration}
-              onStartChange={(nextStart) => commitSelection({ start: nextStart, end: selection.end })}
-              onEndChange={(nextEnd) => commitSelection({ start: selection.start, end: nextEnd })}
-              onPlaySelection={() => void playSelection()}
-              onTrimSelection={() =>
-                applyBufferCommand(copy.commands.keepSelection, (currentBuffer) =>
-                  extractAudioRange(currentBuffer, selection.start, selection.end),
-                )
+      <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 sm:p-4">
+        {isRecording ? (
+          <div className="audio-panel rounded-[20px] p-4">
+            <LiveAudioWaveform
+              peaks={recordingPeaks}
+              isRecording={isRecording && !isRecordingPaused}
+              title={copy.recording.liveTitle}
+              description={copy.recording.liveDescription}
+              statusLabel={
+                isRecordingPaused
+                  ? copy.recording.pausedStatus(recordingDuration)
+                  : copy.recording.liveStatus(recordingDuration)
               }
-              onRemoveSelection={() =>
-                applyBufferCommand(copy.commands.removeSelection, (currentBuffer) =>
-                  removeAudioRange(currentBuffer, selection.start, selection.end),
-                )
-              }
-              onClearSelection={() => {
-                setSelection(buffer ? normalizeSelection(0, buffer.duration, buffer.duration, selection.trimMode) : DEFAULT_SELECTION);
-                setStatusMessage(copy.status.selectionReset);
-              }}
             />
-          ) : null}
+          </div>
+        ) : null}
 
-          {!effectsOpen ? <div>{statusLines}</div> : null}
-        </div>
+        {activeFile ? (
+          <section className="audio-panel flex flex-col overflow-hidden rounded-[20px]">
+            <WaveformCanvas
+              audioBuffer={buffer}
+              fileName={activeFile.name}
+              duration={duration || selection.end || 0}
+              currentTime={currentTime}
+              selectionStart={selection.start}
+              selectionEnd={selection.end}
+              zoom={zoom}
+              isSilent={isSilent}
+              isLoading={isLoading}
+              showPlayhead={Boolean(buffer)}
+              onSeek={handleWaveformSeek}
+              onSelectionChange={commitSelection}
+            />
+          </section>
+        ) : (
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1.45fr)_minmax(16rem,0.55fr)]">
+            <div className="audio-panel rounded-[20px] p-4 sm:p-5">
+              <FileDropZone
+                title={copy.fileDrop.title}
+                description={copy.fileDrop.description}
+                helperText={copy.fileDrop.helperText}
+                files={files}
+                multiple={false}
+                renderInput={false}
+                inputRef={fileInputRef}
+                onError={(message) => setLoadError(message)}
+                onWarning={(message) => setWarningMessage(message)}
+                onFiles={replaceFiles}
+              />
+            </div>
+            <div className="audio-panel flex min-h-[10.5rem] flex-col justify-start rounded-[20px] p-4 sm:p-5">
+              <div className="space-y-3">
+                <p className="audio-section-kicker">{copy.fileDrop.title}</p>
+                <div className="space-y-2">
+                  <h2 className="text-base font-medium text-[var(--text-primary)]">{copy.fileDrop.emptyState}</h2>
+                  <p className="text-sm leading-relaxed text-[var(--text-secondary)]">{copy.fileDrop.helperText}</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="rounded-[12px] border border-[var(--border)] bg-[rgba(255,255,255,0.02)] px-3 py-2 text-xs leading-relaxed text-[var(--text-secondary)]">
+                  {copy.recording.liveDescription}
+                </div>
+                <div className="audio-status-line rounded-[10px] px-3 py-2 text-sm text-[var(--text-secondary)]">
+                  {copy.recording.idleStatus}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
-        {effectsOpen && isDesktopLayout ? (
-          <aside className="hidden border-l border-[var(--border)] bg-[rgba(14,15,17,0.86)] p-3 lg:flex lg:min-h-0 lg:flex-col lg:gap-3">
+        {buffer && hasActiveSelection ? (
+          <SelectionBar
+            start={selection.start}
+            end={selection.end}
+            duration={duration}
+            onStartChange={(nextStart) => commitSelection({ start: nextStart, end: selection.end })}
+            onEndChange={(nextEnd) => commitSelection({ start: selection.start, end: nextEnd })}
+            onPlaySelection={() => void playSelection()}
+            onTrimSelection={() =>
+              applyBufferCommand(copy.commands.keepSelection, (currentBuffer) =>
+                extractAudioRange(currentBuffer, selection.start, selection.end),
+              )
+            }
+            onRemoveSelection={() =>
+              applyBufferCommand(copy.commands.removeSelection, (currentBuffer) =>
+                removeAudioRange(currentBuffer, selection.start, selection.end),
+              )
+            }
+            onClearSelection={() => {
+              setSelection(buffer ? normalizeSelection(0, buffer.duration, buffer.duration, selection.trimMode) : DEFAULT_SELECTION);
+              setStatusMessage(copy.status.selectionReset);
+            }}
+          />
+        ) : null}
+
+        {buffer ? (
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(16rem,0.8fr)]">
             <EffectsPanel
               activeTab={activeTab}
               effects={effects}
@@ -967,31 +947,13 @@ export function AudioEditor({ mode }: AudioEditorProps) {
               onChange={(nextEffects) => setEffects((currentEffects) => ({ ...currentEffects, ...nextEffects }))}
               onPreview={handlePreview}
               onApply={handleApplyEffect}
-              onClose={() => setEffectsOpen(false)}
             />
             {sessionPanel}
-          </aside>
-        ) : null}
-      </div>
-
-      {effectsOpen && !isDesktopLayout ? (
-        <div className="fixed inset-0 z-40 bg-black/45" onClick={() => setEffectsOpen(false)}>
-          <div className="audio-sheet absolute inset-x-3 bottom-0 max-h-[72vh] overflow-y-auto p-3" onClick={(event) => event.stopPropagation()}>
-            <div className="space-y-3">
-              <EffectsPanel
-                activeTab={activeTab}
-                effects={effects}
-                onTabChange={setActiveTab}
-                onChange={(nextEffects) => setEffects((currentEffects) => ({ ...currentEffects, ...nextEffects }))}
-                onPreview={handlePreview}
-                onApply={handleApplyEffect}
-                onClose={() => setEffectsOpen(false)}
-              />
-              {sessionPanel}
-            </div>
           </div>
-        </div>
-      ) : null}
+        ) : (
+          <div>{statusLines}</div>
+        )}
+      </div>
     </div>
   );
 }

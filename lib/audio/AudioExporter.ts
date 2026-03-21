@@ -3,6 +3,25 @@ import { createWavBlob, encodeWav } from './WavEncoder';
 
 type FFmpegModule = typeof import('@ffmpeg/ffmpeg');
 type FFmpegInstance = InstanceType<FFmpegModule['FFmpeg']>;
+type FilePickerAcceptType = {
+  description?: string;
+  accept: Record<string, string[]>;
+};
+type SaveFilePickerOptions = {
+  suggestedName?: string;
+  excludeAcceptAllOption?: boolean;
+  types?: FilePickerAcceptType[];
+};
+type FileSystemWritableFileStreamLike = {
+  write: (data: Blob | BufferSource | string) => Promise<void>;
+  close: () => Promise<void>;
+};
+type FileSystemFileHandleLike = {
+  createWritable: () => Promise<FileSystemWritableFileStreamLike>;
+};
+type WindowWithSaveFilePicker = Window & {
+  showSaveFilePicker?: (options?: SaveFilePickerOptions) => Promise<FileSystemFileHandleLike>;
+};
 
 let sharedFFmpegPromise: Promise<FFmpegInstance> | null = null;
 
@@ -45,6 +64,57 @@ function downloadBlob(blob: Blob, filename: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+function getPickerTypes(format: AudioExportFormat): FilePickerAcceptType[] {
+  if (format === 'mp3') {
+    return [
+      {
+        description: 'MP3 audio',
+        accept: {
+          'audio/mpeg': ['.mp3'],
+        },
+      },
+    ];
+  }
+
+  return [
+    {
+      description: 'WAV audio',
+      accept: {
+        'audio/wav': ['.wav'],
+      },
+    },
+  ];
+}
+
+async function saveBlobWithPicker(blob: Blob, filename: string, format: AudioExportFormat) {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  const pickerWindow = window as WindowWithSaveFilePicker;
+  if (!pickerWindow.showSaveFilePicker) {
+    return false;
+  }
+
+  try {
+    const handle = await pickerWindow.showSaveFilePicker({
+      suggestedName: filename,
+      excludeAcceptAllOption: false,
+      types: getPickerTypes(format),
+    });
+    const writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return true;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
 async function getFFmpegInstance() {
   if (!sharedFFmpegPromise) {
     sharedFFmpegPromise = (async () => {
@@ -79,17 +149,23 @@ async function encodeMp3Blob(buffer: AudioBuffer, quality: number | undefined) {
   }
 }
 
-export async function exportAudio(options: AudioExportOptions): Promise<void> {
+export async function exportAudio(options: AudioExportOptions): Promise<boolean> {
   const { buffer, format, filename, quality } = options;
   const resolvedFilename = resolveFilename(format, filename);
 
   if (format === 'wav') {
-    downloadBlob(createWavBlob(buffer), resolvedFilename);
-    return;
+    const wavBlob = createWavBlob(buffer);
+    if (!(await saveBlobWithPicker(wavBlob, resolvedFilename, format))) {
+      downloadBlob(wavBlob, resolvedFilename);
+    }
+    return true;
   }
 
   const mp3Blob = await encodeMp3Blob(buffer, quality);
-  downloadBlob(mp3Blob, resolvedFilename);
+  if (!(await saveBlobWithPicker(mp3Blob, resolvedFilename, format))) {
+    downloadBlob(mp3Blob, resolvedFilename);
+  }
+  return true;
 }
 
 export function createAudioExportBlob(buffer: AudioBuffer) {

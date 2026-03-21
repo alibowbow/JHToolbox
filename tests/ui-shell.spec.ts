@@ -357,6 +357,7 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   await expect(page.locator('button[aria-label="Play"], button[aria-label="Pause"]')).toHaveCount(1);
   await expect(page.getByTestId('audio-playhead')).toHaveCount(1, { timeout: 60_000 });
   await expect(page.getByText(/^Loaded sample\.wav/)).toHaveCount(0);
+  await expect(page.getByText('Preview and apply focused processing')).toBeVisible();
 
   const replacementChooserPromise = page.waitForEvent('filechooser');
   await page.getByLabel('Open audio').click();
@@ -459,10 +460,6 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   expect(resetPlayheadBox.x + resetPlayheadBox.width / 2).toBeLessThan(waveformBox.x + waveformBox.width * 0.15);
   await expect(page.getByText(/^0:00\.000 \//)).toBeVisible();
 
-  await page.getByRole('button', { name: 'More actions' }).click();
-  await expect(page.getByRole('button', { name: 'Show effects' })).toHaveCount(1);
-  await page.getByRole('button', { name: 'Show effects' }).click();
-  await expect(page.getByText('Preview and apply focused processing')).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Amplify' })).toBeVisible();
   await expect(page.getByText('Preview and apply focused processing')).toBeVisible();
 

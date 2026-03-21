@@ -1,6 +1,6 @@
 'use client';
 
-import { Download, FolderOpen, MoreHorizontal, Repeat, RotateCcw, SlidersHorizontal, Waves } from 'lucide-react';
+import { Download, FolderOpen, MoreHorizontal, Repeat, RotateCcw, Waves } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { getAudioEditorCopy } from '../audio-editor-copy';
@@ -10,12 +10,10 @@ type SaveFormat = 'wav' | 'mp3';
 interface EditorToolbarProps {
   fileName: string | null;
   canSave: boolean;
-  effectsOpen: boolean;
   loopEnabled: boolean;
   onOpenFiles: () => void;
   onSaveAs: (options: { filename: string; format: SaveFormat }) => void;
   onReset: () => void;
-  onToggleEffects: () => void;
   onToggleLoop: () => void;
 }
 
@@ -32,12 +30,10 @@ function getInitialFormat(fileName: string | null): SaveFormat {
 export function EditorToolbar({
   fileName,
   canSave,
-  effectsOpen,
   loopEnabled,
   onOpenFiles,
   onSaveAs,
   onReset,
-  onToggleEffects,
   onToggleLoop,
 }: EditorToolbarProps) {
   const { locale } = useLocale();
@@ -222,17 +218,6 @@ export function EditorToolbar({
           {menuOpen ? (
             <div className="audio-menu absolute right-0 top-[calc(100%+0.5rem)] z-50 min-w-[220px] p-2">
               <div className="space-y-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    onToggleEffects();
-                    setMenuOpen(false);
-                  }}
-                  className="audio-menu-item"
-                >
-                  <SlidersHorizontal size={14} strokeWidth={1.5} />
-                  {effectsOpen ? copy.toolbar.hideEffects : copy.toolbar.showEffects}
-                </button>
                 <button
                   type="button"
                   onClick={() => {
