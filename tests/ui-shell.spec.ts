@@ -182,7 +182,7 @@ test('legacy audio editor routes redirect to the unified audio editor', async ({
   ];
 
   for (const target of redirectTargets) {
-    await page.goto(target);
+    await page.goto(target, { waitUntil: 'domcontentloaded' });
     await expect(page).toHaveURL(/\/tools\/audio$/);
   }
 });
@@ -330,15 +330,18 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   await expect(page).toHaveURL(/\/tools\/audio$/);
   await expect(page.getByRole('main')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open audio' })).toBeVisible();
+  await expect(page.getByTestId('audio-transport-bar')).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Start recording' })).toHaveCount(1);
   await expect(page.getByText('Preview and apply focused processing')).toHaveCount(0);
+  await expect(page.getByText('Selected range', { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('audio-selection-bar')).toHaveCount(0);
   await page.locator('input[type="file"]').setInputFiles('tests/fixtures/sample.wav');
-  await expect(page.getByText('Selected range')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Keep' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Save WAV' })).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Save MP3' })).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Start recording' }).first()).toBeVisible();
   await expect(page.getByRole('button', { name: 'Start recording' })).toHaveCount(1);
+  await expect(page.locator('button[aria-label="Play"], button[aria-label="Pause"]')).toHaveCount(1);
+  await expect(page.getByTestId('audio-playhead')).toHaveCount(0);
 
   const waveformMetrics = await page.getByTestId('audio-waveform-scroll').evaluate((element) => ({
     clientWidth: element.clientWidth,
@@ -346,8 +349,39 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   }));
   expect(waveformMetrics.scrollWidth - waveformMetrics.clientWidth).toBeLessThanOrEqual(8);
 
+  const waveformBox = await page.getByTestId('audio-waveform-scroll').boundingBox();
+  if (!waveformBox) {
+    throw new Error('Audio waveform area was not available.');
+  }
+
+  await page.mouse.move(waveformBox.x + 100, waveformBox.y + 60);
+  await page.mouse.down();
+  await page.mouse.move(waveformBox.x + 340, waveformBox.y + 60, { steps: 12 });
+  await page.mouse.up();
+
+  await expect(page.getByText('Selected range', { exact: true })).toHaveCount(1);
+  await expect(page.getByTestId('audio-selection-bar')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Keep' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Remove' })).toHaveCount(1);
+  await expect(page.getByText('Selected range')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Keep' })).toBeVisible();
+
+  const selectionOverlay = await page.getByTestId('audio-selection-overlay').boundingBox();
+  const startHandle = await page.getByTestId('audio-selection-handle-start').boundingBox();
+  const endHandle = await page.getByTestId('audio-selection-handle-end').boundingBox();
+  if (!selectionOverlay || !startHandle || !endHandle) {
+    throw new Error('Audio selection overlay or handles were not available.');
+  }
+
+  const startHandleCenter = startHandle.x + startHandle.width / 2;
+  const endHandleCenter = endHandle.x + endHandle.width / 2;
+  expect(Math.abs(startHandleCenter - selectionOverlay.x)).toBeLessThanOrEqual(4);
+  expect(Math.abs(endHandleCenter - (selectionOverlay.x + selectionOverlay.width))).toBeLessThanOrEqual(4);
+
   await page.getByRole('button', { name: 'More actions' }).click();
+  await expect(page.getByRole('button', { name: 'Show effects' })).toHaveCount(1);
   await page.getByRole('button', { name: 'Show effects' }).click();
+  await expect(page.getByText('Preview and apply focused processing')).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Amplify' })).toBeVisible();
   await expect(page.getByText('Preview and apply focused processing')).toBeVisible();
 
@@ -359,16 +393,36 @@ test('audio editor localizes save, record, and conversion actions in korean mode
   await page.goto('/tools/audio');
   await page.getByRole('button', { name: 'ko' }).click();
 
+  await expect(page.getByTestId('audio-transport-bar')).toHaveCount(1);
   await expect(page.getByRole('button', { name: '녹음 시작' })).toHaveCount(1);
+  await expect(page.getByText('선택 구간', { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('audio-selection-bar')).toHaveCount(0);
   await page.locator('input[type="file"]').setInputFiles('tests/fixtures/sample.wav');
 
   await expect(page.getByRole('button', { name: '오디오 열기' })).toBeVisible();
   await expect(page.getByRole('button', { name: '녹음 시작' }).first()).toBeVisible();
   await expect(page.getByRole('button', { name: 'WAV 저장' })).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'MP3 저장' })).toHaveCount(1);
+  await expect(page.locator('button[aria-label="재생"], button[aria-label="Play"]')).toHaveCount(1);
+  await expect(page.locator('button[aria-label="녹음 시작"], button[aria-label="Start recording"]')).toHaveCount(1);
+  await expect(page.getByTestId('audio-playhead')).toHaveCount(0);
+
+  const waveformBox = await page.getByTestId('audio-waveform-scroll').boundingBox();
+  if (!waveformBox) {
+    throw new Error('Audio waveform area was not available.');
+  }
+
+  await page.mouse.move(waveformBox.x + 100, waveformBox.y + 60);
+  await page.mouse.down();
+  await page.mouse.move(waveformBox.x + 340, waveformBox.y + 60, { steps: 12 });
+  await page.mouse.up();
+
+  await expect(page.getByText('선택 구간', { exact: true })).toHaveCount(1);
+  await expect(page.getByTestId('audio-selection-bar')).toHaveCount(1);
   await expect(page.getByText('선택 구간', { exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: '더보기' }).click();
+  await expect(page.getByRole('button', { name: '효과 열기' })).toHaveCount(1);
   await page.getByRole('button', { name: '효과 열기' }).click();
   await expect(page.getByRole('button', { name: '앰플리파이' })).toBeVisible();
 

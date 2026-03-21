@@ -56,6 +56,7 @@ export function SelectionBar({
 
   return (
     <section
+      data-testid="audio-selection-bar"
       className={`audio-panel rounded-[18px] px-4 py-3 transition-opacity ${
         hasSelection ? 'border-[var(--selection-border)]' : 'opacity-70'
       }`}

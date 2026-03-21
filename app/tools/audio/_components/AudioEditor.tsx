@@ -86,6 +86,9 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const redoLabel = historyRef.current.redoLabel;
   const duration = buffer?.duration ?? 0;
   const historyDepth = historyRef.current.depth;
+  const hasActiveSelection = Boolean(
+    buffer && (selection.start > 0.001 || selection.end < Math.max(buffer.duration - 0.001, 0)),
+  );
 
   useEffect(() => {
     bufferRef.current = buffer;
@@ -757,6 +760,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
                 zoom={zoom}
                 isSilent={isSilent}
                 isLoading={isLoading}
+                showPlayhead={isPlaying}
                 onSeek={handleWaveformSeek}
                 onSelectionChange={commitSelection}
               />
@@ -790,7 +794,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
             onRecordToggle={handleRecordToggle}
           />
 
-          {buffer ? (
+          {buffer && hasActiveSelection ? (
             <SelectionBar
               start={selection.start}
               end={selection.end}

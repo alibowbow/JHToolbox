@@ -59,7 +59,7 @@ export function TransportBar({
   const canControlPlayback = duration > 0 && !isRecording;
 
   return (
-    <div className="audio-panel flex flex-col gap-3 rounded-[18px] px-3 py-3 sm:px-4">
+    <div data-testid="audio-transport-bar" className="audio-panel flex flex-col gap-3 rounded-[18px] px-3 py-3 sm:px-4">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <button
