@@ -238,7 +238,7 @@ export function WaveformCanvas({
             <span className="absolute bottom-1.5 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[rgba(14,15,17,0.82)] bg-[var(--selection-border)]" />
           </button>
 
-          {showPlayhead ? <PlayheadOverlay positionPercent={playheadPercent} /> : null}
+          {showPlayhead ? <PlayheadOverlay positionPercent={playheadPercent} currentTime={currentTime} /> : null}
 
           <div className="audio-mono absolute left-3 top-3 z-10 rounded-md border border-[var(--border)] bg-[rgba(30,32,35,0.94)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)]">
             {fileName}

@@ -93,7 +93,7 @@ export function EditorToolbar({
           aria-label={copy.toolbar.exportWav}
         >
           <Download size={14} strokeWidth={1.5} />
-          <span>WAV</span>
+          <span>{copy.toolbar.exportWav}</span>
         </button>
         <button
           type="button"
@@ -102,7 +102,7 @@ export function EditorToolbar({
           aria-label={copy.toolbar.exportMp3}
         >
           <Download size={14} strokeWidth={1.5} />
-          <span>MP3</span>
+          <span>{copy.toolbar.exportMp3}</span>
         </button>
 
         <div ref={menuRef} className="relative">

@@ -21,6 +21,7 @@ interface TransportBarProps {
   zoom: number;
   isPlaying: boolean;
   isRecording?: boolean;
+  isRecordingPaused?: boolean;
   canUndo: boolean;
   canRedo: boolean;
   undoLabel?: string | null;
@@ -33,6 +34,7 @@ interface TransportBarProps {
   onRedo: () => void;
   onZoomChange: (nextZoom: number) => void;
   onRecordToggle?: () => void;
+  onRecordPauseResume?: () => void;
 }
 
 export function TransportBar({
@@ -41,6 +43,7 @@ export function TransportBar({
   zoom,
   isPlaying,
   isRecording = false,
+  isRecordingPaused = false,
   canUndo,
   canRedo,
   undoLabel,
@@ -53,6 +56,7 @@ export function TransportBar({
   onRedo,
   onZoomChange,
   onRecordToggle,
+  onRecordPauseResume,
 }: TransportBarProps) {
   const { locale } = useLocale();
   const copy = getAudioEditorCopy(locale);
@@ -134,14 +138,30 @@ export function TransportBar({
           </button>
 
           {onRecordToggle ? (
-            <button
-              type="button"
-              onClick={onRecordToggle}
-              className={`audio-record-button audio-focus-ring ${isRecording ? 'is-recording' : ''}`}
-              aria-label={isRecording ? copy.toolbar.stopRecording : copy.toolbar.startRecording}
-            >
-              <Circle size={14} fill="currentColor" strokeWidth={1.5} />
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={onRecordToggle}
+                className={`audio-record-button audio-focus-ring ${isRecording ? 'is-recording' : ''}`}
+                aria-label={isRecording ? copy.toolbar.stopRecording : copy.toolbar.startRecording}
+              >
+                <Circle size={14} fill="currentColor" strokeWidth={1.5} />
+              </button>
+              {isRecording && onRecordPauseResume ? (
+                <button
+                  type="button"
+                  onClick={onRecordPauseResume}
+                  className="audio-button-ghost audio-focus-ring h-8 w-8 p-0"
+                  aria-label={isRecordingPaused ? copy.toolbar.resumeRecording : copy.toolbar.pauseRecording}
+                >
+                  {isRecordingPaused ? (
+                    <Play size={15} strokeWidth={1.5} className="ml-0.5" />
+                  ) : (
+                    <Pause size={15} strokeWidth={1.5} />
+                  )}
+                </button>
+              ) : null}
+            </>
           ) : null}
 
           <div className="ml-1 flex items-center gap-2 rounded-full border border-[var(--border)] bg-[rgba(255,255,255,0.02)] px-2.5 py-1">

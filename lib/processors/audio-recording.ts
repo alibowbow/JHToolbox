@@ -11,6 +11,8 @@ type WavRecordingOptions = {
 };
 
 export type WavRecordingSession = {
+  pause: () => Promise<void>;
+  resume: () => Promise<void>;
   stop: () => Promise<WavRecordingResult>;
   cleanup: () => Promise<void>;
 };
@@ -90,11 +92,12 @@ export async function createWavRecordingSession(
   const chunks: Float32Array[] = [];
   let totalLength = 0;
   let stopped = false;
+  let paused = false;
   let finalized = false;
   let stopPromise: Promise<WavRecordingResult> | null = null;
 
   processor.onaudioprocess = (event) => {
-    if (stopped) {
+    if (stopped || paused) {
       return;
     }
 
@@ -138,6 +141,21 @@ export async function createWavRecordingSession(
   };
 
   return {
+    pause: async () => {
+      if (stopped || paused) {
+        return;
+      }
+
+      paused = true;
+      onPeak?.(0);
+    },
+    resume: async () => {
+      if (stopped || !paused) {
+        return;
+      }
+
+      paused = false;
+    },
     stop: async () => {
       if (stopPromise) {
         return await stopPromise;

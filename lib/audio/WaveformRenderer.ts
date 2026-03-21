@@ -172,20 +172,20 @@ export function renderWaveform(opts: AudioWaveformRenderOptions): void {
     context.rect(selectionLeft, 0, Math.max(1, selectionRight - selectionLeft), height);
     context.clip();
     context.drawImage(source as CanvasImageSource, sourceStart, 0, sourceSliceWidth, source.height, 0, 0, width, height);
-    context.fillStyle = theme === 'dark' ? 'rgba(0, 212, 200, 0.55)' : 'rgba(0, 179, 214, 0.55)';
+    context.fillStyle = theme === 'dark' ? 'rgba(0, 232, 219, 0.92)' : 'rgba(0, 179, 214, 0.88)';
     context.globalCompositeOperation = 'source-atop';
     context.fillRect(selectionLeft, 0, Math.max(1, selectionRight - selectionLeft), height);
     context.restore();
   }
 
-  context.fillStyle = theme === 'dark' ? 'rgba(5, 8, 9, 0.42)' : 'rgba(248, 250, 252, 0.55)';
+  context.fillStyle = theme === 'dark' ? 'rgba(4, 8, 10, 0.68)' : 'rgba(248, 250, 252, 0.62)';
   context.fillRect(0, 0, Math.max(0, selectionLeft), height);
   context.fillRect(Math.max(0, selectionRight), 0, Math.max(0, width - selectionRight), height);
 
-  context.fillStyle = theme === 'dark' ? 'rgba(0, 212, 200, 0.1)' : 'rgba(0, 179, 214, 0.08)';
+  context.fillStyle = theme === 'dark' ? 'rgba(0, 212, 200, 0.18)' : 'rgba(0, 179, 214, 0.14)';
   context.fillRect(selectionLeft, 0, Math.max(0, selectionRight - selectionLeft), height);
 
-  context.strokeStyle = theme === 'dark' ? '#00D4C880' : 'rgba(0, 179, 214, 0.72)';
+  context.strokeStyle = theme === 'dark' ? '#00F5E680' : 'rgba(0, 179, 214, 0.72)';
   context.lineWidth = 2;
   context.strokeRect(
     Math.max(0, selectionLeft),

@@ -726,6 +726,28 @@ export function AudioEditor({ mode }: AudioEditorProps) {
         onToggleLoop={() => setLoopEnabled((currentValue) => !currentValue)}
       />
 
+      <div className="border-b border-[var(--border)] bg-[rgba(14,15,17,0.55)] px-3 py-3 sm:px-4">
+        <TransportBar
+          currentTime={currentTime}
+          duration={duration}
+          zoom={zoom}
+          isPlaying={isPlaying}
+          isRecording={isRecording}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          undoLabel={undoLabel}
+          redoLabel={redoLabel}
+          onPlayPause={() => void handlePlayPause()}
+          onSeekBy={seekBy}
+          onSeekToStart={() => seekToBoundary('start')}
+          onSeekToEnd={() => seekToBoundary('end')}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          onZoomChange={(nextZoom) => setZoom(clamp(nextZoom, 0.75, 6))}
+          onRecordToggle={handleRecordToggle}
+        />
+      </div>
+
       <div className={`grid min-h-0 flex-1 ${effectsOpen && isDesktopLayout ? 'lg:grid-cols-[minmax(0,1fr)_18rem]' : 'grid-cols-1'}`}>
         <div className="flex min-h-0 flex-col gap-3 p-3 sm:p-4">
           {isRecording ? (
@@ -758,7 +780,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
               />
             </section>
           ) : (
-            <div className="grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)]">
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1.45fr)_minmax(16rem,0.55fr)]">
               <div className="audio-panel rounded-[20px] p-4 sm:p-5">
                 <FileDropZone
                   title={copy.fileDrop.title}
@@ -775,7 +797,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
                   }}
                 />
               </div>
-              <div className="audio-panel flex min-h-[14rem] flex-col justify-between rounded-[20px] p-4 sm:p-5">
+              <div className="audio-panel flex min-h-[10.5rem] flex-col justify-start rounded-[20px] p-4 sm:p-5">
                 <div className="space-y-3">
                   <p className="audio-section-kicker">{copy.fileDrop.title}</p>
                   <div className="space-y-2">
@@ -794,26 +816,6 @@ export function AudioEditor({ mode }: AudioEditorProps) {
               </div>
             </div>
           )}
-
-          <TransportBar
-            currentTime={currentTime}
-            duration={duration}
-            zoom={zoom}
-            isPlaying={isPlaying}
-            isRecording={isRecording}
-            canUndo={canUndo}
-            canRedo={canRedo}
-            undoLabel={undoLabel}
-            redoLabel={redoLabel}
-            onPlayPause={() => void handlePlayPause()}
-            onSeekBy={seekBy}
-            onSeekToStart={() => seekToBoundary('start')}
-            onSeekToEnd={() => seekToBoundary('end')}
-            onUndo={handleUndo}
-            onRedo={handleRedo}
-            onZoomChange={(nextZoom) => setZoom(clamp(nextZoom, 0.75, 6))}
-            onRecordToggle={handleRecordToggle}
-          />
 
           {buffer && hasActiveSelection ? (
             <SelectionBar
