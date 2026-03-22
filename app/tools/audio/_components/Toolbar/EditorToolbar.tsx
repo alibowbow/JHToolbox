@@ -1,35 +1,53 @@
 'use client';
 
 import { Download, FolderOpen, MoreHorizontal, Repeat, RotateCcw, Waves } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
+import { AUDIO_SESSION_EXTENSION } from '../audio-session';
 import { getAudioEditorCopy } from '../audio-editor-copy';
 
 type SaveFormat = 'wav' | 'mp3';
+type SaveTarget = 'track' | 'mix' | 'session';
 
 interface EditorToolbarProps {
   fileName: string | null;
-  canSave: boolean;
+  canSaveTrack: boolean;
+  canSaveMix: boolean;
+  canSaveSession: boolean;
   loopEnabled: boolean;
   onOpenFiles: () => void;
-  onSaveAs: (options: { filename: string; format: SaveFormat }) => void;
+  onSaveAs: (options: { filename: string; format: SaveFormat; target: SaveTarget }) => void;
   onReset: () => void;
   onToggleLoop: () => void;
 }
 
 function getBaseName(fileName: string | null) {
-  const normalized = (fileName ?? 'audio-export').trim();
+  const normalized = (fileName ?? 'audio-project').trim();
   const withoutExtension = normalized.replace(/\.[^.]+$/, '');
-  return withoutExtension || 'audio-export';
+  return withoutExtension || 'audio-project';
 }
 
 function getInitialFormat(fileName: string | null): SaveFormat {
   return /\.mp3$/i.test(fileName ?? '') ? 'mp3' : 'wav';
 }
 
+function getInitialTarget(canSaveTrack: boolean, canSaveMix: boolean, canSaveSession: boolean): SaveTarget {
+  if (canSaveTrack) {
+    return 'track';
+  }
+
+  if (canSaveMix) {
+    return 'mix';
+  }
+
+  return canSaveSession ? 'session' : 'track';
+}
+
 export function EditorToolbar({
   fileName,
-  canSave,
+  canSaveTrack,
+  canSaveMix,
+  canSaveSession,
   loopEnabled,
   onOpenFiles,
   onSaveAs,
@@ -42,12 +60,32 @@ export function EditorToolbar({
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState(() => getBaseName(fileName));
   const [saveFormat, setSaveFormat] = useState<SaveFormat>(() => getInitialFormat(fileName));
+  const [saveTarget, setSaveTarget] = useState<SaveTarget>(() =>
+    getInitialTarget(canSaveTrack, canSaveMix, canSaveSession),
+  );
   const menuRef = useRef<HTMLDivElement | null>(null);
   const saveRef = useRef<HTMLDivElement | null>(null);
+  const canSaveAny = canSaveTrack || canSaveMix || canSaveSession;
   const saveButtonLabel = locale === 'ko' ? '다른 이름으로 저장' : 'Save as';
   const saveConfirmLabel = locale === 'ko' ? '저장' : 'Save';
   const filenameLabel = locale === 'ko' ? '파일 이름' : 'Filename';
   const formatLabel = locale === 'ko' ? '형식' : 'Format';
+  const targetLabel = locale === 'ko' ? '저장 대상' : 'Save target';
+  const targetLabels = useMemo(
+    () =>
+      locale === 'ko'
+        ? {
+            track: '선택 트랙',
+            mix: '전체 믹스',
+            session: '세션 파일',
+          }
+        : {
+            track: 'Selected track',
+            mix: 'Full mix',
+            session: 'Session file',
+          },
+    [locale],
+  );
 
   useEffect(() => {
     if (!menuOpen && !saveOpen) {
@@ -82,9 +120,28 @@ export function EditorToolbar({
     };
   }, [menuOpen, saveOpen]);
 
+  useEffect(() => {
+    setSaveTarget((currentTarget) => {
+      if (currentTarget === 'track' && !canSaveTrack) {
+        return getInitialTarget(canSaveTrack, canSaveMix, canSaveSession);
+      }
+
+      if (currentTarget === 'mix' && !canSaveMix) {
+        return getInitialTarget(canSaveTrack, canSaveMix, canSaveSession);
+      }
+
+      if (currentTarget === 'session' && !canSaveSession) {
+        return getInitialTarget(canSaveTrack, canSaveMix, canSaveSession);
+      }
+
+      return currentTarget;
+    });
+  }, [canSaveMix, canSaveSession, canSaveTrack]);
+
   const openSavePanel = () => {
     setSaveName(getBaseName(fileName));
     setSaveFormat(getInitialFormat(fileName));
+    setSaveTarget(getInitialTarget(canSaveTrack, canSaveMix, canSaveSession));
     setMenuOpen(false);
     setSaveOpen(true);
   };
@@ -93,9 +150,12 @@ export function EditorToolbar({
     onSaveAs({
       filename: saveName.trim() || getBaseName(fileName),
       format: saveFormat,
+      target: saveTarget,
     });
     setSaveOpen(false);
   };
+
+  const saveExtension = saveTarget === 'session' ? AUDIO_SESSION_EXTENSION.replace(/^\./, '') : saveFormat;
 
   return (
     <header className="audio-topbar relative z-30 flex h-14 items-center justify-between gap-3 px-3 sm:px-4">
@@ -127,7 +187,7 @@ export function EditorToolbar({
           <button
             type="button"
             onClick={openSavePanel}
-            disabled={!canSave}
+            disabled={!canSaveAny}
             className="audio-button-primary audio-focus-ring h-9 px-3"
             aria-label={saveButtonLabel}
           >
@@ -136,8 +196,50 @@ export function EditorToolbar({
           </button>
 
           {saveOpen ? (
-            <div className="audio-menu absolute right-0 top-[calc(100%+0.5rem)] z-50 min-w-[18rem] p-3">
+            <div className="audio-menu absolute right-0 top-[calc(100%+0.5rem)] z-50 min-w-[20rem] p-3">
               <p className="audio-section-kicker">{saveButtonLabel}</p>
+
+              <div className="mt-3 space-y-2">
+                <span className="audio-section-kicker">{targetLabel}</span>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <button
+                    type="button"
+                    onClick={() => setSaveTarget('track')}
+                    disabled={!canSaveTrack}
+                    className={`audio-focus-ring rounded-[12px] border px-3 py-2 text-sm transition ${
+                      saveTarget === 'track'
+                        ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.12)] text-[var(--text-primary)]'
+                        : 'border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)]'
+                    } ${!canSaveTrack ? 'opacity-30 pointer-events-none' : ''}`}
+                  >
+                    {targetLabels.track}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSaveTarget('mix')}
+                    disabled={!canSaveMix}
+                    className={`audio-focus-ring rounded-[12px] border px-3 py-2 text-sm transition ${
+                      saveTarget === 'mix'
+                        ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.12)] text-[var(--text-primary)]'
+                        : 'border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)]'
+                    } ${!canSaveMix ? 'opacity-30 pointer-events-none' : ''}`}
+                  >
+                    {targetLabels.mix}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSaveTarget('session')}
+                    disabled={!canSaveSession}
+                    className={`audio-focus-ring rounded-[12px] border px-3 py-2 text-sm transition ${
+                      saveTarget === 'session'
+                        ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.12)] text-[var(--text-primary)]'
+                        : 'border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)]'
+                    } ${!canSaveSession ? 'opacity-30 pointer-events-none' : ''}`}
+                  >
+                    {targetLabels.session}
+                  </button>
+                </div>
+              </div>
 
               <div className="mt-3 space-y-2">
                 <label className="audio-section-kicker" htmlFor="audio-save-name">
@@ -157,37 +259,39 @@ export function EditorToolbar({
                     }}
                     className="audio-mono w-full bg-transparent text-sm text-[var(--text-primary)] outline-none"
                   />
-                  <span className="audio-mono text-xs text-[var(--text-secondary)]">.{saveFormat}</span>
+                  <span className="audio-mono text-xs text-[var(--text-secondary)]">.{saveExtension}</span>
                 </div>
               </div>
 
-              <div className="mt-3 space-y-2">
-                <span className="audio-section-kicker">{formatLabel}</span>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSaveFormat('wav')}
-                    className={`audio-focus-ring rounded-[12px] border px-3 py-2 text-sm transition ${
-                      saveFormat === 'wav'
-                        ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.12)] text-[var(--text-primary)]'
-                        : 'border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)]'
-                    }`}
-                  >
-                    {copy.toolbar.exportWav}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSaveFormat('mp3')}
-                    className={`audio-focus-ring rounded-[12px] border px-3 py-2 text-sm transition ${
-                      saveFormat === 'mp3'
-                        ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.12)] text-[var(--text-primary)]'
-                        : 'border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)]'
-                    }`}
-                  >
-                    {copy.toolbar.exportMp3}
-                  </button>
+              {saveTarget !== 'session' ? (
+                <div className="mt-3 space-y-2">
+                  <span className="audio-section-kicker">{formatLabel}</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSaveFormat('wav')}
+                      className={`audio-focus-ring rounded-[12px] border px-3 py-2 text-sm transition ${
+                        saveFormat === 'wav'
+                          ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.12)] text-[var(--text-primary)]'
+                          : 'border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)]'
+                      }`}
+                    >
+                      {copy.toolbar.exportWav}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSaveFormat('mp3')}
+                      className={`audio-focus-ring rounded-[12px] border px-3 py-2 text-sm transition ${
+                        saveFormat === 'mp3'
+                          ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.12)] text-[var(--text-primary)]'
+                          : 'border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)]'
+                      }`}
+                    >
+                      {copy.toolbar.exportMp3}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
               <div className="mt-4 flex justify-end">
                 <button

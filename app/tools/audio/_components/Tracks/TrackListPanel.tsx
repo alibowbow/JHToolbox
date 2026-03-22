@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { formatTime, getRangeStyle, parseTimeInput } from '../audio-editor-utils';
 
-export type AudioTrackSource = 'file' | 'recording' | 'generated' | 'mixdown' | (string & {});
+export type AudioTrackSource = 'file' | 'recording' | 'generated' | 'mixdown' | 'empty' | (string & {});
 
 export interface AudioTrackListItem {
   id: string;
@@ -39,8 +39,8 @@ function getTrackCopy(locale: string) {
       kicker: '트랙',
       title: '멀티트랙 세션',
       empty: '아직 추가된 트랙이 없습니다.',
-      active: '편집하기',
-      activeState: '선택됨',
+      active: '편집',
+      activeState: '편집 중',
       startTime: '시작 시간',
       gain: '게인',
       mute: '뮤트',
@@ -48,12 +48,13 @@ function getTrackCopy(locale: string) {
       solo: '솔로',
       soloed: '솔로 중',
       remove: '트랙 제거',
-      trackCount: (count: number) => `${count}개 트랙`,
+      trackCount: (count: number) => `트랙 ${count}개`,
       sources: {
         file: '파일',
         recording: '녹음',
         generated: '생성',
         mixdown: '믹스다운',
+        empty: '빈 트랙',
         fallback: '트랙',
       },
     };
@@ -78,6 +79,7 @@ function getTrackCopy(locale: string) {
       recording: 'Recording',
       generated: 'Generated',
       mixdown: 'Mixdown',
+      empty: 'Empty',
       fallback: 'Track',
     },
   };
@@ -95,6 +97,8 @@ function getSourceLabel(source: AudioTrackSource, locale: string) {
       return copy.sources.generated;
     case 'mixdown':
       return copy.sources.mixdown;
+    case 'empty':
+      return copy.sources.empty;
     default:
       return source || copy.sources.fallback;
   }

@@ -3,7 +3,7 @@ import { createWavBlob, encodeWav } from './WavEncoder';
 
 type FFmpegModule = typeof import('@ffmpeg/ffmpeg');
 type FFmpegInstance = InstanceType<FFmpegModule['FFmpeg']>;
-type FilePickerAcceptType = {
+export type FilePickerAcceptType = {
   description?: string;
   accept: Record<string, string[]>;
 };
@@ -86,7 +86,7 @@ function getPickerTypes(format: AudioExportFormat): FilePickerAcceptType[] {
   ];
 }
 
-async function saveBlobWithPicker(blob: Blob, filename: string, format: AudioExportFormat) {
+async function saveBlobWithPicker(blob: Blob, filename: string, types?: FilePickerAcceptType[]) {
   if (typeof window === 'undefined') {
     return false;
   }
@@ -100,7 +100,7 @@ async function saveBlobWithPicker(blob: Blob, filename: string, format: AudioExp
     const handle = await pickerWindow.showSaveFilePicker({
       suggestedName: filename,
       excludeAcceptAllOption: false,
-      types: getPickerTypes(format),
+      types,
     });
     const writable = await handle.createWritable();
     await writable.write(blob);
@@ -113,6 +113,18 @@ async function saveBlobWithPicker(blob: Blob, filename: string, format: AudioExp
 
     throw error;
   }
+}
+
+export async function saveBlobFile(options: {
+  blob: Blob;
+  filename: string;
+  types?: FilePickerAcceptType[];
+}) {
+  const { blob, filename, types } = options;
+  if (!(await saveBlobWithPicker(blob, filename, types))) {
+    downloadBlob(blob, filename);
+  }
+  return true;
 }
 
 async function getFFmpegInstance() {
@@ -155,17 +167,19 @@ export async function exportAudio(options: AudioExportOptions): Promise<boolean>
 
   if (format === 'wav') {
     const wavBlob = createWavBlob(buffer);
-    if (!(await saveBlobWithPicker(wavBlob, resolvedFilename, format))) {
-      downloadBlob(wavBlob, resolvedFilename);
-    }
-    return true;
+    return await saveBlobFile({
+      blob: wavBlob,
+      filename: resolvedFilename,
+      types: getPickerTypes(format),
+    });
   }
 
   const mp3Blob = await encodeMp3Blob(buffer, quality);
-  if (!(await saveBlobWithPicker(mp3Blob, resolvedFilename, format))) {
-    downloadBlob(mp3Blob, resolvedFilename);
-  }
-  return true;
+  return await saveBlobFile({
+    blob: mp3Blob,
+    filename: resolvedFilename,
+    types: getPickerTypes(format),
+  });
 }
 
 export function createAudioExportBlob(buffer: AudioBuffer) {

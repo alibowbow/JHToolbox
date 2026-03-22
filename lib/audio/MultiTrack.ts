@@ -3,12 +3,12 @@ import { createAudioBuffer } from './AudioEngine';
 export type AudioProjectTrack = {
   id: string;
   name: string;
-  buffer: AudioBuffer;
+  buffer: AudioBuffer | null;
   startTime: number;
   gain: number;
   muted: boolean;
   solo: boolean;
-  source: 'file' | 'recording';
+  source: 'file' | 'recording' | 'empty';
 };
 
 function getOfflineAudioContextCtor() {
@@ -22,11 +22,11 @@ function getOfflineAudioContextCtor() {
 function getRenderableTracks(tracks: AudioProjectTrack[]) {
   const tracksWithSolo = tracks.filter((track) => track.solo && !track.muted);
   const baseTracks = tracksWithSolo.length > 0 ? tracksWithSolo : tracks.filter((track) => !track.muted);
-  return baseTracks.filter((track) => track.buffer.length > 0);
+  return baseTracks.filter((track) => track.buffer && track.buffer.length > 0) as Array<AudioProjectTrack & { buffer: AudioBuffer }>;
 }
 
 export function getTrackDuration(track: AudioProjectTrack) {
-  return Math.max(0, track.startTime) + track.buffer.duration;
+  return Math.max(0, track.startTime) + (track.buffer?.duration ?? 0);
 }
 
 export function getMixdownDuration(tracks: AudioProjectTrack[]) {
