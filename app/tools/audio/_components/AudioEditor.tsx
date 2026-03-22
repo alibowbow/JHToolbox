@@ -1,9 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { FolderPlus, GripHorizontal, Mic, Music4, Play, Trash2, VolumeX } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useTheme } from '@/components/providers/theme-provider';
 import {
   EditHistory,
   type AudioProjectTrack,
@@ -12,7 +10,6 @@ import {
   exportAudio,
   getMixdownDuration,
   mixAudioTracks,
-  renderWaveformOffscreen,
 } from '@/lib/audio';
 import { createWavRecordingSession, type WavRecordingSession } from '@/lib/processors/audio-recording';
 import {
@@ -49,7 +46,6 @@ import { SelectionBar } from './Selection/SelectionBar';
 import { TrackTimelineStack as MultiTrackTimeline } from './Tracks/TrackTimelineStack';
 import { EditorToolbar } from './Toolbar/EditorToolbar';
 import { TransportBar } from './Transport/TransportBar';
-import { WaveformTimeline } from './Waveform/WaveformTimeline';
 
 interface AudioEditorProps {
   mode: AudioEditorMode;
@@ -88,7 +84,7 @@ function createProjectTrack(name: string, buffer: AudioBuffer, source: AudioProj
 function createEmptyTrack(trackNumber: number, locale: 'en' | 'ko'): AudioProjectTrack {
   return {
     id: createTrackId('track'),
-    name: locale === 'ko' ? `???モ닪筌???嶺뚮　維??????렊 ${trackNumber}` : `Empty track ${trackNumber}`,
+    name: locale === 'ko' ? `빈 트랙 ${trackNumber}` : `Empty track ${trackNumber}`,
     buffer: null,
     startTime: 0,
     gain: 1,
@@ -151,578 +147,6 @@ function hasTrackSelection(buffer: AudioBuffer | null, selection: AudioSelection
   return selection.start > 0.001 || selection.end < Math.max(buffer.duration - 0.001, 0);
 }
 
-interface TrackTimelineItem {
-  id: string;
-  name: string;
-  source: AudioProjectTrack['source'];
-  startTime: number;
-  gain: number;
-  muted: boolean;
-  solo: boolean;
-  isActive: boolean;
-  buffer: AudioBuffer | null;
-}
-
-interface TrackTimelineStackProps {
-  tracks: TrackTimelineItem[];
-  duration: number;
-  currentTime: number;
-  zoom: number;
-  selectionStart?: number;
-  selectionEnd?: number;
-  onSelectTrack?: (trackId: string) => void;
-  onSeek?: (time: number, trackId?: string) => void;
-  onSelectionChange?: (trackId: string, nextSelection: { start: number; end: number }) => void;
-  onMoveTrack?: (trackId: string, nextStartTime: number) => void;
-  onAddTrack?: () => void;
-  onPreviewMix?: () => void;
-  onMuteTrack?: (trackId: string) => void;
-  onRemoveTrack?: (trackId: string) => void;
-}
-
-type TrackSelectionHandle = 'start' | 'end';
-type TrackInteraction =
-  | null
-  | { kind: 'move-playhead' }
-  | { kind: 'move-track'; trackId: string; clipDuration: number; pointerOffsetTime: number }
-  | {
-      kind: 'selection';
-      trackId: string;
-      trackStartTime: number;
-      trackDuration: number;
-      anchorTime: number;
-      handle: TrackSelectionHandle | null;
-    };
-
-function getTrackTimelineCopy() {
-  return {
-    title: 'Track timeline',
-    subtitle: 'Move clips like blocks, then jump into the track you want to edit.',
-    addTrack: 'Add empty track',
-    previewMix: 'Preview mix',
-    empty: 'No tracks yet.',
-    active: 'Editing',
-    edit: 'Edit',
-    file: 'File',
-    recording: 'Recording',
-    emptyTrack: 'Empty track',
-    start: 'Start',
-    mute: 'Mute',
-    unmute: 'Unmute',
-    remove: 'Delete',
-    dragTrack: 'Move track clip',
-    laneHint: 'Drag the clip to reposition it. Click or drag inside the waveform to place the playhead and selection.',
-  };
-}
-
-function getTrackTimelineSourceIcon(source: AudioProjectTrack['source']) {
-  switch (source) {
-    case 'recording':
-      return Mic;
-    default:
-      return Music4;
-  }
-}
-
-function getTrackTimelineSourceLabel(source: AudioProjectTrack['source']) {
-  switch (source) {
-    case 'file':
-      return 'File';
-    case 'recording':
-      return 'Recording';
-    default:
-      return 'Empty track';
-  }
-}
-
-function TrackTimelineLane({
-  audioBuffer,
-  width,
-  height,
-  theme,
-  muted,
-}: {
-  audioBuffer: AudioBuffer;
-  width: number;
-  height: number;
-  theme: 'light' | 'dark';
-  muted: boolean;
-}) {
-  const [canvasNode, setCanvasNode] = useState<HTMLCanvasElement | null>(null);
-
-  useEffect(() => {
-    if (!canvasNode) {
-      return;
-    }
-
-    const dpr = window.devicePixelRatio || 1;
-    canvasNode.width = Math.round(width * dpr);
-    canvasNode.height = Math.round(height * dpr);
-    canvasNode.style.width = `${width}px`;
-    canvasNode.style.height = `${height}px`;
-
-    const context = canvasNode.getContext('2d');
-    if (!context) {
-      return;
-    }
-
-    context.setTransform(1, 0, 0, 1, 0, 0);
-    context.scale(dpr, dpr);
-    context.clearRect(0, 0, width, height);
-
-    const source = renderWaveformOffscreen(audioBuffer, Math.max(256, Math.round(width)), height, theme);
-    context.drawImage(source as CanvasImageSource, 0, 0, width, height);
-
-    if (muted) {
-      context.fillStyle = theme === 'dark' ? 'rgba(2, 6, 23, 0.5)' : 'rgba(255, 255, 255, 0.45)';
-      context.fillRect(0, 0, width, height);
-    }
-  }, [audioBuffer, canvasNode, height, muted, theme, width]);
-
-  return <canvas ref={setCanvasNode} className="block h-full w-full" />;
-}
-
-function TrackTimelineStack({
-  tracks,
-  duration,
-  currentTime,
-  zoom,
-  selectionStart = 0,
-  selectionEnd = 0,
-  onSelectTrack,
-  onSeek,
-  onSelectionChange,
-  onMoveTrack,
-  onAddTrack,
-  onPreviewMix,
-  onMuteTrack,
-  onRemoveTrack,
-}: TrackTimelineStackProps) {
-  const { theme } = useTheme();
-  const copy = getTrackTimelineCopy();
-  const viewportRef = useRef<HTMLDivElement | null>(null);
-  const [viewportWidth, setViewportWidth] = useState(0);
-  const [interaction, setInteraction] = useState<TrackInteraction>(null);
-  const contentPadding = 24;
-  const maxTrackEnd = useMemo(
-    () =>
-      tracks.reduce((maxValue, track) => Math.max(maxValue, track.startTime + (track.buffer?.duration ?? 0.6)), 0),
-    [tracks],
-  );
-  const safeDuration = Math.max(duration, maxTrackEnd, 1);
-  const canvasWidth = Math.max(520, Math.round(Math.max(viewportWidth, 520) * zoom));
-  const contentWidth = Math.max(canvasWidth - contentPadding * 2, 320);
-  const playheadLeft = contentPadding + clamp(currentTime / safeDuration, 0, 1) * contentWidth;
-
-  useEffect(() => {
-    if (!viewportRef.current || typeof ResizeObserver === 'undefined') {
-      return;
-    }
-
-    const observer = new ResizeObserver((entries) => {
-      const nextWidth = entries[0]?.contentRect.width ?? 0;
-      setViewportWidth(Math.max(520, Math.floor(nextWidth)));
-    });
-
-    observer.observe(viewportRef.current);
-    return () => observer.disconnect();
-  }, []);
-
-  const getProjectTimeFromClientX = (clientX: number) => {
-    const viewportNode = viewportRef.current;
-    if (!viewportNode) {
-      return 0;
-    }
-
-    const rect = viewportNode.getBoundingClientRect();
-    const x = clamp(clientX - rect.left + viewportNode.scrollLeft - contentPadding, 0, contentWidth);
-    return clamp((x / contentWidth) * safeDuration, 0, safeDuration);
-  };
-
-  useEffect(() => {
-    if (!interaction) {
-      return;
-    }
-
-    const handlePointerMove = (event: PointerEvent) => {
-      const projectTime = getProjectTimeFromClientX(event.clientX);
-
-      if (interaction.kind === 'move-playhead') {
-        onSeek?.(projectTime);
-        return;
-      }
-
-      if (interaction.kind === 'move-track') {
-        const nextStartTime = clamp(projectTime - interaction.pointerOffsetTime, 0, safeDuration - interaction.clipDuration);
-        onMoveTrack?.(interaction.trackId, Number(nextStartTime.toFixed(3)));
-        return;
-      }
-
-      const localTime = clamp(projectTime - interaction.trackStartTime, 0, interaction.trackDuration);
-
-      if (interaction.handle === 'start') {
-        onSelectionChange?.(interaction.trackId, { start: localTime, end: selectionEnd });
-        return;
-      }
-
-      if (interaction.handle === 'end') {
-        onSelectionChange?.(interaction.trackId, { start: selectionStart, end: localTime });
-        return;
-      }
-
-      onSelectionChange?.(interaction.trackId, { start: interaction.anchorTime, end: localTime });
-    };
-
-    const handlePointerUp = () => setInteraction(null);
-
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp);
-
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
-    };
-  }, [contentWidth, interaction, onMoveTrack, onSelectionChange, onSeek, safeDuration, selectionEnd, selectionStart]);
-
-  return (
-    <section data-testid="audio-track-timeline-stack" className="audio-panel overflow-hidden rounded-[20px]">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] px-4 py-4">
-        <div>
-          <p className="audio-section-kicker">{copy.title}</p>
-          <h2 className="mt-1 text-sm font-medium text-[var(--text-primary)]">{copy.subtitle}</h2>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {onAddTrack ? (
-            <button type="button" onClick={onAddTrack} className="audio-button-secondary audio-focus-ring h-9 px-3">
-              <FolderPlus size={14} strokeWidth={1.5} />
-              {copy.addTrack}
-            </button>
-          ) : null}
-          {onPreviewMix && tracks.length > 1 ? (
-            <button type="button" onClick={onPreviewMix} className="audio-button-secondary audio-focus-ring h-9 px-3">
-              <Play size={14} strokeWidth={1.5} />
-              {copy.previewMix}
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      <div
-        ref={viewportRef}
-        className={canvasWidth > viewportWidth + 1 ? 'overflow-x-auto' : 'overflow-x-hidden'}
-        data-testid="audio-waveform-scroll"
-      >
-        <div style={{ width: `${canvasWidth}px` }} className="relative min-w-full bg-[var(--waveform-bg)]">
-          <div className="px-0 pt-4">
-            <div style={{ width: `${contentWidth}px`, marginLeft: `${contentPadding}px` }}>
-              <WaveformTimeline duration={safeDuration} zoom={zoom} />
-            </div>
-          </div>
-
-          {tracks.length === 0 ? (
-            <div className="px-6 py-8 text-sm text-[var(--text-secondary)]">{copy.empty}</div>
-          ) : (
-            <div className="relative px-0 pb-4 pt-3">
-              <div
-                data-testid="audio-playhead"
-                className="absolute bottom-4 top-3 z-20 w-4 -translate-x-1/2 cursor-ew-resize"
-                style={{ left: `${playheadLeft}px` }}
-              >
-                <button
-                  type="button"
-                  onPointerDown={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setInteraction({ kind: 'move-playhead' });
-                    onSeek?.(getProjectTimeFromClientX(event.clientX));
-                  }}
-                  className="absolute inset-y-0 left-1/2 w-4 -translate-x-1/2 bg-transparent"
-                  aria-label="Playhead"
-                >
-                  <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 bg-[var(--playhead)]" />
-                  <span className="absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 rounded-full border border-[var(--bg-base)] bg-[var(--playhead)]" />
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                {tracks.map((track) => {
-                  const clipDuration = track.buffer?.duration ?? 0.75;
-                  const clipLeft = contentPadding + clamp(track.startTime / safeDuration, 0, 1) * contentWidth;
-                  const clipWidth = Math.max(track.buffer ? (clipDuration / safeDuration) * contentWidth : 132, track.buffer ? 72 : 132);
-                  const selectionStartPercent =
-                    track.buffer && track.buffer.duration > 0 ? clamp(selectionStart / track.buffer.duration, 0, 1) : 0;
-                  const selectionEndPercent =
-                    track.buffer && track.buffer.duration > 0 ? clamp(selectionEnd / track.buffer.duration, 0, 1) : 1;
-                  const isFullSelection = Boolean(
-                    track.isActive &&
-                      track.buffer &&
-                      selectionStartPercent <= 0.001 &&
-                      selectionEndPercent >= 0.999,
-                  );
-                  const playheadWithinTrack =
-                    currentTime >= track.startTime && currentTime <= track.startTime + (track.buffer?.duration ?? 0);
-                  const localPlayheadPercent =
-                    track.buffer && playheadWithinTrack
-                      ? clamp((currentTime - track.startTime) / track.buffer.duration, 0, 1)
-                      : null;
-                  const SourceIcon = getTrackTimelineSourceIcon(track.source);
-                  const sourceLabel = getTrackTimelineSourceLabel(track.source);
-
-                  return (
-                    <div
-                      key={track.id}
-                      data-testid="audio-track-stack-row"
-                      className={`rounded-[16px] border px-4 py-3 transition ${
-                        track.isActive
-                          ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.06)]'
-                          : 'border-[var(--border)] bg-[var(--surface-muted)]'
-                      }`}
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => onSelectTrack?.(track.id)}
-                              className="truncate text-left text-sm font-medium text-[var(--text-primary)]"
-                            >
-                              {track.name}
-                            </button>
-                            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-secondary)]">
-                              <SourceIcon size={11} strokeWidth={1.5} />
-                              {sourceLabel}
-                            </span>
-                            {track.muted ? (
-                              <span className="rounded-full border border-[rgba(255,77,77,0.35)] px-2 py-1 text-[11px] text-[var(--status-recording)]">
-                                Muted
-                              </span>
-                            ) : null}
-                            {track.solo ? (
-                              <span className="rounded-full border border-[var(--accent)] px-2 py-1 text-[11px] text-[var(--accent)]">
-                                Solo
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-secondary)]">
-                          <span className="audio-mono">
-                            {copy.start} {formatTime(track.startTime)}
-                          </span>
-                          <span className="audio-mono">{formatTime(track.buffer?.duration ?? 0)}</span>
-                          <span
-                            className={`rounded-full border px-2 py-1 ${
-                              track.isActive
-                                ? 'border-[var(--accent)] text-[var(--accent)]'
-                                : 'border-[var(--border)] text-[var(--text-secondary)]'
-                            }`}
-                          >
-                            {track.isActive ? copy.active : copy.edit}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => onMuteTrack?.(track.id)}
-                          disabled={!onMuteTrack}
-                          className={`audio-focus-ring inline-flex h-8 items-center justify-center gap-1.5 rounded-[10px] border px-3 text-sm transition ${
-                            track.muted
-                              ? 'border-[rgba(255,77,77,0.4)] bg-[rgba(255,77,77,0.12)] text-[var(--status-recording)]'
-                              : 'border-[var(--border)] bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)]'
-                          }`}
-                        >
-                          <VolumeX size={13} strokeWidth={1.5} />
-                          {track.muted ? copy.unmute : copy.mute}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onRemoveTrack?.(track.id)}
-                          disabled={!onRemoveTrack}
-                          className="audio-button-danger audio-focus-ring h-8 px-3"
-                        >
-                          <Trash2 size={14} strokeWidth={1.5} />
-                          {copy.remove}
-                        </button>
-                      </div>
-
-                      <div className="mt-3 px-0">
-                        <div
-                          className="relative h-24 overflow-hidden rounded-[14px] border border-[var(--border)] bg-[var(--bg-base)]"
-                          onPointerDown={(event) => {
-                            if ((event.target as HTMLElement).closest('[data-track-clip]')) {
-                              return;
-                            }
-
-                            onSelectTrack?.(track.id);
-                            onSeek?.(getProjectTimeFromClientX(event.clientX), track.id);
-                          }}
-                        >
-                          <div
-                            className="pointer-events-none absolute inset-0 opacity-60"
-                            style={{
-                              backgroundImage:
-                                'linear-gradient(to right, var(--border) 0, var(--border) 1px, transparent 1px, transparent 100%)',
-                              backgroundSize: `${Math.max(contentWidth / Math.max(safeDuration, 1), 24)}px 100%`,
-                            }}
-                          />
-
-                          <div
-                            data-track-clip
-                            data-testid="audio-track-clip"
-                            className={`absolute top-2 h-[calc(100%-1rem)] overflow-hidden rounded-[12px] border ${
-                              track.isActive
-                                ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.08)]'
-                                : 'border-[var(--border-strong)] bg-[rgba(0,212,200,0.04)]'
-                            }`}
-                            style={{
-                              left: `${clipLeft}px`,
-                              width: `${clipWidth}px`,
-                            }}
-                          >
-                            <button
-                              type="button"
-                              onPointerDown={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                onSelectTrack?.(track.id);
-                                const pointerTime = getProjectTimeFromClientX(event.clientX);
-                                setInteraction({
-                                  kind: 'move-track',
-                                  trackId: track.id,
-                                  clipDuration,
-                                  pointerOffsetTime: clamp(pointerTime - track.startTime, 0, clipDuration),
-                                });
-                              }}
-                              className="flex h-6 w-full items-center justify-between border-b border-[var(--border)] bg-[rgba(0,0,0,0.08)] px-2 text-[11px] text-[var(--text-secondary)]"
-                              aria-label={copy.dragTrack}
-                            >
-                              <span className="truncate">{track.name}</span>
-                              <GripHorizontal size={12} strokeWidth={1.5} />
-                            </button>
-
-                            <div
-                              className="relative h-[calc(100%-1.5rem)] w-full touch-none"
-                              onPointerDown={(event) => {
-                                event.stopPropagation();
-                                onSelectTrack?.(track.id);
-
-                                if (!track.buffer) {
-                                  onSeek?.(getProjectTimeFromClientX(event.clientX), track.id);
-                                  return;
-                                }
-
-                                if (!track.isActive) {
-                                  onSeek?.(getProjectTimeFromClientX(event.clientX), track.id);
-                                  return;
-                                }
-
-                                const handle = (event.target as HTMLElement).closest<HTMLElement>('[data-selection-handle]')
-                                  ?.dataset.selectionHandle as TrackSelectionHandle | undefined;
-                                const projectTime = getProjectTimeFromClientX(event.clientX);
-                                const localTime = clamp(projectTime - track.startTime, 0, track.buffer.duration);
-
-                                if (handle) {
-                                  setInteraction({
-                                    kind: 'selection',
-                                    trackId: track.id,
-                                    trackStartTime: track.startTime,
-                                    trackDuration: track.buffer.duration,
-                                    anchorTime: localTime,
-                                    handle,
-                                  });
-                                  return;
-                                }
-
-                                setInteraction({
-                                  kind: 'selection',
-                                  trackId: track.id,
-                                  trackStartTime: track.startTime,
-                                  trackDuration: track.buffer.duration,
-                                  anchorTime: localTime,
-                                  handle: null,
-                                });
-                                onSeek?.(projectTime, track.id);
-                              }}
-                            >
-                              {track.buffer ? (
-                                <TrackTimelineLane audioBuffer={track.buffer} width={clipWidth} height={56} theme={theme} muted={track.muted} />
-                              ) : (
-                                <div className="flex h-full items-center justify-center px-3 text-xs text-[var(--text-secondary)]">
-                                  {copy.emptyTrack}
-                                </div>
-                              )}
-
-                              {track.isActive && track.buffer ? (
-                                <>
-                                  {!isFullSelection ? (
-                                    <div
-                                      className="pointer-events-none absolute inset-y-0 bg-[var(--selection-bg)]"
-                                      style={{
-                                        left: `${selectionStartPercent * 100}%`,
-                                        width: `${Math.max((selectionEndPercent - selectionStartPercent) * 100, 0.6)}%`,
-                                        boxShadow:
-                                          'inset 2px 0 0 var(--selection-border), inset -2px 0 0 var(--selection-border)',
-                                      }}
-                                    />
-                                  ) : null}
-
-                                  <button
-                                    type="button"
-                                    data-selection-handle="start"
-                                    data-testid="audio-selection-handle-start"
-                                    className="absolute inset-y-1 left-0 z-10 w-4 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent"
-                                    style={{ left: isFullSelection ? '8px' : `${selectionStartPercent * 100}%` }}
-                                    aria-label="Selection start"
-                                  >
-                                    <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-[var(--selection-border)]" />
-                                    <span className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
-                                    <span className="absolute bottom-1.5 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    data-selection-handle="end"
-                                    data-testid="audio-selection-handle-end"
-                                    className="absolute inset-y-1 z-10 w-4 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent"
-                                    style={{ left: isFullSelection ? 'calc(100% - 8px)' : `${selectionEndPercent * 100}%` }}
-                                    aria-label="Selection end"
-                                  >
-                                    <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-[var(--selection-border)]" />
-                                    <span className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
-                                    <span className="absolute bottom-1.5 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
-                                  </button>
-                                </>
-                              ) : null}
-
-                              {localPlayheadPercent != null ? (
-                                <div
-                                  className="pointer-events-none absolute inset-y-0 z-10 w-[2px] bg-[var(--playhead)]"
-                                  style={{ left: `${localPlayheadPercent * 100}%` }}
-                                />
-                              ) : null}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {tracks.length > 0 ? (
-            <div className="border-t border-[var(--border)] px-4 pb-4 pt-3">
-              <p className="text-[11px] text-[var(--text-tertiary)]">{copy.laneHint}</p>
-            </div>
-          ) : null}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 export function AudioEditor({ mode }: AudioEditorProps) {
   const { locale } = useLocale();
   const copy = useMemo(() => getAudioEditorCopy(locale), [locale]);
@@ -761,6 +185,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const recordingAccumulatedDurationRef = useRef(0);
   const recordingTargetTrackIdRef = useRef<string | null>(null);
   const recordingInsertTimeRef = useRef(0);
+  const playbackProjectOffsetRef = useRef(0);
 
   const activeTrack = useMemo(
     () => projectTracks.find((track) => track.id === activeTrackId) ?? projectTracks[0] ?? null,
@@ -831,6 +256,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     setCurrentTime(nextCurrentTime);
     setIsSilent(isSilentAudioBuffer(buffer));
     setIsPlaying(false);
+    playbackProjectOffsetRef.current = activeTrack?.startTime ?? 0;
     audioEngine.setBuffer(buffer, nextCurrentTime);
   }, [activeTrack, activeTrackId, buffer, projectDuration, projectTime, selection.trimMode]);
 
@@ -863,6 +289,8 @@ export function AudioEditor({ mode }: AudioEditorProps) {
 
         if (activeTrackState?.buffer) {
           setCurrentTime(clamp(nextTime - activeTrackState.startTime, 0, activeTrackState.buffer.duration));
+        } else {
+          setCurrentTime(0);
         }
         return;
       }
@@ -870,7 +298,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       setCurrentTime(nextTime);
 
       if (activeTrackState && activeBuffer && audioEngine.buffer === activeBuffer) {
-        setProjectTime(nextTime + activeTrackState.startTime);
+        setProjectTime(nextTime + playbackProjectOffsetRef.current);
       }
     });
     const unsubscribeEnded = audioEngine.onEnded(() => {
@@ -930,11 +358,13 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     setIsSilent(isSilentAudioBuffer(buffer));
 
     if (audioEngine.buffer !== buffer) {
+      playbackProjectOffsetRef.current = activeTrack?.startTime ?? 0;
       audioEngine.setBuffer(buffer, nextLocalTime);
       return;
     }
 
     if (!isPlaying && Math.abs(audioEngine.currentTime - nextLocalTime) > 0.001) {
+      playbackProjectOffsetRef.current = activeTrack?.startTime ?? 0;
       audioEngine.seekTo(nextLocalTime);
     }
   }, [activeTrack?.startTime, buffer, isPlaying, projectDuration, projectTime, projectTracks.length]);
@@ -1140,11 +570,13 @@ export function AudioEditor({ mode }: AudioEditorProps) {
         decodedTracks.push(createProjectTrack(file.name, decoded, 'file'));
       }
 
-      if (activeTrack && !activeTrack.buffer && decodedTracks.length > 0) {
+      const targetTrack = activeTrackRef.current;
+
+      if (targetTrack && !targetTrack.buffer && decodedTracks.length > 0) {
         const [filledTrack, ...remainingTracks] = decodedTracks;
         setProjectTracks((currentTracks) => {
           const nextTracks: AudioProjectTrack[] = currentTracks.map((track) =>
-            track.id === activeTrack.id
+            track.id === targetTrack.id
               ? {
                   ...track,
                   name: filledTrack.name,
@@ -1156,13 +588,14 @@ export function AudioEditor({ mode }: AudioEditorProps) {
 
           return remainingTracks.length > 0 ? [...nextTracks, ...remainingTracks] : nextTracks;
         });
-        setActiveTrackId(activeTrack.id);
+        setActiveTrackId(targetTrack.id);
       } else {
         setProjectTracks((currentTracks) => [...currentTracks, ...decodedTracks]);
         setActiveTrackId(decodedTracks.at(-1)?.id ?? null);
       }
       setStatusMessage(null);
     } catch (error) {
+      setStatusMessage(null);
       setLoadError(error instanceof Error ? error.message : copy.status.decodeFailed);
     } finally {
       setIsLoading(false);
@@ -1384,6 +817,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       if (!buffer) {
         const nextProjectTime = audioEngine.buffer === playbackBuffer ? audioEngine.currentTime : projectTime;
         const playbackStart = nextProjectTime >= playbackBuffer.duration - 0.001 ? 0 : clamp(nextProjectTime, 0, playbackBuffer.duration);
+        playbackProjectOffsetRef.current = 0;
         if (audioEngine.buffer !== playbackBuffer) {
           audioEngine.setBuffer(playbackBuffer, playbackStart);
         } else if (Math.abs(audioEngine.currentTime - playbackStart) > 0.001) {
@@ -1400,6 +834,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       const cursorTime = clamp(projectTime - activeStart, 0, duration);
       const nextStart = audioEngine.buffer === buffer ? audioEngine.currentTime : cursorTime;
       const playbackStart = nextStart >= duration - 0.001 ? 0 : clamp(nextStart, 0, duration);
+      playbackProjectOffsetRef.current = activeStart;
 
       if (audioEngine.buffer !== buffer) {
         audioEngine.setBuffer(buffer, playbackStart);
@@ -1448,6 +883,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     if (targetTrack?.buffer) {
       const localTime = clamp(safeProjectTime - targetTrack.startTime, 0, targetTrack.buffer.duration);
       setCurrentTime(localTime);
+      playbackProjectOffsetRef.current = targetTrack.startTime;
 
       if (audioEngine.buffer === targetTrack.buffer) {
         audioEngine.seekTo(localTime);
@@ -1457,9 +893,31 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       return;
     }
 
-    if (mixdownBuffer && audioEngine.buffer === mixdownBuffer) {
-      audioEngine.seekTo(safeProjectTime);
+    setCurrentTime(0);
+    playbackProjectOffsetRef.current = 0;
+
+    if (mixdownBuffer) {
+      if (audioEngine.buffer === mixdownBuffer) {
+        audioEngine.seekTo(safeProjectTime);
+      } else {
+        audioEngine.setBuffer(mixdownBuffer, safeProjectTime);
+      }
     }
+  };
+
+  const handleMoveTrack = (trackId: string, nextStartTime: number) => {
+    if (isPlaying && activeTrackRef.current?.id === trackId) {
+      audioEngine.pause();
+      const pausedTime = audioEngine.currentTime;
+      setIsPlaying(false);
+      setCurrentTime(pausedTime);
+      setProjectTime(pausedTime + playbackProjectOffsetRef.current);
+    }
+
+    updateTrack(trackId, (currentTrack) => ({
+      ...currentTrack,
+      startTime: Number(nextStartTime.toFixed(3)),
+    }));
   };
 
   const seekBy = (delta: number) => {
@@ -1630,10 +1088,12 @@ export function AudioEditor({ mode }: AudioEditorProps) {
 
     let targetTrackId = activeTrack?.id ?? null;
     let insertTime = projectTime;
+    let createdTrackId: string | null = null;
 
     if (!targetTrackId) {
       const nextTrack = createEmptyTrack(projectTracks.length + 1, locale);
       targetTrackId = nextTrack.id;
+      createdTrackId = nextTrack.id;
       insertTime = nextTrack.startTime;
       setProjectTracks((currentTracks) => [...currentTracks, nextTrack]);
       setActiveTrackId(nextTrack.id);
@@ -1660,6 +1120,13 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       startRecordingTimer();
     } catch (error) {
       stopRecordingStream();
+      recordingTargetTrackIdRef.current = null;
+      recordingInsertTimeRef.current = 0;
+
+      if (createdTrackId) {
+        setProjectTracks((currentTracks) => currentTracks.filter((track) => track.id !== createdTrackId));
+        setActiveTrackId((currentId) => (currentId === createdTrackId ? null : currentId));
+      }
 
       if (error instanceof DOMException && error.name === 'NotAllowedError') {
         setLoadError(copy.recording.permissionError);
@@ -1737,6 +1204,12 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       setProjectTracks((currentTracks) => {
         if (!targetTrackId) {
           const nextTrack = createProjectTrack(recording.file.name, nextBuffer, 'recording');
+          return [...currentTracks, nextTrack];
+        }
+
+        if (!currentTracks.some((track) => track.id === targetTrackId)) {
+          const nextTrack = createProjectTrack(recording.file.name, nextBuffer, 'recording');
+          nextTrack.startTime = insertTime;
           return [...currentTracks, nextTrack];
         }
 
@@ -1966,12 +1439,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
               }
               commitSelection(nextSelection, targetTrack);
             }}
-            onMoveTrack={(trackId, nextStartTime) =>
-              updateTrack(trackId, (currentTrack) => ({
-                ...currentTrack,
-                startTime: Number(nextStartTime.toFixed(3)),
-              }))
-            }
+            onMoveTrack={handleMoveTrack}
             onAddTrack={handleAddEmptyTrack}
             onPreviewMix={projectTracks.length > 1 ? () => void handlePreviewMix() : undefined}
             onMuteToggle={toggleTrackMute}

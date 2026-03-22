@@ -52,6 +52,7 @@ type InteractionState =
       trackId: string;
       clipDuration: number;
       pointerOffsetTime: number;
+      timelineDuration: number;
     }
   | {
       kind: 'selection';
@@ -79,12 +80,10 @@ function getCopy(locale: string) {
   if (locale === 'ko') {
     return {
       timeline: '멀티트랙',
-      addTrack: '빈 트랙 추가',
+      addTrack: '트랙 추가',
       previewMix: '믹스 미리듣기',
       empty: '트랙이 아직 없습니다.',
-      emptyTrack: '빈 트랙입니다. 이 트랙을 선택한 뒤 오디오를 열거나 녹음하세요.',
-      active: '편집 중',
-      edit: '편집',
+      emptyTrack: '빈 트랙',
       start: '시작',
       file: '파일',
       recording: '녹음',
@@ -93,19 +92,17 @@ function getCopy(locale: string) {
       mute: '뮤트',
       unmute: '뮤트 해제',
       remove: '삭제',
-      dragTrack: '트랙 위치 이동',
-      playhead: '재생 위치 이동',
+      dragTrack: '트랙 이동',
+      playhead: '재생 헤드 이동',
     };
   }
 
   return {
     timeline: 'Multitrack',
-    addTrack: 'Add empty track',
+    addTrack: 'Add track',
     previewMix: 'Preview mix',
     empty: 'No tracks yet.',
-    emptyTrack: 'Empty track. Select it, then open audio or record into it.',
-    active: 'Editing',
-    edit: 'Edit',
+    emptyTrack: 'Empty track',
     start: 'Start',
     file: 'File',
     recording: 'Recording',
@@ -114,7 +111,7 @@ function getCopy(locale: string) {
     mute: 'Mute',
     unmute: 'Unmute',
     remove: 'Delete',
-    dragTrack: 'Move track clip',
+    dragTrack: 'Move track',
     playhead: 'Move playhead',
   };
 }
@@ -175,7 +172,7 @@ function ClipWaveform({
     context.drawImage(source as CanvasImageSource, 0, 0, width, height);
 
     if (isMuted) {
-      context.fillStyle = theme === 'dark' ? 'rgba(2, 6, 23, 0.52)' : 'rgba(255, 255, 255, 0.46)';
+      context.fillStyle = theme === 'dark' ? 'rgba(2, 6, 23, 0.52)' : 'rgba(255, 255, 255, 0.44)';
       context.fillRect(0, 0, width, height);
     }
   }, [audioBuffer, canvasNode, height, isMuted, theme, width]);
@@ -215,7 +212,6 @@ export function TrackTimelineStack({
     duration,
     maxTrackEnd + Math.max(2, duration * 0.15),
     currentTime + 1,
-    interaction?.kind === 'move-track' ? currentTime + interaction.clipDuration + 1 : 0,
     6,
   );
   const canvasWidth = Math.max(viewportWidth, Math.round(Math.max(viewportWidth, 720) * Math.max(zoom, 1)), 720);
@@ -236,7 +232,7 @@ export function TrackTimelineStack({
     return () => observer.disconnect();
   }, []);
 
-  const getProjectTimeFromClientX = (clientX: number) => {
+  const getProjectTimeFromClientX = (clientX: number, durationScale = safeDuration) => {
     const viewportNode = viewportRef.current;
     if (!viewportNode) {
       return 0;
@@ -244,7 +240,7 @@ export function TrackTimelineStack({
 
     const rect = viewportNode.getBoundingClientRect();
     const x = clamp(clientX - rect.left + viewportNode.scrollLeft - contentPadding, 0, contentWidth);
-    return clamp((x / contentWidth) * safeDuration, 0, safeDuration);
+    return clamp((x / contentWidth) * durationScale, 0, durationScale);
   };
 
   useEffect(() => {
@@ -253,7 +249,10 @@ export function TrackTimelineStack({
     }
 
     const handlePointerMove = (event: PointerEvent) => {
-      const projectTime = getProjectTimeFromClientX(event.clientX);
+      const projectTime =
+        interaction.kind === 'move-track'
+          ? getProjectTimeFromClientX(event.clientX, interaction.timelineDuration)
+          : getProjectTimeFromClientX(event.clientX);
 
       if (interaction.kind === 'move-playhead') {
         onSeek?.(projectTime);
@@ -338,38 +337,36 @@ export function TrackTimelineStack({
             </div>
           </div>
 
-          {tracks.length === 0 ? (
-            <div className="px-6 py-8 text-sm text-[var(--text-secondary)]">{copy.empty}</div>
-          ) : (
-            <div className="relative pb-4 pt-2">
-              <div
-                data-testid="audio-playhead"
-                className="absolute bottom-4 top-2 z-20 w-4 -translate-x-1/2 cursor-ew-resize"
-                style={{ left: `${playheadLeft}px` }}
+          <div className="relative pb-4 pt-2">
+            <div
+              data-testid="audio-playhead"
+              className="absolute bottom-4 top-2 z-20 w-4 -translate-x-1/2 cursor-ew-resize"
+              style={{ left: `${playheadLeft}px` }}
+            >
+              <button
+                type="button"
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setInteraction({ kind: 'move-playhead' });
+                  onSeek?.(getProjectTimeFromClientX(event.clientX));
+                }}
+                className="absolute inset-y-0 left-1/2 w-4 -translate-x-1/2 bg-transparent"
+                aria-label={copy.playhead}
               >
-                <button
-                  type="button"
-                  onPointerDown={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setInteraction({ kind: 'move-playhead' });
-                    onSeek?.(getProjectTimeFromClientX(event.clientX));
-                  }}
-                  className="absolute inset-y-0 left-1/2 w-4 -translate-x-1/2 bg-transparent"
-                  aria-label={copy.playhead}
-                >
-                  <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 bg-[var(--playhead)]" />
-                  <span className="absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 rounded-full border border-[var(--bg-base)] bg-[var(--playhead)]" />
-                </button>
-              </div>
+                <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 bg-[var(--playhead)]" />
+                <span className="absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 rounded-full border border-[var(--bg-base)] bg-[var(--playhead)]" />
+              </button>
+            </div>
 
-              <div className="space-y-3 px-3">
-                {tracks.map((track) => {
+            <div className="space-y-2 px-3 pb-2">
+              {tracks.length === 0 ? (
+                <div className="px-3 py-8 text-sm text-[var(--text-secondary)]">{copy.empty}</div>
+              ) : (
+                tracks.map((track) => {
                   const clipDuration = track.buffer?.duration ?? 0;
                   const clipLeft = contentPadding + clamp(track.startTime / safeDuration, 0, 1) * contentWidth;
-                  const clipWidth = track.buffer
-                    ? Math.max((clipDuration / safeDuration) * contentWidth, 80)
-                    : 0;
+                  const clipWidth = track.buffer ? Math.max((clipDuration / safeDuration) * contentWidth, 72) : 0;
                   const selectionStartPercent =
                     track.buffer && track.buffer.duration > 0 ? clamp(selectionStart / track.buffer.duration, 0, 1) : 0;
                   const selectionEndPercent =
@@ -387,47 +384,59 @@ export function TrackTimelineStack({
                     <div
                       key={track.id}
                       data-testid="audio-track-stack-row"
-                      className={`rounded-[16px] border px-3 py-3 transition ${
-                        track.isActive
-                          ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.06)]'
-                          : 'border-[var(--border)] bg-[var(--surface-muted)]'
-                      }`}
+                      className={`relative py-2 ${track.isActive ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}
                     >
-                      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => onSelectTrack?.(track.id)}
-                              className="truncate text-left text-sm font-medium text-[var(--text-primary)]"
-                            >
-                              {track.name}
-                            </button>
-                            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-secondary)]">
-                              <SourceIcon size={11} strokeWidth={1.5} />
-                              {sourceLabel}
-                            </span>
-                            <span
-                              className={`rounded-full border px-2 py-1 text-[11px] ${
-                                track.isActive
-                                  ? 'border-[var(--accent)] text-[var(--accent)]'
-                                  : 'border-[var(--border)] text-[var(--text-secondary)]'
-                              }`}
-                            >
-                              {track.isActive ? copy.active : copy.edit}
-                            </span>
-                          </div>
-                        </div>
+                      <div className="flex flex-wrap items-center gap-2 px-1 pb-2">
+                        <button
+                          type="button"
+                          onClick={() => onSelectTrack?.(track.id)}
+                          className={`truncate text-left text-sm font-medium transition ${
+                            track.isActive ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                          }`}
+                        >
+                          {track.name}
+                        </button>
+                        <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-tertiary)]">
+                          <SourceIcon size={11} strokeWidth={1.5} />
+                          {sourceLabel}
+                        </span>
+                        <span className="audio-mono text-xs text-[var(--text-secondary)]">
+                          {copy.start} {formatTime(track.startTime)}
+                        </span>
+                        {track.buffer ? (
+                          <span className="audio-mono text-xs text-[var(--text-tertiary)]">{formatTime(track.buffer.duration)}</span>
+                        ) : (
+                          <span className="audio-mono text-xs text-[var(--text-tertiary)]">{copy.emptySource}</span>
+                        )}
 
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="audio-mono text-xs text-[var(--text-secondary)]">
-                            {copy.start} {formatTime(track.startTime)}
-                          </span>
-                          {track.buffer ? (
-                            <span className="audio-mono text-xs text-[var(--text-tertiary)]">
-                              {formatTime(track.buffer.duration)}
-                            </span>
-                          ) : null}
+                        <div className="ml-auto flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            data-track-drag-handle
+                            data-testid="audio-track-drag-handle"
+                            onPointerDown={(event) => {
+                              if (!track.buffer) {
+                                return;
+                              }
+
+                              event.preventDefault();
+                              event.stopPropagation();
+                              onSelectTrack?.(track.id);
+                              const pointerTime = getProjectTimeFromClientX(event.clientX);
+                                setInteraction({
+                                  kind: 'move-track',
+                                  trackId: track.id,
+                                  clipDuration,
+                                  pointerOffsetTime: clamp(pointerTime - track.startTime, 0, clipDuration),
+                                  timelineDuration: safeDuration,
+                                });
+                              }}
+                            className="audio-focus-ring inline-flex h-8 items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--bg-surface)] px-3 text-xs text-[var(--text-secondary)] transition hover:text-[var(--text-primary)]"
+                            aria-label={copy.dragTrack}
+                          >
+                            <GripVertical size={13} strokeWidth={1.5} />
+                            {copy.dragTrack}
+                          </button>
                           {onMuteToggle ? (
                             <button
                               type="button"
@@ -438,7 +447,7 @@ export function TrackTimelineStack({
                               className={`audio-focus-ring inline-flex h-8 items-center gap-1 rounded-full border px-3 text-xs transition ${
                                 track.muted
                                   ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.12)] text-[var(--accent)]'
-                                  : 'border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                                  : 'border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                               }`}
                               aria-label={track.muted ? copy.unmute : copy.mute}
                             >
@@ -464,10 +473,14 @@ export function TrackTimelineStack({
                       </div>
 
                       <div
-                        className="relative h-24 overflow-hidden rounded-[14px] border border-[var(--border)] bg-[var(--bg-base)]"
+                        className="relative h-20 overflow-hidden"
                         onPointerDown={(event) => {
                           const target = event.target as HTMLElement;
-                          if (target.closest('[data-track-clip]') || target.closest('[data-selection-handle]')) {
+                          if (
+                            target.closest('[data-track-clip]') ||
+                            target.closest('[data-selection-handle]') ||
+                            target.closest('[data-track-drag-handle]')
+                          ) {
                             return;
                           }
 
@@ -476,146 +489,125 @@ export function TrackTimelineStack({
                         }}
                       >
                         <div
-                          className="pointer-events-none absolute inset-0 opacity-60"
+                          className="pointer-events-none absolute inset-y-1 left-[24px] right-[24px] opacity-25"
                           style={{
                             backgroundImage:
                               'linear-gradient(to right, var(--border) 0, var(--border) 1px, transparent 1px, transparent 100%)',
-                            backgroundSize: `${Math.max(contentWidth / Math.max(safeDuration, 1), 24)}px 100%`,
+                            backgroundSize: `${Math.max(contentWidth / Math.max(safeDuration, 1), 24)}px calc(100% - 8px)`,
                           }}
                         />
+
+                        <div className="pointer-events-none absolute inset-x-[24px] top-1/2 h-px -translate-y-1/2 bg-[var(--border)] opacity-60" />
 
                         {track.buffer ? (
                           <div
                             data-track-clip
-                            className={`absolute inset-y-2 overflow-hidden rounded-[12px] border ${
+                            data-testid="audio-track-waveform-surface"
+                            className={`absolute inset-y-1 overflow-hidden rounded-[12px] ${
                               track.isActive
-                                ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.08)]'
-                                : 'border-[var(--border-strong)] bg-[rgba(0,212,200,0.04)]'
+                                ? 'bg-[rgba(0,212,200,0.12)] ring-1 ring-[var(--accent)]'
+                                : 'bg-[rgba(0,212,200,0.06)] ring-1 ring-[rgba(255,255,255,0.08)]'
                             }`}
                             style={{
                               left: `${clipLeft}px`,
                               width: `${clipWidth}px`,
                             }}
+                            onPointerDown={(event) => {
+                              event.stopPropagation();
+                              onSelectTrack?.(track.id);
+                              const trackBuffer = track.buffer;
+                              if (!trackBuffer) {
+                                return;
+                              }
+
+                              const handle = (event.target as HTMLElement).closest<HTMLElement>('[data-selection-handle]')
+                                ?.dataset.selectionHandle as SelectionHandle | undefined;
+                              const projectTime = getProjectTimeFromClientX(event.clientX);
+                              const localTime = clamp(projectTime - track.startTime, 0, trackBuffer.duration);
+
+                              onSeek?.(projectTime, track.id);
+                              setInteraction({
+                                kind: 'selection',
+                                trackId: track.id,
+                                trackStartTime: track.startTime,
+                                trackDuration: trackBuffer.duration,
+                                anchorTime: localTime,
+                                handle: handle ?? null,
+                                initialStart: track.isActive ? selectionStart : 0,
+                                initialEnd: track.isActive ? selectionEnd : trackBuffer.duration,
+                              });
+                            }}
                           >
-                            <button
-                              type="button"
-                              onPointerDown={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                onSelectTrack?.(track.id);
-                                const pointerTime = getProjectTimeFromClientX(event.clientX);
-                                setInteraction({
-                                  kind: 'move-track',
-                                  trackId: track.id,
-                                  clipDuration,
-                                  pointerOffsetTime: clamp(pointerTime - track.startTime, 0, clipDuration),
-                                });
-                              }}
-                              className="audio-focus-ring absolute inset-y-1 left-1 z-10 inline-flex w-6 items-center justify-center rounded-full border border-[var(--border)] bg-[rgba(0,0,0,0.14)] text-[var(--text-secondary)]"
-                              aria-label={copy.dragTrack}
-                            >
-                              <GripVertical size={12} strokeWidth={1.5} />
-                            </button>
+                            <div className="pointer-events-none absolute inset-y-0 left-0 w-px bg-[var(--accent)] opacity-80" />
+                            <ClipWaveform
+                              audioBuffer={track.buffer}
+                              width={Math.max(clipWidth, 32)}
+                              height={80}
+                              theme={theme}
+                              isMuted={track.muted}
+                            />
 
-                            <div
-                              className="relative h-full w-full touch-none pl-8"
-                              onPointerDown={(event) => {
-                                event.stopPropagation();
-                                onSelectTrack?.(track.id);
+                            {track.isActive ? (
+                              <>
+                                {!isFullSelection ? (
+                                  <div
+                                    data-testid="audio-selection-overlay"
+                                    className="pointer-events-none absolute inset-y-0 bg-[var(--selection-bg)]"
+                                    style={{
+                                      left: `${selectionStartPercent * 100}%`,
+                                      width: `${Math.max((selectionEndPercent - selectionStartPercent) * 100, 0.6)}%`,
+                                      boxShadow:
+                                        'inset 2px 0 0 var(--selection-border), inset -2px 0 0 var(--selection-border)',
+                                    }}
+                                  />
+                                ) : null}
 
-                                if (!track.buffer) {
-                                  onSeek?.(track.startTime, track.id);
-                                  return;
-                                }
-
-                                const handle = (event.target as HTMLElement).closest<HTMLElement>('[data-selection-handle]')
-                                  ?.dataset.selectionHandle as SelectionHandle | undefined;
-                                const projectTime = getProjectTimeFromClientX(event.clientX);
-                                const localTime = clamp(projectTime - track.startTime, 0, track.buffer.duration);
-
-                                onSeek?.(projectTime, track.id);
-                                setInteraction({
-                                  kind: 'selection',
-                                  trackId: track.id,
-                                  trackStartTime: track.startTime,
-                                  trackDuration: track.buffer.duration,
-                                  anchorTime: localTime,
-                                  handle: handle ?? null,
-                                  initialStart: track.isActive ? selectionStart : 0,
-                                  initialEnd: track.isActive ? selectionEnd : track.buffer.duration,
-                                });
-                              }}
-                            >
-                              <ClipWaveform
-                                audioBuffer={track.buffer}
-                                width={Math.max(clipWidth - 32, 48)}
-                                height={80}
-                                theme={theme}
-                                isMuted={track.muted}
-                              />
-
-                              {track.isActive ? (
-                                <>
-                                  {!isFullSelection ? (
-                                    <div
-                                      data-testid="audio-selection-overlay"
-                                      className="pointer-events-none absolute inset-y-0 bg-[var(--selection-bg)]"
-                                      style={{
-                                        left: `${selectionStartPercent * 100}%`,
-                                        width: `${Math.max((selectionEndPercent - selectionStartPercent) * 100, 0.6)}%`,
-                                        boxShadow:
-                                          'inset 2px 0 0 var(--selection-border), inset -2px 0 0 var(--selection-border)',
-                                      }}
-                                    />
-                                  ) : null}
-
-                                  <button
-                                    type="button"
-                                    data-selection-handle="start"
-                                    data-testid="audio-selection-handle-start"
-                                    className="absolute inset-y-1 left-0 z-10 w-4 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent"
-                                    style={{ left: isFullSelection ? '8px' : `${selectionStartPercent * 100}%` }}
-                                    aria-label="Selection start"
-                                  >
-                                    <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-[var(--selection-border)]" />
-                                    <span className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
-                                    <span className="absolute bottom-1.5 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    data-selection-handle="end"
-                                    data-testid="audio-selection-handle-end"
-                                    className="absolute inset-y-1 z-10 w-4 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent"
-                                    style={{ left: isFullSelection ? 'calc(100% - 8px)' : `${selectionEndPercent * 100}%` }}
-                                    aria-label="Selection end"
-                                  >
-                                    <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-[var(--selection-border)]" />
-                                    <span className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
-                                    <span className="absolute bottom-1.5 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
-                                  </button>
-                                </>
-                              ) : null}
-                            </div>
+                                <button
+                                  type="button"
+                                  data-selection-handle="start"
+                                  data-testid="audio-selection-handle-start"
+                                  className="absolute inset-y-1 left-0 z-10 w-4 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent"
+                                  style={{ left: isFullSelection ? '8px' : `${selectionStartPercent * 100}%` }}
+                                  aria-label="Selection start"
+                                >
+                                  <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-[var(--selection-border)]" />
+                                  <span className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
+                                  <span className="absolute bottom-1.5 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
+                                </button>
+                                <button
+                                  type="button"
+                                  data-selection-handle="end"
+                                  data-testid="audio-selection-handle-end"
+                                  className="absolute inset-y-1 z-10 w-4 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent"
+                                  style={{ left: isFullSelection ? 'calc(100% - 8px)' : `${selectionEndPercent * 100}%` }}
+                                  aria-label="Selection end"
+                                >
+                                  <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-[var(--selection-border)]" />
+                                  <span className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
+                                  <span className="absolute bottom-1.5 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
+                                </button>
+                              </>
+                            ) : null}
                           </div>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onSelectTrack?.(track.id);
-                              onSeek?.(track.startTime, track.id);
-                            }}
-                            className="audio-focus-ring flex h-full w-full items-center justify-center px-4 text-center text-xs text-[var(--text-secondary)]"
+                          <div
+                            data-testid="audio-track-empty-lane"
+                            className={`absolute inset-y-1 left-[24px] right-[24px] flex items-center rounded-[12px] border border-dashed px-4 text-sm ${
+                              track.isActive
+                                ? 'border-[var(--accent)] text-[var(--text-primary)]'
+                                : 'border-[var(--border)] text-[var(--text-secondary)]'
+                            }`}
                           >
                             {copy.emptyTrack}
-                          </button>
+                          </div>
                         )}
                       </div>
                     </div>
                   );
-                })}
-              </div>
+                })
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </section>

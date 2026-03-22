@@ -85,37 +85,41 @@ async function createDemoVideoBuffer(page: Page) {
   return Buffer.from(bytes);
 }
 
-async function getOptionalAudioTrackRowCount(page: Page) {
-  const directRows = page.locator('[data-testid^="audio-track-row"]');
-  const directRowCount = await directRows.count();
-  if (directRowCount > 0) {
-    return directRowCount;
+function createDemoAudioBuffer(durationSeconds: number, frequency = 220) {
+  const sampleRate = 44_100;
+  const frameCount = Math.max(1, Math.round(sampleRate * durationSeconds));
+  const channelCount = 1;
+  const bytesPerSample = 2;
+  const blockAlign = channelCount * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = frameCount * blockAlign;
+  const buffer = Buffer.alloc(44 + dataSize);
+
+  buffer.write('RIFF', 0);
+  buffer.writeUInt32LE(36 + dataSize, 4);
+  buffer.write('WAVE', 8);
+  buffer.write('fmt ', 12);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(channelCount, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(byteRate, 28);
+  buffer.writeUInt16LE(blockAlign, 32);
+  buffer.writeUInt16LE(bytesPerSample * 8, 34);
+  buffer.write('data', 36);
+  buffer.writeUInt32LE(dataSize, 40);
+
+  for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+    const sample = Math.sin((2 * Math.PI * frequency * frameIndex) / sampleRate) * 0.32;
+    buffer.writeInt16LE(Math.round(sample * 32_767), 44 + frameIndex * bytesPerSample);
   }
 
-  const trackList = page.getByTestId('audio-track-list');
-  if ((await trackList.count()) === 0) {
-    return 0;
-  }
-
-  return await trackList.first().locator('[data-testid^="audio-track-row"]').count();
+  return buffer;
 }
 
-async function expectOptionalAudioEnhancements(page: Page) {
-  const reverbTrigger = page.getByRole('button', { name: /Reverb/i });
-  if ((await reverbTrigger.count()) > 0) {
-    await expect(reverbTrigger.first()).toBeVisible();
-  }
-
-  const trackList = page.getByTestId('audio-track-list');
-  if ((await trackList.count()) > 0) {
-    await expect(trackList.first()).toBeVisible();
-    expect(await getOptionalAudioTrackRowCount(page)).toBeGreaterThanOrEqual(1);
-  }
-
-  const masterWaveform = page.getByTestId('audio-master-waveform');
-  if ((await masterWaveform.count()) > 0) {
-    await expect(masterWaveform.first()).toBeVisible();
-  }
+async function expectNoLegacyAudioContainers(page: Page) {
+  await expect(page.getByTestId('audio-track-list')).toHaveCount(0);
+  await expect(page.getByTestId('audio-master-waveform')).toHaveCount(0);
 }
 
 test('theme toggle changes the global theme without hydration errors', async ({ page }) => {
@@ -370,6 +374,7 @@ test('audio editor empty state keeps a single transport bar and hides playback a
   await expect(page.getByText(/Open audio or press(?: the)? record(?: button)?(?: below)? to get started\./i)).toBeVisible();
   await expect(page.getByText('Trim')).toBeVisible();
   await expect(page.getByText('Audio convert')).toBeVisible();
+  await expectNoLegacyAudioContainers(page);
 });
 
 test('audio editor route exposes the unified editor workspace', async ({ page }) => {
@@ -395,11 +400,9 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   await expect(page.getByText(/^Loaded sample\.wav/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Fade|Speed|Pitch|Amplify|EQ|Reverb/i }).first()).toBeVisible();
   await expect(page.getByTestId('audio-track-timeline-stack')).toBeVisible();
-  await expectOptionalAudioEnhancements(page);
-  const initialTrackRowCount = await getOptionalAudioTrackRowCount(page);
-  if (initialTrackRowCount > 0) {
-    expect(initialTrackRowCount).toBeGreaterThanOrEqual(1);
-  }
+  await expectNoLegacyAudioContainers(page);
+  await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1);
+  await expect(page.getByTestId('audio-track-waveform-surface')).toHaveCount(1);
 
   const replacementChooserPromise = page.waitForEvent('filechooser');
   await page.getByLabel('Open audio').click();
@@ -412,15 +415,18 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   await expect(page.getByText('replacement.wav').first()).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText(/^Loaded replacement\.wav/)).toHaveCount(0);
   await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(2);
-  const postUploadTrackRowCount = await getOptionalAudioTrackRowCount(page);
-  if (postUploadTrackRowCount > 0) {
-    expect(postUploadTrackRowCount).toBeGreaterThanOrEqual(2);
+  await expect(page.getByTestId('audio-track-waveform-surface')).toHaveCount(2);
+  await expectNoLegacyAudioContainers(page);
+
+  const rows = page.getByTestId('audio-track-stack-row');
+  for (let rowIndex = 0; rowIndex < 2; rowIndex += 1) {
+    await expect(rows.nth(rowIndex).getByTestId('audio-track-waveform-surface')).toHaveCount(1);
   }
 
   const replacementDownloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Save as' }).click();
   await page.locator('#audio-save-name').fill('replacement-copy');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   const replacementDownload = await replacementDownloadPromise;
   expect(replacementDownload.suggestedFilename()).toBe('replacement-copy.wav');
 
@@ -434,6 +440,11 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   if (!waveformBox) {
     throw new Error('Audio waveform area was not available.');
   }
+  const activeSurface = page.getByTestId('audio-track-waveform-surface').nth(1);
+  const activeSurfaceBox = await activeSurface.boundingBox();
+  if (!activeSurfaceBox) {
+    throw new Error('Active track waveform surface was not available.');
+  }
 
   const playhead = page.getByTestId('audio-playhead');
   const initialPlayheadBox = await playhead.boundingBox();
@@ -441,13 +452,16 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
     throw new Error('Audio playhead was not available before seeking.');
   }
 
-  await page.mouse.click(waveformBox.x + waveformBox.width * 0.72, waveformBox.y + 44);
+  await page.mouse.click(
+    activeSurfaceBox.x + activeSurfaceBox.width * 0.72,
+    activeSurfaceBox.y + activeSurfaceBox.height / 2,
+  );
   const soughtPlayheadBox = await playhead.boundingBox();
   if (!soughtPlayheadBox) {
     throw new Error('Audio playhead was not available after seeking.');
   }
   expect(soughtPlayheadBox.x + soughtPlayheadBox.width / 2).toBeGreaterThan(
-    initialPlayheadBox.x + initialPlayheadBox.width / 2 + waveformBox.width * 0.2,
+    initialPlayheadBox.x + initialPlayheadBox.width / 2 + activeSurfaceBox.width * 0.2,
   );
 
   await page.mouse.move(
@@ -455,19 +469,23 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
     soughtPlayheadBox.y + soughtPlayheadBox.height / 2,
   );
   await page.mouse.down();
-  await page.mouse.move(waveformBox.x + waveformBox.width * 0.36, waveformBox.y + 44, { steps: 10 });
+  await page.mouse.move(
+    activeSurfaceBox.x + activeSurfaceBox.width * 0.36,
+    activeSurfaceBox.y + activeSurfaceBox.height / 2,
+    { steps: 10 },
+  );
   await page.mouse.up();
   const draggedPlayheadBox = await playhead.boundingBox();
   if (!draggedPlayheadBox) {
     throw new Error('Audio playhead was not available after dragging.');
   }
   expect(draggedPlayheadBox.x + draggedPlayheadBox.width / 2).toBeLessThan(
-    soughtPlayheadBox.x + soughtPlayheadBox.width / 2 - waveformBox.width * 0.18,
+    soughtPlayheadBox.x + soughtPlayheadBox.width / 2 - 24,
   );
 
-  await page.mouse.move(waveformBox.x + 100, waveformBox.y + 60);
+  await page.mouse.move(activeSurfaceBox.x + 40, activeSurfaceBox.y + activeSurfaceBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(waveformBox.x + 340, waveformBox.y + 60, { steps: 12 });
+  await page.mouse.move(activeSurfaceBox.x + 220, activeSurfaceBox.y + activeSurfaceBox.height / 2, { steps: 12 });
   await page.mouse.up();
 
   await expect(page.getByText('Selected range', { exact: true })).toHaveCount(1);
@@ -494,7 +512,9 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   if (!endPlayheadBox) {
     throw new Error('Audio playhead was not available at the end position.');
   }
-  expect(endPlayheadBox.x + endPlayheadBox.width / 2).toBeGreaterThan(waveformBox.x + waveformBox.width * 0.85);
+  expect(endPlayheadBox.x + endPlayheadBox.width / 2).toBeGreaterThan(
+    activeSurfaceBox.x + activeSurfaceBox.width * 0.92,
+  );
 
   const transport = page.getByTestId('audio-transport-bar');
   await transport.getByRole('button', { name: 'Play' }).click();
@@ -508,8 +528,100 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   await expect(page.getByText(/^0:00\.000 \//)).toBeVisible();
 
   await expect(page.getByRole('button', { name: /Amplify|Reverb/i }).first()).toBeVisible();
-  await expectOptionalAudioEnhancements(page);
+  await expectNoLegacyAudioContainers(page);
 
+});
+
+test('each multitrack row renders exactly one waveform surface and shorter tracks stay shorter', async ({ page }) => {
+  await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
+
+  await page.locator('input[type="file"]').setInputFiles([
+    {
+      name: 'short.wav',
+      mimeType: 'audio/wav',
+      buffer: createDemoAudioBuffer(0.65, 220),
+    },
+    {
+      name: 'long.wav',
+      mimeType: 'audio/wav',
+      buffer: createDemoAudioBuffer(2.4, 330),
+    },
+  ]);
+
+  await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(2, { timeout: 60_000 });
+  await expect(page.getByTestId('audio-track-waveform-surface')).toHaveCount(2);
+  await expectNoLegacyAudioContainers(page);
+
+  const rows = page.getByTestId('audio-track-stack-row');
+  for (let rowIndex = 0; rowIndex < 2; rowIndex += 1) {
+    await expect(rows.nth(rowIndex).getByTestId('audio-track-waveform-surface')).toHaveCount(1);
+  }
+
+  const shortClipBox = await page.getByTestId('audio-track-waveform-surface').first().boundingBox();
+  const longClipBox = await page.getByTestId('audio-track-waveform-surface').nth(1).boundingBox();
+  const scrollBox = await page.getByTestId('audio-waveform-scroll').boundingBox();
+  if (!shortClipBox || !longClipBox || !scrollBox) {
+    throw new Error('Multitrack waveform surfaces were not available for width comparison.');
+  }
+
+  expect(shortClipBox.width).toBeLessThan(longClipBox.width - 40);
+  expect(shortClipBox.width).toBeLessThan(scrollBox.width * 0.75);
+});
+
+test('dragging a clip moves only that clip on the shared timeline', async ({ page }) => {
+  await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
+
+  await page.locator('input[type="file"]').setInputFiles([
+    {
+      name: 'clip-a.wav',
+      mimeType: 'audio/wav',
+      buffer: createDemoAudioBuffer(1.2, 220),
+    },
+    {
+      name: 'clip-b.wav',
+      mimeType: 'audio/wav',
+      buffer: createDemoAudioBuffer(1.2, 440),
+    },
+  ]);
+
+  await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(2, { timeout: 60_000 });
+  await expect(page.getByTestId('audio-track-waveform-surface')).toHaveCount(2);
+
+  const firstClip = page.getByTestId('audio-track-waveform-surface').first();
+  const secondClip = page.getByTestId('audio-track-waveform-surface').nth(1);
+  const dragHandle = page.getByTestId('audio-track-drag-handle').first();
+  const playhead = page.getByTestId('audio-playhead');
+
+  const firstClipBefore = await firstClip.boundingBox();
+  const secondClipBefore = await secondClip.boundingBox();
+  const playheadBefore = await playhead.boundingBox();
+  const dragHandleBox = await dragHandle.boundingBox();
+  if (!firstClipBefore || !secondClipBefore || !playheadBefore) {
+    throw new Error('Clip or playhead bounds were not available before dragging.');
+  }
+  if (!dragHandleBox) {
+    throw new Error('Track drag handle was not available before dragging.');
+  }
+
+  await page.mouse.move(dragHandleBox.x + dragHandleBox.width / 2, dragHandleBox.y + dragHandleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(dragHandleBox.x + dragHandleBox.width / 2 + 180, dragHandleBox.y + dragHandleBox.height / 2, {
+    steps: 12,
+  });
+  await page.mouse.up();
+
+  const firstClipAfter = await firstClip.boundingBox();
+  const secondClipAfter = await secondClip.boundingBox();
+  const playheadAfter = await playhead.boundingBox();
+  if (!firstClipAfter || !secondClipAfter || !playheadAfter) {
+    throw new Error('Clip or playhead bounds were not available after dragging.');
+  }
+
+  expect(firstClipAfter.x).toBeGreaterThan(firstClipBefore.x + 24);
+  expect(Math.abs(secondClipAfter.x - secondClipBefore.x)).toBeLessThanOrEqual(2);
+  expect(Math.abs(playheadAfter.x - playheadBefore.x)).toBeLessThanOrEqual(2);
 });
 
 test.skip('audio editor localizes save, record, and conversion actions in korean mode', async ({ page }) => {
@@ -572,10 +684,15 @@ test('audio editor localizes save and record actions in korean mode', async ({ p
   if (!waveformBox) {
     throw new Error('Audio waveform area was not available.');
   }
+  const activeSurface = page.getByTestId('audio-track-waveform-surface').first();
+  const activeSurfaceBox = await activeSurface.boundingBox();
+  if (!activeSurfaceBox) {
+    throw new Error('Active track waveform surface was not available.');
+  }
 
-  await page.mouse.move(waveformBox.x + 100, waveformBox.y + 60);
+  await page.mouse.move(activeSurfaceBox.x + 40, activeSurfaceBox.y + activeSurfaceBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(waveformBox.x + 340, waveformBox.y + 60, { steps: 12 });
+  await page.mouse.move(activeSurfaceBox.x + 220, activeSurfaceBox.y + activeSurfaceBox.height / 2, { steps: 12 });
   await page.mouse.up();
 
   await expect(page.getByTestId('audio-selection-bar')).toHaveCount(1);
@@ -641,16 +758,14 @@ test('audio recording can pause and resume before opening the take in the editor
   await page.getByRole('button', { name: 'Stop recording' }).click();
   await expect(page.getByRole('button', { name: 'Save as' })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText(/^Loaded audio-recording-/)).toHaveCount(0);
-  await expectOptionalAudioEnhancements(page);
-  const recordingTrackRowCount = await getOptionalAudioTrackRowCount(page);
-  if (recordingTrackRowCount > 0) {
-    expect(recordingTrackRowCount).toBeGreaterThanOrEqual(1);
-  }
+  await expectNoLegacyAudioContainers(page);
+  await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1);
+  await expect(page.getByTestId('audio-track-waveform-surface')).toHaveCount(1);
 
   const recordingDownloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Save as' }).click();
   await page.locator('#audio-save-name').fill('recording-take');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   const recordingDownload = await recordingDownloadPromise;
   expect(recordingDownload.suggestedFilename()).toBe('recording-take.wav');
 });
