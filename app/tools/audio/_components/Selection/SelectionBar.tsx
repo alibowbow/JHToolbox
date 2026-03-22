@@ -103,7 +103,7 @@ export function SelectionBar({
                 aria-label={copy.selection.end}
               />
             </label>
-            <div className="rounded-md border border-[var(--border)] bg-[rgba(255,255,255,0.02)] px-3 py-2">
+            <div className="rounded-md border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
               <p className="audio-range-label">{copy.selection.length}</p>
               <p className="audio-mono mt-1 text-[13px] text-[var(--text-secondary)]">{formatTime(selectionLength)}</p>
             </div>

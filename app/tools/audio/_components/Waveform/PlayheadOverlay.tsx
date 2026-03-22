@@ -20,10 +20,10 @@ export function PlayheadOverlay({ positionPercent, currentTime, isDragging = fal
       style={{ left: `calc(${positionPercent * 100}% + ${edgeOffset}px)` }}
       aria-label={`Playhead ${formatTime(currentTime)}`}
     >
-      <span className="pointer-events-none absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 bg-[var(--accent)] shadow-[0_0_0_1px_rgba(0,0,0,0.28),0_0_14px_rgba(0,212,200,0.22)]" />
+      <span className="pointer-events-none absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 bg-[var(--accent)] shadow-[0_0_0_1px_var(--border-strong),0_0_14px_rgba(0,212,200,0.22)]" />
       <span className="pointer-events-none absolute -top-1 left-1/2 h-0 w-0 -translate-x-1/2 border-l-[4px] border-r-[4px] border-t-0 border-b-[6px] border-l-transparent border-r-transparent border-b-[var(--accent)]" />
       {isDragging ? (
-        <span className="audio-mono pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 rounded-md border border-[var(--border-strong)] bg-[rgba(30,32,35,0.96)] px-2 py-1 text-[10px] text-[var(--text-primary)]">
+        <span className="audio-mono pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 rounded-md border border-[var(--border-strong)] bg-[var(--waveform-label-bg)] px-2 py-1 text-[10px] text-[var(--text-primary)]">
           {formatTime(currentTime)}
         </span>
       ) : null}

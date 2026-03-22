@@ -36,7 +36,7 @@ export function ToolPageLayout({
             <div className="min-w-0">
               <p className="workspace-kicker">Tool workspace</p>
               <h2 className="mt-2 text-3xl font-semibold tracking-tight text-ink sm:text-4xl">{title}</h2>
-              <p className="mt-2 max-w-3xl text-sm leading-relaxed text-ink-muted sm:text-base">{description}</p>
+              <p className="mt-2 max-w-3xl text-sm leading-relaxed text-ink sm:text-base">{description}</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:w-auto">

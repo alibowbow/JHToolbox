@@ -88,7 +88,7 @@ export function EffectsPanel({
         })}
       </div>
 
-      <div className="mt-4 flex-1 rounded-[14px] border border-[var(--border)] bg-[rgba(255,255,255,0.02)] p-4">
+      <div className="mt-4 flex-1 rounded-[14px] border border-[var(--border)] bg-[var(--surface-muted)] p-4">
         {activeTab === 'fade' ? (
           <FadeControls
             fadeIn={effects.fadeIn}

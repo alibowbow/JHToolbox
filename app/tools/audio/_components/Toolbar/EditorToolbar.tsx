@@ -143,7 +143,7 @@ export function EditorToolbar({
                 <label className="audio-section-kicker" htmlFor="audio-save-name">
                   {filenameLabel}
                 </label>
-                <div className="flex items-center gap-2 rounded-[12px] border border-[var(--border)] bg-[rgba(255,255,255,0.03)] px-3 py-2">
+                <div className="flex items-center gap-2 rounded-[12px] border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
                   <input
                     id="audio-save-name"
                     type="text"
@@ -170,7 +170,7 @@ export function EditorToolbar({
                     className={`audio-focus-ring rounded-[12px] border px-3 py-2 text-sm transition ${
                       saveFormat === 'wav'
                         ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.12)] text-[var(--text-primary)]'
-                        : 'border-[var(--border)] bg-[rgba(255,255,255,0.02)] text-[var(--text-secondary)] hover:bg-[rgba(255,255,255,0.04)]'
+                        : 'border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)]'
                     }`}
                   >
                     {copy.toolbar.exportWav}
@@ -181,7 +181,7 @@ export function EditorToolbar({
                     className={`audio-focus-ring rounded-[12px] border px-3 py-2 text-sm transition ${
                       saveFormat === 'mp3'
                         ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.12)] text-[var(--text-primary)]'
-                        : 'border-[var(--border)] bg-[rgba(255,255,255,0.02)] text-[var(--text-secondary)] hover:bg-[rgba(255,255,255,0.04)]'
+                        : 'border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)]'
                     }`}
                   >
                     {copy.toolbar.exportMp3}

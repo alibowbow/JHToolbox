@@ -780,14 +780,10 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       <div className="mt-3">{statusLines}</div>
     </div>
   );
-  const emptyStateDescription =
+  const emptyStateFeatures =
     locale === 'ko'
-      ? '파일 업로드나 마이크 녹음 후 자르기, 효과 적용, 저장까지 한 곳에서 처리하는 오디오 편집기입니다.'
-      : 'Open or record one file, then trim, preview effects, and save it in a single audio workspace.';
-  const emptyStateHint =
-    locale === 'ko'
-      ? '상단의 오디오 열기 또는 아래 녹음 버튼으로 바로 시작할 수 있습니다.'
-      : 'Use the top open button or the recording controls below to start right away.';
+      ? ['자르기', '오디오 변환', '녹음', '속도 변경', '피치 변경', '앰플리파이', 'EQ', '다른 이름으로 저장']
+      : ['Trim', 'Audio convert', 'Record', 'Speed', 'Pitch', 'Amplify', 'EQ', 'Save as'];
 
   return (
     <div
@@ -826,7 +822,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
         onToggleLoop={() => setLoopEnabled((currentValue) => !currentValue)}
       />
 
-      <div className="border-b border-[var(--border)] bg-[rgba(14,15,17,0.55)] px-3 py-3 sm:px-4">
+      <div className="border-b border-[var(--border)] bg-[var(--topbar-bg)] px-3 py-3 sm:px-4">
         <TransportBar
           currentTime={currentTime}
           duration={duration}
@@ -886,12 +882,16 @@ export function AudioEditor({ mode }: AudioEditorProps) {
           </section>
         ) : (
           <div className="audio-panel rounded-[20px] p-6 sm:p-8">
-            <div className="mx-auto flex max-w-2xl min-h-[220px] flex-col justify-center space-y-3">
-              <div className="space-y-3">
-                <p className="audio-section-kicker">{copy.fileDrop.title}</p>
-                <h2 className="text-lg font-medium text-[var(--text-primary)]">{copy.fileDrop.emptyState}</h2>
-                <p className="text-sm leading-relaxed text-[var(--text-secondary)]">{emptyStateDescription}</p>
-                <p className="text-sm text-[var(--text-tertiary)]">{emptyStateHint}</p>
+            <div className="mx-auto flex min-h-[180px] max-w-3xl flex-col justify-center">
+              <div className="flex flex-wrap gap-2">
+                {emptyStateFeatures.map((feature) => (
+                  <span
+                    key={feature}
+                    className="inline-flex items-center rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-sm text-[var(--text-secondary)]"
+                  >
+                    {feature}
+                  </span>
+                ))}
               </div>
             </div>
           </div>

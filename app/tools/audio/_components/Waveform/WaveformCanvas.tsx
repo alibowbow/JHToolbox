@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
+import { useTheme } from '@/components/providers/theme-provider';
 import { renderWaveform } from '@/lib/audio';
 import { clamp } from '../audio-editor-utils';
 import { getAudioEditorCopy } from '../audio-editor-copy';
@@ -40,6 +41,7 @@ export function WaveformCanvas({
   onSelectionChange,
 }: WaveformCanvasProps) {
   const { locale } = useLocale();
+  const { theme } = useTheme();
   const copy = getAudioEditorCopy(locale);
   const [baseWidth, setBaseWidth] = useState(0);
   const [dragMode, setDragMode] = useState<DragMode | null>(null);
@@ -49,7 +51,7 @@ export function WaveformCanvas({
   const dragStartXRef = useRef<number | null>(null);
   const didDragRef = useRef(false);
   const dragSelectionRef = useRef({ start: 0, end: 0 });
-  const theme: 'light' | 'dark' = 'dark';
+  const waveformTheme: 'light' | 'dark' = theme;
   const viewportWidth = Math.max(baseWidth || 0, 320);
   const canvasWidth = Math.max(280, Math.round(viewportWidth * zoom));
   const safeDuration = Math.max(duration, 0.001);
@@ -93,7 +95,7 @@ export function WaveformCanvas({
       }
 
       context.setTransform(1, 0, 0, 1, 0, 0);
-      context.fillStyle = '#0A1A19';
+      context.fillStyle = waveformTheme === 'dark' ? '#0A1A19' : 'rgba(248, 250, 252, 1)';
       context.fillRect(0, 0, canvasNode.width, canvasNode.height);
       return;
     }
@@ -105,9 +107,9 @@ export function WaveformCanvas({
       endSec: audioBuffer.duration,
       selectionStart,
       selectionEnd,
-      theme,
+      theme: waveformTheme,
     });
-  }, [audioBuffer, canvasNode, canvasWidth, selectionEnd, selectionStart, theme]);
+  }, [audioBuffer, canvasNode, canvasWidth, selectionEnd, selectionStart, waveformTheme]);
 
   const getPositionFromClientX = (clientX: number) => {
     if (!scrollNode) {
@@ -235,8 +237,8 @@ export function WaveformCanvas({
                 aria-label="Selection start"
               >
                 <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-[var(--selection-border)]" />
-                <span className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[rgba(14,15,17,0.82)] bg-[var(--selection-border)]" />
-                <span className="absolute bottom-1.5 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[rgba(14,15,17,0.82)] bg-[var(--selection-border)]" />
+                <span className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
+                <span className="absolute bottom-1.5 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
               </button>
               <button
                 type="button"
@@ -247,8 +249,8 @@ export function WaveformCanvas({
                 aria-label="Selection end"
               >
                 <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-[var(--selection-border)]" />
-                <span className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[rgba(14,15,17,0.82)] bg-[var(--selection-border)]" />
-                <span className="absolute bottom-1.5 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[rgba(14,15,17,0.82)] bg-[var(--selection-border)]" />
+                <span className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
+                <span className="absolute bottom-1.5 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
               </button>
             </>
           ) : null}
@@ -261,18 +263,18 @@ export function WaveformCanvas({
             />
           ) : null}
 
-          <div className="audio-mono absolute left-3 top-3 z-10 rounded-md border border-[var(--border)] bg-[rgba(30,32,35,0.94)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)]">
+          <div className="audio-mono absolute left-3 top-3 z-10 rounded-md border border-[var(--border)] bg-[var(--waveform-label-bg)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)]">
             {fileName}
           </div>
 
           {isSilent ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <div className="flex w-full max-w-sm items-center gap-3 px-6">
-                <span className="h-px flex-1 bg-[rgba(255,255,255,0.14)]" />
+                <span className="h-px flex-1 bg-[var(--waveform-grid)]" />
                 <span className="audio-mono text-[11px] text-[var(--text-secondary)]">
                   {copy.waveform.silentNotice}
                 </span>
-                <span className="h-px flex-1 bg-[rgba(255,255,255,0.14)]" />
+                <span className="h-px flex-1 bg-[var(--waveform-grid)]" />
               </div>
             </div>
           ) : null}

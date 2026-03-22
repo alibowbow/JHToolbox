@@ -16,7 +16,7 @@ export function WaveformTimeline({ duration, zoom }: WaveformTimelineProps) {
   const step = duration > 0 ? duration / segments : 0;
 
   return (
-    <div className="flex h-7 items-center border-b border-[var(--border)] bg-[rgba(14,15,17,0.88)] px-3">
+    <div className="flex h-7 items-center border-b border-[var(--border)] bg-[var(--topbar-bg)] px-3">
       <div className="flex items-center justify-between gap-2">
         <span className="audio-section-kicker pr-3">{copy.waveform.timeline}</span>
       </div>
