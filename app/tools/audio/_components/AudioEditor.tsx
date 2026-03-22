@@ -1,6 +1,5 @@
 'use client';
 
-import { Play } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import {
@@ -37,7 +36,7 @@ import {
 } from './audio-editor-utils';
 import { EffectsPanel } from './Effects/EffectsPanel';
 import { SelectionBar } from './Selection/SelectionBar';
-import { TrackListPanel } from './Tracks';
+import { TrackListPanel, TrackTimelineStack } from './Tracks';
 import { EditorToolbar } from './Toolbar/EditorToolbar';
 import { TransportBar } from './Transport/TransportBar';
 import { WaveformCanvas } from './Waveform/WaveformCanvas';
@@ -132,6 +131,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const hasActiveSelection = hasTrackSelection(buffer, selection);
   const activeTrackName = activeTrack?.name ?? null;
   const projectDuration = mixdownBuffer?.duration ?? getMixdownDuration(projectTracks);
+  const projectCurrentTime = audioEngine.buffer === buffer ? currentTime + (activeTrack?.startTime ?? 0) : currentTime;
   const canSave = Boolean(buffer) && !isRecording;
 
   useEffect(() => {
@@ -1052,6 +1052,28 @@ export function AudioEditor({ mode }: AudioEditorProps) {
           </div>
         )}
 
+        {projectTracks.length > 0 ? (
+          <TrackTimelineStack
+            tracks={projectTracks.map((track) => ({
+              id: track.id,
+              name: track.name,
+              source: track.source,
+              startTime: track.startTime,
+              gain: track.gain,
+              muted: track.muted,
+              solo: track.solo,
+              isActive: track.id === activeTrack?.id,
+              buffer: track.buffer,
+            }))}
+            duration={projectDuration || duration}
+            currentTime={projectCurrentTime}
+            zoom={zoom}
+            onSelectTrack={setActiveTrackId}
+            onAddTracks={openPicker}
+            onPreviewMix={projectTracks.length > 1 ? () => void handlePreviewMix() : undefined}
+          />
+        ) : null}
+
         {buffer && hasActiveSelection ? (
           <SelectionBar
             start={selection.start}
@@ -1089,17 +1111,6 @@ export function AudioEditor({ mode }: AudioEditorProps) {
             />
 
             <div className="space-y-3">
-              {projectTracks.length > 1 ? (
-                <button
-                  type="button"
-                  onClick={() => void handlePreviewMix()}
-                  className="audio-button-secondary audio-focus-ring h-9 px-3"
-                >
-                  <Play size={14} strokeWidth={1.5} />
-                  {locale === 'ko' ? '믹스 미리듣기' : 'Preview mix'}
-                </button>
-              ) : null}
-
               <TrackListPanel
                 tracks={projectTracks.map((track) => ({
                   id: track.id,

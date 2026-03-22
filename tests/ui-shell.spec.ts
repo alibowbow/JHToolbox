@@ -394,6 +394,7 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   await expect(page.getByTestId('audio-selection-handle-end')).toHaveCount(1);
   await expect(page.getByText(/^Loaded sample\.wav/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Fade|Speed|Pitch|Amplify|EQ|Reverb/i }).first()).toBeVisible();
+  await expect(page.getByTestId('audio-track-timeline-stack')).toBeVisible();
   await expectOptionalAudioEnhancements(page);
   const initialTrackRowCount = await getOptionalAudioTrackRowCount(page);
   if (initialTrackRowCount > 0) {
@@ -410,9 +411,10 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   });
   await expect(page.getByText('replacement.wav').first()).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText(/^Loaded replacement\.wav/)).toHaveCount(0);
+  await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(2);
   const postUploadTrackRowCount = await getOptionalAudioTrackRowCount(page);
   if (postUploadTrackRowCount > 0) {
-    expect(postUploadTrackRowCount).toBeGreaterThanOrEqual(initialTrackRowCount || 1);
+    expect(postUploadTrackRowCount).toBeGreaterThanOrEqual(2);
   }
 
   const replacementDownloadPromise = page.waitForEvent('download');
