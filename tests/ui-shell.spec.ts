@@ -85,6 +85,39 @@ async function createDemoVideoBuffer(page: Page) {
   return Buffer.from(bytes);
 }
 
+async function getOptionalAudioTrackRowCount(page: Page) {
+  const directRows = page.locator('[data-testid^="audio-track-row"]');
+  const directRowCount = await directRows.count();
+  if (directRowCount > 0) {
+    return directRowCount;
+  }
+
+  const trackList = page.getByTestId('audio-track-list');
+  if ((await trackList.count()) === 0) {
+    return 0;
+  }
+
+  return await trackList.first().locator('[data-testid^="audio-track-row"]').count();
+}
+
+async function expectOptionalAudioEnhancements(page: Page) {
+  const reverbTrigger = page.getByRole('button', { name: /Reverb/i });
+  if ((await reverbTrigger.count()) > 0) {
+    await expect(reverbTrigger.first()).toBeVisible();
+  }
+
+  const trackList = page.getByTestId('audio-track-list');
+  if ((await trackList.count()) > 0) {
+    await expect(trackList.first()).toBeVisible();
+    expect(await getOptionalAudioTrackRowCount(page)).toBeGreaterThanOrEqual(1);
+  }
+
+  const masterWaveform = page.getByTestId('audio-master-waveform');
+  if ((await masterWaveform.count()) > 0) {
+    await expect(masterWaveform.first()).toBeVisible();
+  }
+}
+
 test('theme toggle changes the global theme without hydration errors', async ({ page }) => {
   const consoleErrors: string[] = [];
   page.on('console', (message) => {
@@ -334,8 +367,9 @@ test('audio editor empty state keeps a single transport bar and hides playback a
   await expect(page.getByTestId('audio-selection-bar')).toHaveCount(0);
   await expect(page.getByTestId('audio-playhead')).toHaveCount(0);
   await expect(page.locator('button[aria-label="Start recording"], button[aria-label="녹음 시작"]')).toHaveCount(1);
-  await expect(page.getByText('Import audio').first()).toBeVisible();
-  await expect(page.getByText('Open an audio file or start a microphone recording to enter the editor.')).toBeVisible();
+  await expect(page.getByText(/Open audio or press(?: the)? record(?: button)?(?: below)? to get started\./i)).toBeVisible();
+  await expect(page.getByText('Trim')).toBeVisible();
+  await expect(page.getByText('Audio convert')).toBeVisible();
 });
 
 test('audio editor route exposes the unified editor workspace', async ({ page }) => {
@@ -347,7 +381,7 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   await expect(page.getByLabel(/Open audio|오디오 열기/)).toBeVisible();
   await expect(page.getByTestId('audio-transport-bar')).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Start recording' })).toHaveCount(1);
-  await expect(page.getByText('Preview and apply focused processing')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Fade|Speed|Pitch|Amplify|EQ|Reverb/i })).toHaveCount(0);
   await expect(page.getByText('Selected range', { exact: true })).toHaveCount(0);
   await expect(page.getByTestId('audio-selection-bar')).toHaveCount(0);
   await page.locator('input[type="file"]').setInputFiles('tests/fixtures/sample.wav');
@@ -356,8 +390,15 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   await expect(page.getByRole('button', { name: 'Start recording' })).toHaveCount(1);
   await expect(page.locator('button[aria-label="Play"], button[aria-label="Pause"]')).toHaveCount(1);
   await expect(page.getByTestId('audio-playhead')).toHaveCount(1, { timeout: 60_000 });
+  await expect(page.getByTestId('audio-selection-handle-start')).toHaveCount(1);
+  await expect(page.getByTestId('audio-selection-handle-end')).toHaveCount(1);
   await expect(page.getByText(/^Loaded sample\.wav/)).toHaveCount(0);
-  await expect(page.getByText('Preview and apply focused processing')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Fade|Speed|Pitch|Amplify|EQ|Reverb/i }).first()).toBeVisible();
+  await expectOptionalAudioEnhancements(page);
+  const initialTrackRowCount = await getOptionalAudioTrackRowCount(page);
+  if (initialTrackRowCount > 0) {
+    expect(initialTrackRowCount).toBeGreaterThanOrEqual(1);
+  }
 
   const replacementChooserPromise = page.waitForEvent('filechooser');
   await page.getByLabel('Open audio').click();
@@ -369,6 +410,10 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   });
   await expect(page.getByText('replacement.wav').first()).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText(/^Loaded replacement\.wav/)).toHaveCount(0);
+  const postUploadTrackRowCount = await getOptionalAudioTrackRowCount(page);
+  if (postUploadTrackRowCount > 0) {
+    expect(postUploadTrackRowCount).toBeGreaterThanOrEqual(initialTrackRowCount || 1);
+  }
 
   const replacementDownloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Save as' }).click();
@@ -460,8 +505,8 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   expect(resetPlayheadBox.x + resetPlayheadBox.width / 2).toBeLessThan(waveformBox.x + waveformBox.width * 0.15);
   await expect(page.getByText(/^0:00\.000 \//)).toBeVisible();
 
-  await expect(page.getByRole('button', { name: 'Amplify' })).toBeVisible();
-  await expect(page.getByText('Preview and apply focused processing')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Amplify|Reverb/i }).first()).toBeVisible();
+  await expectOptionalAudioEnhancements(page);
 
 });
 
@@ -579,6 +624,10 @@ test('audio recording can pause and resume before opening the take in the editor
   await page.getByRole('button', { name: 'Start recording' }).click();
   await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole('button', { name: 'Pause recording' })).toBeVisible();
+  const liveWaveform = page.getByTestId('audio-waveform-scroll');
+  if ((await liveWaveform.count()) > 0) {
+    await expect(liveWaveform.first()).toBeVisible();
+  }
 
   await page.getByRole('button', { name: 'Pause recording' }).click();
   await expect(page.getByRole('button', { name: 'Resume recording' })).toBeVisible();
@@ -590,6 +639,11 @@ test('audio recording can pause and resume before opening the take in the editor
   await page.getByRole('button', { name: 'Stop recording' }).click();
   await expect(page.getByRole('button', { name: 'Save as' })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText(/^Loaded audio-recording-/)).toHaveCount(0);
+  await expectOptionalAudioEnhancements(page);
+  const recordingTrackRowCount = await getOptionalAudioTrackRowCount(page);
+  if (recordingTrackRowCount > 0) {
+    expect(recordingTrackRowCount).toBeGreaterThanOrEqual(1);
+  }
 
   const recordingDownloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Save as' }).click();

@@ -1,14 +1,22 @@
 'use client';
 
+import { Play } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
-import { LiveAudioWaveform } from '@/components/ui/LiveAudioWaveform';
-import { EditHistory, audioEngine, exportAudio } from '@/lib/audio';
+import {
+  EditHistory,
+  type AudioProjectTrack,
+  audioEngine,
+  exportAudio,
+  getMixdownDuration,
+  mixAudioTracks,
+} from '@/lib/audio';
 import { createWavRecordingSession, type WavRecordingSession } from '@/lib/processors/audio-recording';
 import {
   applyFadeToAudioRange,
   applyGainToAudioRange,
   applyPitchToAudioRange,
+  applyReverbToAudioRange,
   applySpeedToAudioRange,
   extractAudioRange,
   isSilentAudioBuffer,
@@ -16,11 +24,11 @@ import {
 } from './audio-buffer-transforms';
 import { getAudioEditorCopy } from './audio-editor-copy';
 import {
-  AudioEditorMode,
-  AudioEffectTab,
-  AudioEffectsState,
+  type AudioEditorMode,
+  type AudioEffectTab,
+  type AudioEffectsState,
+  type AudioSelection,
   AUDIO_ACCEPT,
-  AudioSelection,
   DEFAULT_EFFECTS,
   DEFAULT_SELECTION,
   clamp,
@@ -29,6 +37,7 @@ import {
 } from './audio-editor-utils';
 import { EffectsPanel } from './Effects/EffectsPanel';
 import { SelectionBar } from './Selection/SelectionBar';
+import { TrackListPanel } from './Tracks';
 import { EditorToolbar } from './Toolbar/EditorToolbar';
 import { TransportBar } from './Transport/TransportBar';
 import { WaveformCanvas } from './Waveform/WaveformCanvas';
@@ -46,12 +55,41 @@ function isTypingTarget(target: EventTarget | null) {
   );
 }
 
+function createTrackId(prefix = 'track') {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function createProjectTrack(name: string, buffer: AudioBuffer, source: AudioProjectTrack['source']): AudioProjectTrack {
+  return {
+    id: createTrackId(source === 'recording' ? 'take' : 'track'),
+    name,
+    buffer,
+    startTime: 0,
+    gain: 1,
+    muted: false,
+    solo: false,
+    source,
+  };
+}
+
+function hasTrackSelection(buffer: AudioBuffer | null, selection: AudioSelection) {
+  if (!buffer) {
+    return false;
+  }
+
+  return selection.start > 0.001 || selection.end < Math.max(buffer.duration - 0.001, 0);
+}
+
 export function AudioEditor({ mode }: AudioEditorProps) {
   const { locale } = useLocale();
   const copy = useMemo(() => getAudioEditorCopy(locale), [locale]);
-  const [files, setFiles] = useState<File[]>([]);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [buffer, setBuffer] = useState<AudioBuffer | null>(null);
+  const [projectTracks, setProjectTracks] = useState<AudioProjectTrack[]>([]);
+  const [activeTrackId, setActiveTrackId] = useState<string | null>(null);
+  const [mixdownBuffer, setMixdownBuffer] = useState<AudioBuffer | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -64,7 +102,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const [activeTab, setActiveTab] = useState<AudioEffectTab>('fade');
   const [loopEnabled, setLoopEnabled] = useState(false);
   const [isSilent, setIsSilent] = useState(false);
-  const [historyVersion, setHistoryVersion] = useState(0);
+  const [, setHistoryVersion] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [isRecordingPaused, setIsRecordingPaused] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
@@ -72,6 +110,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const historyRef = useRef(new EditHistory());
   const bufferRef = useRef<AudioBuffer | null>(null);
+  const activeTrackIdRef = useRef<string | null>(null);
   const recordingSessionRef = useRef<WavRecordingSession | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const recordingTimerRef = useRef<number | null>(null);
@@ -79,20 +118,62 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const recordingPausedRef = useRef(false);
   const recordingAccumulatedDurationRef = useRef(0);
 
-  const activeFile = files[activeIndex] ?? files[0] ?? null;
+  const activeTrack = useMemo(
+    () => projectTracks.find((track) => track.id === activeTrackId) ?? projectTracks[0] ?? null,
+    [activeTrackId, projectTracks],
+  );
+  const buffer = activeTrack?.buffer ?? null;
+  const duration = buffer?.duration ?? 0;
   const canUndo = historyRef.current.canUndo;
   const canRedo = historyRef.current.canRedo;
   const undoLabel = historyRef.current.undoLabel;
   const redoLabel = historyRef.current.redoLabel;
-  const duration = buffer?.duration ?? 0;
   const historyDepth = historyRef.current.depth;
-  const hasActiveSelection = Boolean(
-    buffer && (selection.start > 0.001 || selection.end < Math.max(buffer.duration - 0.001, 0)),
-  );
+  const hasActiveSelection = hasTrackSelection(buffer, selection);
+  const activeTrackName = activeTrack?.name ?? null;
+  const projectDuration = mixdownBuffer?.duration ?? getMixdownDuration(projectTracks);
+  const canSave = Boolean(buffer) && !isRecording;
 
   useEffect(() => {
     bufferRef.current = buffer;
   }, [buffer]);
+
+  useEffect(() => {
+    if (projectTracks.length === 0) {
+      setActiveTrackId(null);
+      return;
+    }
+
+    if (!activeTrackId || !projectTracks.some((track) => track.id === activeTrackId)) {
+      setActiveTrackId(projectTracks[0]?.id ?? null);
+    }
+  }, [activeTrackId, projectTracks]);
+
+  useEffect(() => {
+    if (activeTrackIdRef.current === activeTrackId) {
+      return;
+    }
+
+    activeTrackIdRef.current = activeTrackId;
+    historyRef.current.clear();
+    setHistoryVersion((value) => value + 1);
+    setLoopEnabled(false);
+
+    if (!buffer) {
+      setSelection(DEFAULT_SELECTION);
+      setCurrentTime(0);
+      setIsSilent(false);
+      setIsPlaying(false);
+      audioEngine.stop();
+      return;
+    }
+
+    setSelection(normalizeSelection(0, buffer.duration, buffer.duration, selection.trimMode));
+    setCurrentTime(0);
+    setIsSilent(isSilentAudioBuffer(buffer));
+    setIsPlaying(false);
+    audioEngine.setBuffer(buffer, 0);
+  }, [activeTrackId, buffer, selection.trimMode]);
 
   useEffect(() => {
     return () => {
@@ -141,10 +222,18 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     if (!buffer) {
       setCurrentTime(0);
       setIsPlaying(false);
+      setSelection(DEFAULT_SELECTION);
+      setIsSilent(false);
       return;
     }
 
-    audioEngine.setBuffer(buffer, 0);
+    const clampedTime = clamp(currentTime, 0, buffer.duration);
+    setCurrentTime(clampedTime);
+    setSelection((currentSelection) =>
+      normalizeSelection(currentSelection.start, currentSelection.end || buffer.duration, buffer.duration, currentSelection.trimMode),
+    );
+    setIsSilent(isSilentAudioBuffer(buffer));
+    audioEngine.setBuffer(buffer, clampedTime);
   }, [buffer]);
 
   useEffect(() => {
@@ -157,66 +246,37 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   }, [buffer, loopEnabled, selection.end, selection.start]);
 
   useEffect(() => {
-    if (!activeFile) {
-      setBuffer(null);
-      setSelection(DEFAULT_SELECTION);
-      setStatusMessage(null);
-      setWarningMessage(null);
-      setLoadError(null);
-      setIsSilent(false);
-      historyRef.current.clear();
-      setHistoryVersion((value) => value + 1);
-      audioEngine.stop();
+    if (projectTracks.length === 0) {
+      setMixdownBuffer(null);
+      return;
+    }
+
+    if (projectTracks.length === 1) {
+      setMixdownBuffer(projectTracks[0]?.buffer ?? null);
       return;
     }
 
     let cancelled = false;
 
-    const loadSelectedFile = async () => {
-      setIsLoading(true);
-      setLoadError(null);
-      setWarningMessage(null);
-      setStatusMessage(copy.status.loading(activeFile.name));
-      setIsPlaying(false);
-      historyRef.current.clear();
-      setHistoryVersion((value) => value + 1);
-
+    const renderMixdown = async () => {
       try {
-        const nextBuffer = await audioEngine.loadFile(activeFile);
-        if (cancelled) {
-          return;
-        }
-
-        setBuffer(nextBuffer);
-        setSelection((currentSelection) =>
-          normalizeSelection(0, nextBuffer.duration, nextBuffer.duration, currentSelection.trimMode),
-        );
-        setCurrentTime(0);
-        setLoopEnabled(false);
-        setIsSilent(isSilentAudioBuffer(nextBuffer));
-        setStatusMessage(null);
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-
-        setBuffer(null);
-        setSelection(DEFAULT_SELECTION);
-        setIsSilent(false);
-        setLoadError(error instanceof Error ? error.message : copy.status.decodeFailed);
-      } finally {
+        const mixed = await mixAudioTracks(projectTracks);
         if (!cancelled) {
-          setIsLoading(false);
+          setMixdownBuffer(mixed);
+        }
+      } catch {
+        if (!cancelled) {
+          setMixdownBuffer(null);
         }
       }
     };
 
-    void loadSelectedFile();
+    void renderMixdown();
 
     return () => {
       cancelled = true;
     };
-  }, [activeFile, copy]);
+  }, [projectTracks]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -271,7 +331,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [buffer, copy, selection.trimMode]);
+  }, [buffer, copy, currentTime, duration, isPlaying, isRecording, selection.trimMode]);
 
   const clearRecordingTimer = () => {
     if (recordingTimerRef.current != null) {
@@ -311,11 +371,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   };
 
   const openPicker = () => {
-    if (isRecording) {
-      return;
-    }
-
-    if (!fileInputRef.current) {
+    if (isRecording || !fileInputRef.current) {
       return;
     }
 
@@ -323,26 +379,77 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     fileInputRef.current.click();
   };
 
-  const replaceFiles = (nextFiles: File[]) => {
+  const replaceActiveTrackBuffer = (nextBuffer: AudioBuffer, nextStatus: string) => {
+    if (!activeTrack) {
+      return;
+    }
+
+    setProjectTracks((currentTracks) =>
+      currentTracks.map((track) => (track.id === activeTrack.id ? { ...track, buffer: nextBuffer } : track)),
+    );
+    setCurrentTime(0);
+    setSelection(normalizeSelection(0, nextBuffer.duration, nextBuffer.duration, selection.trimMode));
+    setStatusMessage(nextStatus);
+    setIsPlaying(false);
+    audioEngine.setBuffer(nextBuffer, 0);
+  };
+
+  const importFiles = async (nextFiles: File[]) => {
     if (nextFiles.length === 0) {
       return;
     }
 
     audioEngine.stop();
     setIsPlaying(false);
+    setIsLoading(true);
     setLoadError(null);
-    setStatusMessage(null);
-    setFiles(nextFiles);
-    setActiveIndex(0);
+    setWarningMessage(
+      nextFiles.some((file) => file.size > 100 * 1024 * 1024) ? copy.fileDrop.largeFileWarning : null,
+    );
+
+    try {
+      const decodedTracks: AudioProjectTrack[] = [];
+
+      for (const file of nextFiles) {
+        setStatusMessage(copy.status.loading(file.name));
+        const decoded = await audioEngine.decodeFile(file);
+        decodedTracks.push(createProjectTrack(file.name, decoded, 'file'));
+      }
+
+      setProjectTracks((currentTracks) => [...currentTracks, ...decodedTracks]);
+      setActiveTrackId(decodedTracks.at(-1)?.id ?? null);
+      setStatusMessage(null);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : copy.status.decodeFailed);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const syncBufferState = (nextBuffer: AudioBuffer, nextStatus: string) => {
-    setBuffer(nextBuffer);
-    setCurrentTime(0);
-    setSelection(normalizeSelection(0, nextBuffer.duration, nextBuffer.duration, selection.trimMode));
-    setStatusMessage(nextStatus);
+  const updateTrack = (trackId: string, updater: (track: AudioProjectTrack) => AudioProjectTrack) => {
+    setProjectTracks((currentTracks) => currentTracks.map((track) => (track.id === trackId ? updater(track) : track)));
+  };
+
+  const removeTrack = (trackId: string) => {
+    audioEngine.stop();
     setIsPlaying(false);
-    audioEngine.setBuffer(nextBuffer, 0);
+
+    setProjectTracks((currentTracks) => {
+      const nextTracks = currentTracks.filter((track) => track.id !== trackId);
+
+      if (activeTrackId === trackId) {
+        setActiveTrackId(nextTracks[0]?.id ?? null);
+      }
+
+      if (nextTracks.length === 0) {
+        setSelection(DEFAULT_SELECTION);
+        setStatusMessage(null);
+        setWarningMessage(null);
+        setLoadError(null);
+      }
+
+      return nextTracks;
+    });
   };
 
   const applyBufferCommand = (label: string, transform: (currentBuffer: AudioBuffer) => AudioBuffer) => {
@@ -357,7 +464,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     });
 
     setHistoryVersion((value) => value + 1);
-    syncBufferState(nextBuffer, copy.status.effectApplied(label));
+    replaceActiveTrackBuffer(nextBuffer, copy.status.effectApplied(label));
   };
 
   const commitSelection = (nextSelection: { start: number; end: number }) => {
@@ -387,7 +494,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     }
 
     setHistoryVersion((value) => value + 1);
-    syncBufferState(nextBuffer, copy.status.undoApplied);
+    replaceActiveTrackBuffer(nextBuffer, copy.status.undoApplied);
   };
 
   const handleRedo = () => {
@@ -401,7 +508,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     }
 
     setHistoryVersion((value) => value + 1);
-    syncBufferState(nextBuffer, copy.status.redoApplied);
+    replaceActiveTrackBuffer(nextBuffer, copy.status.redoApplied);
   };
 
   const handleSaveAs = async ({
@@ -418,12 +525,15 @@ export function AudioEditor({ mode }: AudioEditorProps) {
 
     try {
       setStatusMessage(copy.status.exportPreparing(format));
+      const exportBuffer =
+        projectTracks.length > 1 ? ((await mixAudioTracks(projectTracks)) ?? mixdownBuffer ?? buffer) : buffer;
       const saved = await exportAudio({
-        buffer,
+        buffer: exportBuffer,
         format,
-        filename: filename.trim() || activeFile?.name || 'audio-export',
+        filename: filename.trim() || activeTrackName || 'audio-export',
         quality: 0.82,
       });
+
       if (saved) {
         setStatusMessage(copy.status.exportReady(format));
       } else {
@@ -442,21 +552,43 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     try {
       if (isPlaying) {
         audioEngine.pause();
+        setCurrentTime(audioEngine.currentTime);
         setIsPlaying(false);
         return;
       }
 
-      const playbackStart = currentTime >= duration - 0.001 ? 0 : currentTime;
+      const nextStart = audioEngine.buffer === buffer ? audioEngine.currentTime : currentTime;
+      const playbackStart = nextStart >= duration - 0.001 ? 0 : clamp(nextStart, 0, duration);
 
       if (audioEngine.buffer !== buffer) {
         audioEngine.setBuffer(buffer, playbackStart);
-      } else {
+      } else if (Math.abs(audioEngine.currentTime - playbackStart) > 0.001) {
         audioEngine.seekTo(playbackStart);
       }
 
       setCurrentTime(playbackStart);
       audioEngine.play(playbackStart);
       setIsPlaying(true);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : copy.status.playbackFailed);
+    }
+  };
+
+  const handlePreviewMix = async () => {
+    if (projectTracks.length < 2 || isRecording) {
+      return;
+    }
+
+    try {
+      const mixed = (await mixAudioTracks(projectTracks)) ?? mixdownBuffer;
+      if (!mixed) {
+        return;
+      }
+
+      audioEngine.previewSlice(mixed, 0, mixed.duration);
+      setCurrentTime(0);
+      setIsPlaying(true);
+      setStatusMessage(locale === 'ko' ? '멀티트랙 믹스를 미리 듣는 중입니다.' : 'Previewing the multitrack mix.');
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : copy.status.playbackFailed);
     }
@@ -558,6 +690,14 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       return;
     }
 
+    if (tab === 'reverb') {
+      const reverbedBuffer = applyReverbToAudioRange(segmentBuffer, 0, segmentBuffer.duration, effects.reverbDecay, effects.reverbMix);
+      audioEngine.previewSlice(reverbedBuffer, 0, reverbedBuffer.duration);
+      setStatusMessage(copy.status.previewReverb);
+      setIsPlaying(true);
+      return;
+    }
+
     audioEngine.previewWithEq(segmentBuffer, {
       lowGainDb: effects.low,
       midGainDb: effects.mid,
@@ -596,6 +736,13 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     if (tab === 'amplify') {
       applyBufferCommand(copy.commands.amplify, (currentBuffer) =>
         applyGainToAudioRange(currentBuffer, selection.start, selection.end, effects.gain),
+      );
+      return;
+    }
+
+    if (tab === 'reverb') {
+      applyBufferCommand(copy.commands.reverb, (currentBuffer) =>
+        applyReverbToAudioRange(currentBuffer, selection.start, selection.end, effects.reverbDecay, effects.reverbMix),
       );
       return;
     }
@@ -710,10 +857,13 @@ export function AudioEditor({ mode }: AudioEditorProps) {
 
     try {
       const recording = await recordingSession.stop();
+      const nextBuffer = await audioEngine.decodeFile(recording.file);
+      const nextTrack = createProjectTrack(recording.file.name, nextBuffer, 'recording');
+
       setRecordingDuration(recording.duration);
+      setProjectTracks((currentTracks) => [...currentTracks, nextTrack]);
+      setActiveTrackId(nextTrack.id);
       setStatusMessage(copy.recording.ready(recording.file.name));
-      setFiles([recording.file]);
-      setActiveIndex(0);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : copy.recording.startError);
     } finally {
@@ -766,24 +916,35 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     </div>
   );
 
+  const emptyStatePrompt =
+    locale === 'ko' ? '오디오를 불러오거나 녹음 버튼을 눌러 시작하세요.' : 'Open audio or press the record button to get started.';
+  const emptyStateFeatures =
+    locale === 'ko'
+      ? ['자르기', '오디오 변환', '녹음', '멀티트랙', '리버브', '앰플리파이', 'EQ']
+      : ['Trim', 'Audio convert', 'Record', 'Multitrack', 'Reverb', 'Amplify', 'EQ'];
   const sessionPanel = (
     <div className="audio-surface rounded-[16px] p-4">
       <p className="audio-section-kicker">{copy.session.kicker}</p>
       <div className="mt-3 space-y-2 text-sm text-[var(--text-secondary)]">
         <div className="audio-status-line rounded-[10px] px-3 py-2">
-          {activeFile ? copy.session.activeFile(activeFile.name) : copy.session.noFile}
+          {activeTrackName
+            ? copy.session.activeTrack?.(activeTrackName) ?? copy.session.activeFile(activeTrackName)
+            : copy.session.noFile}
         </div>
         <div className="audio-status-line rounded-[10px] px-3 py-2">
           {buffer ? copy.session.duration(formatTime(duration), buffer.sampleRate) : copy.status.waitingInput}
         </div>
+        {projectTracks.length > 1 ? (
+          <div className="audio-status-line rounded-[10px] px-3 py-2">
+            {locale === 'ko'
+              ? `트랙 ${projectTracks.length}개 · 믹스 길이 ${formatTime(projectDuration)}`
+              : `${projectTracks.length} tracks · Mix duration ${formatTime(projectDuration)}`}
+          </div>
+        ) : null}
       </div>
       <div className="mt-3">{statusLines}</div>
     </div>
   );
-  const emptyStateFeatures =
-    locale === 'ko'
-      ? ['자르기', '오디오 변환', '녹음', '속도 변경', '피치 변경', '앰플리파이', 'EQ', '다른 이름으로 저장']
-      : ['Trim', 'Audio convert', 'Record', 'Speed', 'Pitch', 'Amplify', 'EQ', 'Save as'];
 
   return (
     <div
@@ -793,18 +954,18 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       <input
         ref={fileInputRef}
         type="file"
+        multiple
         accept={AUDIO_ACCEPT}
         onChange={(event) => {
-          const nextFiles = Array.from(event.target.files ?? []);
-          replaceFiles(nextFiles.slice(0, 1));
+          void importFiles(Array.from(event.target.files ?? []));
           event.currentTarget.value = '';
         }}
         className="hidden"
       />
 
       <EditorToolbar
-        fileName={activeFile?.name ?? null}
-        canSave={Boolean(buffer) && !isRecording}
+        fileName={activeTrackName}
+        canSave={canSave}
         loopEnabled={loopEnabled}
         onOpenFiles={openPicker}
         onSaveAs={({ format, filename }) => void handleSaveAs({ format, filename })}
@@ -824,8 +985,8 @@ export function AudioEditor({ mode }: AudioEditorProps) {
 
       <div className="border-b border-[var(--border)] bg-[var(--topbar-bg)] px-3 py-3 sm:px-4">
         <TransportBar
-          currentTime={currentTime}
-          duration={duration}
+          currentTime={isRecording ? recordingDuration : currentTime}
+          duration={isRecording ? recordingDuration : duration}
           zoom={zoom}
           isPlaying={isPlaying}
           isRecording={isRecording}
@@ -847,42 +1008,36 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 sm:p-4">
-        {isRecording ? (
-          <div className="audio-panel rounded-[20px] p-4">
-            <LiveAudioWaveform
-              peaks={recordingPeaks}
-              isRecording={isRecording && !isRecordingPaused}
-              title={copy.recording.liveTitle}
-              description={copy.recording.liveDescription}
-              statusLabel={
-                isRecordingPaused
-                  ? copy.recording.pausedStatus(recordingDuration)
-                  : copy.recording.liveStatus(recordingDuration)
-              }
-            />
-          </div>
-        ) : null}
-
-        {activeFile ? (
+        {activeTrack || isRecording ? (
           <section className="audio-panel flex flex-col overflow-hidden rounded-[20px]">
             <WaveformCanvas
-              audioBuffer={buffer}
-              fileName={activeFile.name}
-              duration={duration || selection.end || 0}
-              currentTime={currentTime}
+              audioBuffer={isRecording ? null : buffer}
+              fileName={isRecording ? (locale === 'ko' ? '새 녹음 트랙' : 'New recording track') : activeTrackName ?? 'audio'}
+              duration={isRecording ? Math.max(recordingDuration, 0.001) : duration || selection.end || 0}
+              currentTime={isRecording ? recordingDuration : currentTime}
               selectionStart={selection.start}
               selectionEnd={selection.end}
               zoom={zoom}
-              isSilent={isSilent}
+              isSilent={isRecording ? false : isSilent}
               isLoading={isLoading}
-              showPlayhead={Boolean(buffer)}
+              showPlayhead={Boolean(buffer) && !isRecording}
+              livePeaks={isRecording ? recordingPeaks : undefined}
+              interactive={!isRecording}
+              statusLabel={
+                isRecording
+                  ? isRecordingPaused
+                    ? copy.recording.pausedStatus(recordingDuration)
+                    : copy.recording.liveStatus(recordingDuration)
+                  : null
+              }
               onSeek={handleWaveformSeek}
               onSelectionChange={commitSelection}
             />
           </section>
         ) : (
           <div className="audio-panel rounded-[20px] p-6 sm:p-8">
-            <div className="mx-auto flex min-h-[180px] max-w-3xl flex-col justify-center">
+            <div className="mx-auto flex min-h-[180px] max-w-3xl flex-col justify-center gap-4">
+              <p className="text-sm text-[var(--text-secondary)]">{emptyStatePrompt}</p>
               <div className="flex flex-wrap gap-2">
                 {emptyStateFeatures.map((feature) => (
                   <span
@@ -922,8 +1077,8 @@ export function AudioEditor({ mode }: AudioEditorProps) {
           />
         ) : null}
 
-        {buffer ? (
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(16rem,0.8fr)]">
+        {buffer || projectTracks.length > 0 ? (
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)]">
             <EffectsPanel
               activeTab={activeTab}
               effects={effects}
@@ -932,7 +1087,61 @@ export function AudioEditor({ mode }: AudioEditorProps) {
               onPreview={handlePreview}
               onApply={handleApplyEffect}
             />
-            {sessionPanel}
+
+            <div className="space-y-3">
+              {projectTracks.length > 1 ? (
+                <button
+                  type="button"
+                  onClick={() => void handlePreviewMix()}
+                  className="audio-button-secondary audio-focus-ring h-9 px-3"
+                >
+                  <Play size={14} strokeWidth={1.5} />
+                  {locale === 'ko' ? '믹스 미리듣기' : 'Preview mix'}
+                </button>
+              ) : null}
+
+              <TrackListPanel
+                tracks={projectTracks.map((track) => ({
+                  id: track.id,
+                  name: track.name,
+                  source: track.source,
+                  startTime: track.startTime,
+                  gain: track.gain,
+                  muted: track.muted,
+                  solo: track.solo,
+                  isActive: track.id === activeTrack?.id,
+                }))}
+                emptyMessage={copy.status.waitingInput}
+                onSelectTrack={setActiveTrackId}
+                onStartTimeChange={(trackId, nextStartTime) =>
+                  updateTrack(trackId, (currentTrack) => ({
+                    ...currentTrack,
+                    startTime: Number(nextStartTime.toFixed(3)),
+                  }))
+                }
+                onGainChange={(trackId, nextGain) =>
+                  updateTrack(trackId, (currentTrack) => ({
+                    ...currentTrack,
+                    gain: Number(nextGain.toFixed(2)),
+                  }))
+                }
+                onMuteToggle={(trackId) =>
+                  updateTrack(trackId, (currentTrack) => ({
+                    ...currentTrack,
+                    muted: !currentTrack.muted,
+                  }))
+                }
+                onSoloToggle={(trackId) =>
+                  updateTrack(trackId, (currentTrack) => ({
+                    ...currentTrack,
+                    solo: !currentTrack.solo,
+                  }))
+                }
+                onRemoveTrack={removeTrack}
+              />
+
+              {sessionPanel}
+            </div>
           </div>
         ) : (
           <div>{statusLines}</div>

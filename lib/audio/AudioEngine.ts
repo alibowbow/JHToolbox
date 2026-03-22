@@ -153,16 +153,25 @@ export class AudioEngine {
   }
 
   async loadFile(file: File) {
-    return await this.loadBlob(file);
+    const buffer = await this.decodeFile(file);
+    this.setBuffer(buffer);
+    return buffer;
   }
 
   async loadBlob(blob: Blob) {
-    const context = getAudioContext();
-    const arrayBuffer = await blob.arrayBuffer();
-    const buffer = await this.decodeAudioData(context, arrayBuffer);
-
+    const buffer = await this.decodeBlob(blob);
     this.setBuffer(buffer);
     return buffer;
+  }
+
+  async decodeFile(file: File) {
+    return await this.decodeBlob(file);
+  }
+
+  async decodeBlob(blob: Blob) {
+    const context = getAudioContext();
+    const arrayBuffer = await blob.arrayBuffer();
+    return await this.decodeAudioData(context, arrayBuffer);
   }
 
   setBuffer(buffer: AudioBuffer, currentTimeSec = 0) {

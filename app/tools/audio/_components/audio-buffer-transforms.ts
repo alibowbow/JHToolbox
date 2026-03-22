@@ -173,3 +173,43 @@ export function applyGainToAudioRange(buffer: AudioBuffer, startSec: number, end
 
   return nextBuffer;
 }
+
+export function applyReverbToAudioRange(
+  buffer: AudioBuffer,
+  startSec: number,
+  endSec: number,
+  decaySec: number,
+  mix: number,
+) {
+  const nextBuffer = cloneAudioBuffer(buffer);
+  const startSample = secondsToSample(buffer, Math.min(startSec, endSec));
+  const endSample = secondsToSample(buffer, Math.max(startSec, endSec));
+  const safeMix = clamp(mix, 0, 1);
+  const safeDecay = clamp(decaySec, 0.1, 6);
+  const delayStepsSec = [0.024, 0.051, 0.093, 0.148, 0.221];
+
+  for (let channelIndex = 0; channelIndex < nextBuffer.numberOfChannels; channelIndex += 1) {
+    const sourceChannel = buffer.getChannelData(channelIndex);
+    const targetChannel = nextBuffer.getChannelData(channelIndex);
+
+    for (let sampleIndex = startSample; sampleIndex < endSample; sampleIndex += 1) {
+      const dry = sourceChannel[sampleIndex] ?? 0;
+      let wet = 0;
+
+      for (let delayIndex = 0; delayIndex < delayStepsSec.length; delayIndex += 1) {
+        const delaySamples = Math.max(1, Math.round(delayStepsSec[delayIndex] * safeDecay * buffer.sampleRate));
+        const delayedIndex = sampleIndex - delaySamples;
+        if (delayedIndex < startSample) {
+          continue;
+        }
+
+        const attenuation = Math.pow(0.6, delayIndex + 1) * (1 / safeDecay);
+        wet += (sourceChannel[delayedIndex] ?? 0) * attenuation;
+      }
+
+      targetChannel[sampleIndex] = clampSample(dry * (1 - safeMix) + (dry + wet) * safeMix);
+    }
+  }
+
+  return nextBuffer;
+}

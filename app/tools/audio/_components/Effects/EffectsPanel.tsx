@@ -9,6 +9,7 @@ import { getRangeStyle } from '../audio-editor-utils';
 import { AmplifyControls } from './AmplifyControls';
 import { FadeControls } from './FadeControls';
 import { PitchControls } from './PitchControls';
+import { ReverbControls } from './ReverbControls';
 import { SpeedControls } from './SpeedControls';
 
 interface EffectsPanelProps {
@@ -48,6 +49,7 @@ export function EffectsPanel({
     { id: 'speed', label: copy.effects.speed, icon: SlidersHorizontal },
     { id: 'pitch', label: copy.effects.pitch, icon: Sparkles },
     { id: 'amplify', label: copy.effects.amplify, icon: Volume2 },
+    { id: 'reverb', label: copy.effects.reverb, icon: Waves },
     { id: 'eq', label: copy.effects.eq, icon: SlidersHorizontal },
   ];
 
@@ -120,6 +122,15 @@ export function EffectsPanel({
             onChange={(nextGain) => onChange({ gain: nextGain })}
             onPreview={() => onPreview('amplify')}
             onApply={() => onApply('amplify')}
+          />
+        ) : null}
+        {activeTab === 'reverb' ? (
+          <ReverbControls
+            decay={effects.reverbDecay}
+            mix={effects.reverbMix}
+            onChange={onChange}
+            onPreview={() => onPreview('reverb')}
+            onApply={() => onApply('reverb')}
           />
         ) : null}
         {activeTab === 'eq' ? (

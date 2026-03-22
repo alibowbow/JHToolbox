@@ -10,6 +10,8 @@ import { PlayheadOverlay } from './PlayheadOverlay';
 import { WaveformTimeline } from './WaveformTimeline';
 
 type DragMode = 'selection' | 'start' | 'end' | 'playhead';
+const LIVE_BAR_WIDTH = 4;
+const LIVE_BAR_GAP = 2;
 
 interface WaveformCanvasProps {
   audioBuffer: AudioBuffer | null;
@@ -22,6 +24,9 @@ interface WaveformCanvasProps {
   isSilent: boolean;
   isLoading?: boolean;
   showPlayhead?: boolean;
+  livePeaks?: number[];
+  interactive?: boolean;
+  statusLabel?: string | null;
   onSeek: (time: number) => void;
   onSelectionChange: (nextSelection: { start: number; end: number }) => void;
 }
@@ -37,6 +42,9 @@ export function WaveformCanvas({
   isSilent,
   isLoading = false,
   showPlayhead = true,
+  livePeaks,
+  interactive = true,
+  statusLabel = null,
   onSeek,
   onSelectionChange,
 }: WaveformCanvasProps) {
@@ -53,7 +61,9 @@ export function WaveformCanvas({
   const dragSelectionRef = useRef({ start: 0, end: 0 });
   const waveformTheme: 'light' | 'dark' = theme;
   const viewportWidth = Math.max(baseWidth || 0, 320);
-  const canvasWidth = Math.max(280, Math.round(viewportWidth * zoom));
+  const isLiveMode = !audioBuffer && Array.isArray(livePeaks);
+  const liveCanvasWidth = Math.max(viewportWidth, (livePeaks?.length ?? 0) * (LIVE_BAR_WIDTH + LIVE_BAR_GAP));
+  const canvasWidth = isLiveMode ? Math.max(280, liveCanvasWidth) : Math.max(280, Math.round(viewportWidth * zoom));
   const safeDuration = Math.max(duration, 0.001);
   const startPercent = clamp(selectionStart / safeDuration, 0, 1);
   const endPercent = clamp(selectionEnd / safeDuration, 0, 1);
@@ -61,6 +71,8 @@ export function WaveformCanvas({
   const selectionWidth = Math.max((endPercent - startPercent) * 100, 0.4);
   const isFullSelection = duration > 0 && startPercent <= 0.001 && endPercent >= 0.999;
   const needsHorizontalScroll = canvasWidth > viewportWidth + 1;
+  const startHandleLeft = isFullSelection ? '8px' : `${startPercent * 100}%`;
+  const endHandleLeft = isFullSelection ? 'calc(100% - 8px)' : `${endPercent * 100}%`;
 
   useEffect(() => {
     if (!scrollNode || typeof ResizeObserver === 'undefined') {
@@ -95,8 +107,55 @@ export function WaveformCanvas({
       }
 
       context.setTransform(1, 0, 0, 1, 0, 0);
+      context.scale(dpr, dpr);
+      context.clearRect(0, 0, canvasWidth, height);
       context.fillStyle = waveformTheme === 'dark' ? '#0A1A19' : 'rgba(248, 250, 252, 1)';
-      context.fillRect(0, 0, canvasNode.width, canvasNode.height);
+      context.fillRect(0, 0, canvasWidth, height);
+
+      if (isLiveMode) {
+        context.strokeStyle = waveformTheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(100, 116, 139, 0.18)';
+        context.lineWidth = 1;
+        context.beginPath();
+        context.moveTo(0, height / 2);
+        context.lineTo(canvasWidth, height / 2);
+        context.stroke();
+
+        const peaksToDraw = livePeaks ?? [];
+        if (peaksToDraw.length === 0) {
+          context.strokeStyle = waveformTheme === 'dark' ? 'rgba(136, 136, 160, 0.4)' : 'rgba(100, 116, 139, 0.4)';
+          context.lineWidth = 2;
+          context.beginPath();
+
+          const segments = Math.max(12, Math.floor(canvasWidth / 48));
+          for (let index = 0; index <= segments; index += 1) {
+            const x = (index / segments) * canvasWidth;
+            const y =
+              height / 2 +
+              Math.sin(index * 0.46) * height * 0.06 +
+              Math.sin(index * 0.18) * height * 0.02;
+
+            if (index === 0) {
+              context.moveTo(x, y);
+            } else {
+              context.lineTo(x, y);
+            }
+          }
+
+          context.stroke();
+          return;
+        }
+
+        const barColor = waveformTheme === 'dark' ? 'rgba(0, 229, 255, 0.95)' : 'rgba(0, 189, 180, 0.92)';
+        for (let index = 0; index < peaksToDraw.length; index += 1) {
+          const peak = clamp(peaksToDraw[index] ?? 0, 0.02, 1);
+          const barHeight = Math.max(10, peak * height * 0.82);
+          const x = index * (LIVE_BAR_WIDTH + LIVE_BAR_GAP);
+          const y = height / 2 - barHeight / 2;
+          context.fillStyle = barColor;
+          context.fillRect(x, y, LIVE_BAR_WIDTH, barHeight);
+        }
+      }
+
       return;
     }
 
@@ -109,7 +168,18 @@ export function WaveformCanvas({
       selectionEnd,
       theme: waveformTheme,
     });
-  }, [audioBuffer, canvasNode, canvasWidth, selectionEnd, selectionStart, waveformTheme]);
+  }, [audioBuffer, canvasNode, canvasWidth, isLiveMode, livePeaks, selectionEnd, selectionStart, waveformTheme]);
+
+  useEffect(() => {
+    if (!isLiveMode || !scrollNode) {
+      return;
+    }
+
+    scrollNode.scrollTo({
+      left: Math.max(scrollNode.scrollWidth - scrollNode.clientWidth, 0),
+      behavior: 'smooth',
+    });
+  }, [canvasWidth, isLiveMode, livePeaks?.length, scrollNode]);
 
   const getPositionFromClientX = (clientX: number) => {
     if (!scrollNode) {
@@ -127,7 +197,7 @@ export function WaveformCanvas({
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!audioBuffer) {
+    if (!audioBuffer || !interactive) {
       return;
     }
 
@@ -209,7 +279,7 @@ export function WaveformCanvas({
 
   return (
     <div className="space-y-0">
-      <WaveformTimeline duration={duration} zoom={zoom} />
+      <WaveformTimeline duration={duration} zoom={isLiveMode ? 1 : zoom} />
       <div
         ref={setScrollNode}
         className={`rounded-b-[18px] bg-[var(--waveform-bg)] ${needsHorizontalScroll ? 'overflow-x-auto' : 'overflow-x-hidden'}`}
@@ -226,14 +296,14 @@ export function WaveformCanvas({
           {isLoading ? <div className="audio-loading-skeleton absolute inset-0" /> : null}
           <canvas ref={setCanvasNode} className="absolute inset-0 h-full w-full" />
 
-          {!isFullSelection ? (
+          {audioBuffer && interactive ? (
             <>
               <button
                 type="button"
                 data-waveform-handle="start"
                 data-testid="audio-selection-handle-start"
                 className="absolute inset-y-2 z-20 w-4 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent"
-                style={{ left: `${startPercent * 100}%` }}
+                style={{ left: startHandleLeft }}
                 aria-label="Selection start"
               >
                 <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-[var(--selection-border)]" />
@@ -245,7 +315,7 @@ export function WaveformCanvas({
                 data-waveform-handle="end"
                 data-testid="audio-selection-handle-end"
                 className="absolute inset-y-2 z-20 w-4 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent"
-                style={{ left: `${endPercent * 100}%` }}
+                style={{ left: endHandleLeft }}
                 aria-label="Selection end"
               >
                 <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-[var(--selection-border)]" />
@@ -255,7 +325,7 @@ export function WaveformCanvas({
             </>
           ) : null}
 
-          {showPlayhead ? (
+          {showPlayhead && audioBuffer ? (
             <PlayheadOverlay
               positionPercent={playheadPercent}
               currentTime={currentTime}
@@ -266,6 +336,12 @@ export function WaveformCanvas({
           <div className="audio-mono absolute left-3 top-3 z-10 rounded-md border border-[var(--border)] bg-[var(--waveform-label-bg)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)]">
             {fileName}
           </div>
+
+          {statusLabel ? (
+            <div className="audio-mono absolute right-3 top-3 z-10 rounded-md border border-[var(--border)] bg-[var(--waveform-label-bg)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)]">
+              {statusLabel}
+            </div>
+          ) : null}
 
           {isSilent ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -279,7 +355,7 @@ export function WaveformCanvas({
             </div>
           ) : null}
 
-          {!isSilent && selectionWidth > 0 && !isFullSelection ? (
+          {audioBuffer && !isSilent && selectionWidth > 0 && !isFullSelection ? (
             <div
               data-testid="audio-selection-overlay"
               aria-hidden="true"
@@ -298,7 +374,7 @@ export function WaveformCanvas({
             </div>
           ) : null}
 
-          {!isSilent ? (
+          {audioBuffer && interactive && !isSilent ? (
             <div className="pointer-events-none absolute inset-x-4 bottom-3">
               <p className="text-[11px] text-[var(--text-tertiary)]">{copy.waveform.dragHint}</p>
             </div>
