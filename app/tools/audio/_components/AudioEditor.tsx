@@ -781,6 +781,10 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       <div className="mt-3">{statusLines}</div>
     </div>
   );
+  const emptyStateDescription =
+    locale === 'ko'
+      ? '파일 업로드나 마이크 녹음 후 자르기, 효과 적용, 저장까지 한 곳에서 처리하는 오디오 편집기입니다.'
+      : 'Open or record one file, then trim, preview effects, and save it in a single audio workspace.';
 
   return (
     <div
@@ -878,36 +882,28 @@ export function AudioEditor({ mode }: AudioEditorProps) {
             />
           </section>
         ) : (
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1.45fr)_minmax(16rem,0.55fr)]">
-            <div className="audio-panel rounded-[20px] p-4 sm:p-5">
+          <div className="audio-panel rounded-[20px] p-5 sm:p-6">
+            <div className="mx-auto max-w-3xl space-y-5">
+              <div className="space-y-2">
+                <p className="audio-section-kicker">{copy.fileDrop.title}</p>
+                <h2 className="text-lg font-medium text-[var(--text-primary)]">{copy.fileDrop.emptyState}</h2>
+                <p className="text-sm leading-relaxed text-[var(--text-secondary)]">{emptyStateDescription}</p>
+              </div>
               <FileDropZone
                 title={copy.fileDrop.title}
                 description={copy.fileDrop.description}
                 helperText={copy.fileDrop.helperText}
                 files={files}
                 multiple={false}
+                compact
                 renderInput={false}
                 inputRef={fileInputRef}
                 onError={(message) => setLoadError(message)}
                 onWarning={(message) => setWarningMessage(message)}
                 onFiles={replaceFiles}
               />
-            </div>
-            <div className="audio-panel flex min-h-[10.5rem] flex-col justify-start rounded-[20px] p-4 sm:p-5">
-              <div className="space-y-3">
-                <p className="audio-section-kicker">{copy.fileDrop.title}</p>
-                <div className="space-y-2">
-                  <h2 className="text-base font-medium text-[var(--text-primary)]">{copy.fileDrop.emptyState}</h2>
-                  <p className="text-sm leading-relaxed text-[var(--text-secondary)]">{copy.fileDrop.helperText}</p>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="rounded-[12px] border border-[var(--border)] bg-[rgba(255,255,255,0.02)] px-3 py-2 text-xs leading-relaxed text-[var(--text-secondary)]">
-                  {copy.recording.liveDescription}
-                </div>
-                <div className="audio-status-line rounded-[10px] px-3 py-2 text-sm text-[var(--text-secondary)]">
-                  {copy.recording.idleStatus}
-                </div>
+              <div className="audio-status-line rounded-[10px] px-3 py-2 text-sm text-[var(--text-secondary)]">
+                {copy.recording.idleStatus}
               </div>
             </div>
           </div>

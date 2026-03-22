@@ -12,6 +12,7 @@ interface FileDropZoneProps {
   helperText: string;
   files: File[];
   multiple?: boolean;
+  compact?: boolean;
   renderInput?: boolean;
   inputRef?: RefObject<HTMLInputElement>;
   maxFileSizeBytes?: number;
@@ -27,6 +28,7 @@ export function FileDropZone({
   helperText,
   files,
   multiple = false,
+  compact = false,
   renderInput = true,
   inputRef: externalInputRef,
   maxFileSizeBytes = 500 * 1024 * 1024,
@@ -102,24 +104,28 @@ export function FileDropZone({
           setIsDragging(false);
           handleFiles(event.dataTransfer.files);
         }}
-        className={`group w-full rounded-[18px] border border-dashed p-6 text-left transition ${
+        className={`group w-full rounded-[18px] border border-dashed text-left transition ${
           isDragging
             ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.08)]'
             : 'border-[var(--border-strong)] bg-[rgba(30,32,35,0.92)] hover:border-[var(--accent-muted)]'
-        }`}
+        } ${compact ? 'p-4 sm:p-5' : 'p-6'}`}
       >
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className={`flex ${compact ? 'flex-col gap-3' : 'flex-col gap-4 sm:flex-row sm:items-center sm:justify-between'}`}>
           <div className="flex items-start gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-[10px] border border-[var(--border)] bg-[rgba(255,255,255,0.03)] text-[var(--accent)]">
-              <FileUp size={18} strokeWidth={1.5} />
+            <div
+              className={`flex items-center justify-center rounded-[10px] border border-[var(--border)] bg-[rgba(255,255,255,0.03)] text-[var(--accent)] ${
+                compact ? 'h-10 w-10' : 'h-12 w-12'
+              }`}
+            >
+              <FileUp size={compact ? 16 : 18} strokeWidth={1.5} />
             </div>
-            <div className="space-y-2">
+            <div className={`${compact ? 'space-y-1.5' : 'space-y-2'}`}>
               <p className="audio-section-kicker">{title}</p>
               <p className="text-sm font-medium text-[var(--text-primary)]">{description}</p>
               <p className="text-sm text-[var(--text-secondary)]">{helperText}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3 text-sm text-[var(--text-secondary)]">
+          <div className={`flex items-center gap-3 text-sm text-[var(--text-secondary)] ${compact ? 'pt-1' : ''}`}>
             <Music4 size={16} strokeWidth={1.5} />
             <span>{multiple ? copy.fileDrop.dragMultiple : copy.fileDrop.dragSingle}</span>
           </div>
