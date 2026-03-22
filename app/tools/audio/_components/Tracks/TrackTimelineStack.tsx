@@ -1,6 +1,16 @@
 'use client';
 
-import { FolderPlus, GripHorizontal, Mic, Music4, Play, Radio } from 'lucide-react';
+import {
+  FolderPlus,
+  GripVertical,
+  Mic,
+  Music4,
+  Play,
+  Radio,
+  Trash2,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useTheme } from '@/components/providers/theme-provider';
@@ -28,6 +38,8 @@ interface TrackTimelineStackProps {
   onMoveTrack?: (trackId: string, nextStartTime: number) => void;
   onAddTrack?: () => void;
   onPreviewMix?: () => void;
+  onMuteToggle?: (trackId: string) => void;
+  onRemoveTrack?: (trackId: string) => void;
 }
 
 type InteractionState =
@@ -48,6 +60,8 @@ type InteractionState =
       trackDuration: number;
       anchorTime: number;
       handle: SelectionHandle | null;
+      initialStart: number;
+      initialEnd: number;
     };
 
 function getSourceIcon(source: AudioTrackSource) {
@@ -64,42 +78,44 @@ function getSourceIcon(source: AudioTrackSource) {
 function getCopy(locale: string) {
   if (locale === 'ko') {
     return {
-      title: '멀티트랙 타임라인',
-      subtitle: '트랙 블록을 옮기고, 편집할 트랙을 바로 선택하세요.',
+      timeline: '멀티트랙',
       addTrack: '빈 트랙 추가',
       previewMix: '믹스 미리듣기',
       empty: '트랙이 아직 없습니다.',
-      emptyTrack: '빈 트랙',
+      emptyTrack: '빈 트랙입니다. 이 트랙을 선택한 뒤 오디오를 열거나 녹음하세요.',
       active: '편집 중',
       edit: '편집',
+      start: '시작',
       file: '파일',
       recording: '녹음',
       generated: '생성',
-      start: '시작',
-      muted: '뮤트',
-      solo: '솔로',
+      emptySource: '빈 트랙',
+      mute: '뮤트',
+      unmute: '뮤트 해제',
+      remove: '삭제',
       dragTrack: '트랙 위치 이동',
-      laneHint: '클립을 잡아 좌우로 옮기고, 파형에서 클릭하거나 드래그해 재생 위치와 선택 구간을 정리하세요.',
+      playhead: '재생 위치 이동',
     };
   }
 
   return {
-    title: 'Multitrack timeline',
-    subtitle: 'Move clips like blocks, then jump into the track you want to edit.',
+    timeline: 'Multitrack',
     addTrack: 'Add empty track',
     previewMix: 'Preview mix',
     empty: 'No tracks yet.',
-    emptyTrack: 'Empty track',
+    emptyTrack: 'Empty track. Select it, then open audio or record into it.',
     active: 'Editing',
     edit: 'Edit',
+    start: 'Start',
     file: 'File',
     recording: 'Recording',
     generated: 'Generated',
-    start: 'Start',
-    muted: 'Muted',
-    solo: 'Solo',
+    emptySource: 'Empty',
+    mute: 'Mute',
+    unmute: 'Unmute',
+    remove: 'Delete',
     dragTrack: 'Move track clip',
-    laneHint: 'Drag the clip to reposition it. Click or drag inside the waveform to place the playhead and selection.',
+    playhead: 'Move playhead',
   };
 }
 
@@ -113,8 +129,10 @@ function getSourceLabel(source: AudioTrackSource, locale: string) {
       return copy.recording;
     case 'generated':
       return copy.generated;
+    case 'empty':
+      return copy.emptySource;
     default:
-      return copy.emptyTrack;
+      return copy.file;
   }
 }
 
@@ -157,7 +175,7 @@ function ClipWaveform({
     context.drawImage(source as CanvasImageSource, 0, 0, width, height);
 
     if (isMuted) {
-      context.fillStyle = theme === 'dark' ? 'rgba(2, 6, 23, 0.5)' : 'rgba(255, 255, 255, 0.45)';
+      context.fillStyle = theme === 'dark' ? 'rgba(2, 6, 23, 0.52)' : 'rgba(255, 255, 255, 0.46)';
       context.fillRect(0, 0, width, height);
     }
   }, [audioBuffer, canvasNode, height, isMuted, theme, width]);
@@ -178,6 +196,8 @@ export function TrackTimelineStack({
   onMoveTrack,
   onAddTrack,
   onPreviewMix,
+  onMuteToggle,
+  onRemoveTrack,
 }: TrackTimelineStackProps) {
   const { locale } = useLocale();
   const { theme } = useTheme();
@@ -186,14 +206,20 @@ export function TrackTimelineStack({
   const [viewportWidth, setViewportWidth] = useState(0);
   const [interaction, setInteraction] = useState<InteractionState>(null);
   const contentPadding = 24;
+
   const maxTrackEnd = useMemo(
-    () =>
-      tracks.reduce((maxValue, track) => Math.max(maxValue, track.startTime + (track.buffer?.duration ?? 0.6)), 0),
+    () => tracks.reduce((maxValue, track) => Math.max(maxValue, track.startTime + (track.buffer?.duration ?? 0)), 0),
     [tracks],
   );
-  const safeDuration = Math.max(duration, maxTrackEnd, 1);
-  const canvasWidth = Math.max(520, Math.round(Math.max(viewportWidth, 520) * zoom));
-  const contentWidth = Math.max(canvasWidth - contentPadding * 2, 320);
+  const safeDuration = Math.max(
+    duration,
+    maxTrackEnd + Math.max(2, duration * 0.15),
+    currentTime + 1,
+    interaction?.kind === 'move-track' ? currentTime + interaction.clipDuration + 1 : 0,
+    6,
+  );
+  const canvasWidth = Math.max(viewportWidth, Math.round(Math.max(viewportWidth, 720) * Math.max(zoom, 1)), 720);
+  const contentWidth = Math.max(canvasWidth - contentPadding * 2, 480);
   const playheadLeft = contentPadding + clamp(currentTime / safeDuration, 0, 1) * contentWidth;
 
   useEffect(() => {
@@ -203,7 +229,7 @@ export function TrackTimelineStack({
 
     const observer = new ResizeObserver((entries) => {
       const nextWidth = entries[0]?.contentRect.width ?? 0;
-      setViewportWidth(Math.max(520, Math.floor(nextWidth)));
+      setViewportWidth(Math.max(720, Math.floor(nextWidth)));
     });
 
     observer.observe(viewportRef.current);
@@ -235,7 +261,7 @@ export function TrackTimelineStack({
       }
 
       if (interaction.kind === 'move-track') {
-        const nextStartTime = clamp(projectTime - interaction.pointerOffsetTime, 0, safeDuration - interaction.clipDuration);
+        const nextStartTime = Math.max(0, projectTime - interaction.pointerOffsetTime);
         onMoveTrack?.(interaction.trackId, Number(nextStartTime.toFixed(3)));
         return;
       }
@@ -245,14 +271,14 @@ export function TrackTimelineStack({
       if (interaction.handle === 'start') {
         onSelectionChange?.(interaction.trackId, {
           start: localTime,
-          end: selectionEnd,
+          end: interaction.initialEnd,
         });
         return;
       }
 
       if (interaction.handle === 'end') {
         onSelectionChange?.(interaction.trackId, {
-          start: selectionStart,
+          start: interaction.initialStart,
           end: localTime,
         });
         return;
@@ -275,14 +301,14 @@ export function TrackTimelineStack({
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
     };
-  }, [contentWidth, interaction, onMoveTrack, onSelectionChange, safeDuration, selectionEnd, selectionStart]);
+  }, [contentWidth, interaction, onMoveTrack, onSeek, onSelectionChange, safeDuration]);
 
   return (
     <section data-testid="audio-track-timeline-stack" className="audio-panel overflow-hidden rounded-[20px]">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] px-4 py-4">
-        <div>
-          <p className="audio-section-kicker">{copy.title}</p>
-          <h2 className="mt-1 text-sm font-medium text-[var(--text-primary)]">{copy.subtitle}</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+        <div className="flex items-center gap-3">
+          <p className="audio-section-kicker mb-0">{copy.timeline}</p>
+          <span className="audio-mono text-xs text-[var(--text-tertiary)]">{formatTime(safeDuration)}</span>
         </div>
         <div className="flex flex-wrap gap-2">
           {onAddTrack ? (
@@ -306,7 +332,7 @@ export function TrackTimelineStack({
         data-testid="audio-waveform-scroll"
       >
         <div style={{ width: `${canvasWidth}px` }} className="relative min-w-full bg-[var(--waveform-bg)]">
-          <div className="px-0 pt-4">
+          <div className="pt-3">
             <div style={{ width: `${contentWidth}px`, marginLeft: `${contentPadding}px` }}>
               <WaveformTimeline duration={safeDuration} zoom={zoom} />
             </div>
@@ -315,10 +341,10 @@ export function TrackTimelineStack({
           {tracks.length === 0 ? (
             <div className="px-6 py-8 text-sm text-[var(--text-secondary)]">{copy.empty}</div>
           ) : (
-            <div className="relative px-0 pb-4 pt-3">
+            <div className="relative pb-4 pt-2">
               <div
                 data-testid="audio-playhead"
-                className="absolute bottom-4 top-3 z-20 w-4 -translate-x-1/2 cursor-ew-resize"
+                className="absolute bottom-4 top-2 z-20 w-4 -translate-x-1/2 cursor-ew-resize"
                 style={{ left: `${playheadLeft}px` }}
               >
                 <button
@@ -330,21 +356,20 @@ export function TrackTimelineStack({
                     onSeek?.(getProjectTimeFromClientX(event.clientX));
                   }}
                   className="absolute inset-y-0 left-1/2 w-4 -translate-x-1/2 bg-transparent"
-                  aria-label="Playhead"
+                  aria-label={copy.playhead}
                 >
                   <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 bg-[var(--playhead)]" />
                   <span className="absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 rounded-full border border-[var(--bg-base)] bg-[var(--playhead)]" />
                 </button>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-3 px-3">
                 {tracks.map((track) => {
-                  const clipDuration = track.buffer?.duration ?? 0.75;
+                  const clipDuration = track.buffer?.duration ?? 0;
                   const clipLeft = contentPadding + clamp(track.startTime / safeDuration, 0, 1) * contentWidth;
-                  const clipWidth = Math.max(
-                    track.buffer ? (clipDuration / safeDuration) * contentWidth : 132,
-                    track.buffer ? 72 : 132,
-                  );
+                  const clipWidth = track.buffer
+                    ? Math.max((clipDuration / safeDuration) * contentWidth, 80)
+                    : 0;
                   const selectionStartPercent =
                     track.buffer && track.buffer.duration > 0 ? clamp(selectionStart / track.buffer.duration, 0, 1) : 0;
                   const selectionEndPercent =
@@ -355,12 +380,6 @@ export function TrackTimelineStack({
                       selectionStartPercent <= 0.001 &&
                       selectionEndPercent >= 0.999,
                   );
-                  const playheadWithinTrack =
-                    currentTime >= track.startTime && currentTime <= track.startTime + (track.buffer?.duration ?? 0);
-                  const localPlayheadPercent =
-                    track.buffer && playheadWithinTrack
-                      ? clamp((currentTime - track.startTime) / track.buffer.duration, 0, 1)
-                      : null;
                   const SourceIcon = getSourceIcon(track.source);
                   const sourceLabel = getSourceLabel(track.source, locale);
 
@@ -368,14 +387,14 @@ export function TrackTimelineStack({
                     <div
                       key={track.id}
                       data-testid="audio-track-stack-row"
-                      className={`rounded-[16px] border px-4 py-3 transition ${
+                      className={`rounded-[16px] border px-3 py-3 transition ${
                         track.isActive
                           ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.06)]'
                           : 'border-[var(--border)] bg-[var(--surface-muted)]'
                       }`}
                     >
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="min-w-0">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                        <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <button
                               type="button"
@@ -388,61 +407,87 @@ export function TrackTimelineStack({
                               <SourceIcon size={11} strokeWidth={1.5} />
                               {sourceLabel}
                             </span>
-                            {track.muted ? (
-                              <span className="rounded-full border border-[rgba(255,77,77,0.35)] px-2 py-1 text-[11px] text-[var(--status-recording)]">
-                                {copy.muted}
-                              </span>
-                            ) : null}
-                            {track.solo ? (
-                              <span className="rounded-full border border-[var(--accent)] px-2 py-1 text-[11px] text-[var(--accent)]">
-                                {copy.solo}
-                              </span>
-                            ) : null}
+                            <span
+                              className={`rounded-full border px-2 py-1 text-[11px] ${
+                                track.isActive
+                                  ? 'border-[var(--accent)] text-[var(--accent)]'
+                                  : 'border-[var(--border)] text-[var(--text-secondary)]'
+                              }`}
+                            >
+                              {track.isActive ? copy.active : copy.edit}
+                            </span>
                           </div>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-secondary)]">
-                          <span className="audio-mono">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="audio-mono text-xs text-[var(--text-secondary)]">
                             {copy.start} {formatTime(track.startTime)}
                           </span>
-                          <span className="audio-mono">{formatTime(track.buffer?.duration ?? 0)}</span>
-                          <span
-                            className={`rounded-full border px-2 py-1 ${
-                              track.isActive
-                                ? 'border-[var(--accent)] text-[var(--accent)]'
-                                : 'border-[var(--border)] text-[var(--text-secondary)]'
-                            }`}
-                          >
-                            {track.isActive ? copy.active : copy.edit}
-                          </span>
+                          {track.buffer ? (
+                            <span className="audio-mono text-xs text-[var(--text-tertiary)]">
+                              {formatTime(track.buffer.duration)}
+                            </span>
+                          ) : null}
+                          {onMuteToggle ? (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onMuteToggle(track.id);
+                              }}
+                              className={`audio-focus-ring inline-flex h-8 items-center gap-1 rounded-full border px-3 text-xs transition ${
+                                track.muted
+                                  ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.12)] text-[var(--accent)]'
+                                  : 'border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                              }`}
+                              aria-label={track.muted ? copy.unmute : copy.mute}
+                            >
+                              {track.muted ? <VolumeX size={13} strokeWidth={1.5} /> : <Volume2 size={13} strokeWidth={1.5} />}
+                              {track.muted ? copy.unmute : copy.mute}
+                            </button>
+                          ) : null}
+                          {onRemoveTrack ? (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onRemoveTrack(track.id);
+                              }}
+                              className="audio-focus-ring inline-flex h-8 items-center gap-1 rounded-full border border-[rgba(255,77,77,0.35)] bg-[rgba(255,77,77,0.08)] px-3 text-xs text-[var(--status-recording)] transition hover:bg-[rgba(255,77,77,0.14)]"
+                              aria-label={copy.remove}
+                            >
+                              <Trash2 size={13} strokeWidth={1.5} />
+                              {copy.remove}
+                            </button>
+                          ) : null}
                         </div>
                       </div>
 
-                      <div className="mt-3 px-0">
+                      <div
+                        className="relative h-24 overflow-hidden rounded-[14px] border border-[var(--border)] bg-[var(--bg-base)]"
+                        onPointerDown={(event) => {
+                          const target = event.target as HTMLElement;
+                          if (target.closest('[data-track-clip]') || target.closest('[data-selection-handle]')) {
+                            return;
+                          }
+
+                          onSelectTrack?.(track.id);
+                          onSeek?.(track.buffer ? getProjectTimeFromClientX(event.clientX) : track.startTime, track.id);
+                        }}
+                      >
                         <div
-                          className="relative h-24 overflow-hidden rounded-[14px] border border-[var(--border)] bg-[var(--bg-base)]"
-                          onPointerDown={(event) => {
-                            if ((event.target as HTMLElement).closest('[data-track-clip]')) {
-                              return;
-                            }
-
-                            onSelectTrack?.(track.id);
-                            onSeek?.(getProjectTimeFromClientX(event.clientX), track.id);
+                          className="pointer-events-none absolute inset-0 opacity-60"
+                          style={{
+                            backgroundImage:
+                              'linear-gradient(to right, var(--border) 0, var(--border) 1px, transparent 1px, transparent 100%)',
+                            backgroundSize: `${Math.max(contentWidth / Math.max(safeDuration, 1), 24)}px 100%`,
                           }}
-                        >
-                          <div
-                            className="pointer-events-none absolute inset-0 opacity-60"
-                            style={{
-                              backgroundImage:
-                                'linear-gradient(to right, var(--border) 0, var(--border) 1px, transparent 1px, transparent 100%)',
-                              backgroundSize: `${Math.max(contentWidth / Math.max(safeDuration, 1), 24)}px 100%`,
-                            }}
-                          />
+                        />
 
+                        {track.buffer ? (
                           <div
                             data-track-clip
-                            data-testid="audio-track-clip"
-                            className={`absolute top-2 h-[calc(100%-1rem)] overflow-hidden rounded-[12px] border ${
+                            className={`absolute inset-y-2 overflow-hidden rounded-[12px] border ${
                               track.isActive
                                 ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.08)]'
                                 : 'border-[var(--border-strong)] bg-[rgba(0,212,200,0.04)]'
@@ -466,26 +511,20 @@ export function TrackTimelineStack({
                                   pointerOffsetTime: clamp(pointerTime - track.startTime, 0, clipDuration),
                                 });
                               }}
-                              className="flex h-6 w-full items-center justify-between border-b border-[var(--border)] bg-[rgba(0,0,0,0.08)] px-2 text-[11px] text-[var(--text-secondary)]"
+                              className="audio-focus-ring absolute inset-y-1 left-1 z-10 inline-flex w-6 items-center justify-center rounded-full border border-[var(--border)] bg-[rgba(0,0,0,0.14)] text-[var(--text-secondary)]"
                               aria-label={copy.dragTrack}
                             >
-                              <span className="truncate">{track.name}</span>
-                              <GripHorizontal size={12} strokeWidth={1.5} />
+                              <GripVertical size={12} strokeWidth={1.5} />
                             </button>
 
                             <div
-                              className="relative h-[calc(100%-1.5rem)] w-full touch-none"
+                              className="relative h-full w-full touch-none pl-8"
                               onPointerDown={(event) => {
                                 event.stopPropagation();
                                 onSelectTrack?.(track.id);
 
                                 if (!track.buffer) {
-                                  onSeek?.(getProjectTimeFromClientX(event.clientX), track.id);
-                                  return;
-                                }
-
-                                if (!track.isActive) {
-                                  onSeek?.(getProjectTimeFromClientX(event.clientX), track.id);
+                                  onSeek?.(track.startTime, track.id);
                                   return;
                                 }
 
@@ -494,47 +533,32 @@ export function TrackTimelineStack({
                                 const projectTime = getProjectTimeFromClientX(event.clientX);
                                 const localTime = clamp(projectTime - track.startTime, 0, track.buffer.duration);
 
-                                if (handle) {
-                                  setInteraction({
-                                    kind: 'selection',
-                                    trackId: track.id,
-                                    trackStartTime: track.startTime,
-                                    trackDuration: track.buffer.duration,
-                                    anchorTime: localTime,
-                                    handle,
-                                  });
-                                  return;
-                                }
-
+                                onSeek?.(projectTime, track.id);
                                 setInteraction({
                                   kind: 'selection',
                                   trackId: track.id,
                                   trackStartTime: track.startTime,
                                   trackDuration: track.buffer.duration,
                                   anchorTime: localTime,
-                                  handle: null,
+                                  handle: handle ?? null,
+                                  initialStart: track.isActive ? selectionStart : 0,
+                                  initialEnd: track.isActive ? selectionEnd : track.buffer.duration,
                                 });
-                                onSeek?.(projectTime, track.id);
                               }}
                             >
-                              {track.buffer ? (
-                                <ClipWaveform
-                                  audioBuffer={track.buffer}
-                                  width={clipWidth}
-                                  height={56}
-                                  theme={theme}
-                                  isMuted={track.muted}
-                                />
-                              ) : (
-                                <div className="flex h-full items-center justify-center px-3 text-xs text-[var(--text-secondary)]">
-                                  {copy.emptyTrack}
-                                </div>
-                              )}
+                              <ClipWaveform
+                                audioBuffer={track.buffer}
+                                width={Math.max(clipWidth - 32, 48)}
+                                height={80}
+                                theme={theme}
+                                isMuted={track.muted}
+                              />
 
-                              {track.isActive && track.buffer ? (
+                              {track.isActive ? (
                                 <>
                                   {!isFullSelection ? (
                                     <div
+                                      data-testid="audio-selection-overlay"
                                       className="pointer-events-none absolute inset-y-0 bg-[var(--selection-bg)]"
                                       style={{
                                         left: `${selectionStartPercent * 100}%`,
@@ -571,16 +595,20 @@ export function TrackTimelineStack({
                                   </button>
                                 </>
                               ) : null}
-
-                              {localPlayheadPercent != null ? (
-                                <div
-                                  className="pointer-events-none absolute inset-y-0 z-10 w-[2px] bg-[var(--playhead)]"
-                                  style={{ left: `${localPlayheadPercent * 100}%` }}
-                                />
-                              ) : null}
                             </div>
                           </div>
-                        </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onSelectTrack?.(track.id);
+                              onSeek?.(track.startTime, track.id);
+                            }}
+                            className="audio-focus-ring flex h-full w-full items-center justify-center px-4 text-center text-xs text-[var(--text-secondary)]"
+                          >
+                            {copy.emptyTrack}
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -588,12 +616,6 @@ export function TrackTimelineStack({
               </div>
             </div>
           )}
-
-          {tracks.length > 0 ? (
-            <div className="border-t border-[var(--border)] px-4 pb-4 pt-3">
-              <p className="text-[11px] text-[var(--text-tertiary)]">{copy.laneHint}</p>
-            </div>
-          ) : null}
         </div>
       </div>
     </section>
