@@ -28,7 +28,6 @@ import {
   normalizeSelection,
 } from './audio-editor-utils';
 import { EffectsPanel } from './Effects/EffectsPanel';
-import { FileDropZone } from './FileDropZone';
 import { SelectionBar } from './Selection/SelectionBar';
 import { EditorToolbar } from './Toolbar/EditorToolbar';
 import { TransportBar } from './Transport/TransportBar';
@@ -785,6 +784,10 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     locale === 'ko'
       ? '파일 업로드나 마이크 녹음 후 자르기, 효과 적용, 저장까지 한 곳에서 처리하는 오디오 편집기입니다.'
       : 'Open or record one file, then trim, preview effects, and save it in a single audio workspace.';
+  const emptyStateHint =
+    locale === 'ko'
+      ? '상단의 오디오 열기 또는 아래 녹음 버튼으로 바로 시작할 수 있습니다.'
+      : 'Use the top open button or the recording controls below to start right away.';
 
   return (
     <div
@@ -882,28 +885,13 @@ export function AudioEditor({ mode }: AudioEditorProps) {
             />
           </section>
         ) : (
-          <div className="audio-panel rounded-[20px] p-5 sm:p-6">
-            <div className="mx-auto max-w-3xl space-y-5">
-              <div className="space-y-2">
+          <div className="audio-panel rounded-[20px] p-6 sm:p-8">
+            <div className="mx-auto flex max-w-2xl min-h-[220px] flex-col justify-center space-y-3">
+              <div className="space-y-3">
                 <p className="audio-section-kicker">{copy.fileDrop.title}</p>
                 <h2 className="text-lg font-medium text-[var(--text-primary)]">{copy.fileDrop.emptyState}</h2>
                 <p className="text-sm leading-relaxed text-[var(--text-secondary)]">{emptyStateDescription}</p>
-              </div>
-              <FileDropZone
-                title={copy.fileDrop.title}
-                description={copy.fileDrop.description}
-                helperText={copy.fileDrop.helperText}
-                files={files}
-                multiple={false}
-                compact
-                renderInput={false}
-                inputRef={fileInputRef}
-                onError={(message) => setLoadError(message)}
-                onWarning={(message) => setWarningMessage(message)}
-                onFiles={replaceFiles}
-              />
-              <div className="audio-status-line rounded-[10px] px-3 py-2 text-sm text-[var(--text-secondary)]">
-                {copy.recording.idleStatus}
+                <p className="text-sm text-[var(--text-tertiary)]">{emptyStateHint}</p>
               </div>
             </div>
           </div>
