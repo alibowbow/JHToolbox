@@ -519,6 +519,17 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   const transport = page.getByTestId('audio-transport-bar');
   await transport.getByRole('button', { name: 'Play' }).click();
   await expect(transport.getByRole('button', { name: 'Pause' })).toBeVisible();
+  await transport.getByRole('button', { name: 'Pause' }).click();
+  await expect(transport.getByRole('button', { name: 'Play' })).toBeVisible();
+
+  const pausedPlayheadBox = await playhead.boundingBox();
+  if (!pausedPlayheadBox) {
+    throw new Error('Audio playhead was not available after pausing playback.');
+  }
+  expect(pausedPlayheadBox.x + pausedPlayheadBox.width / 2).toBeGreaterThan(activeSurfaceBox.x + 16);
+
+  await transport.getByRole('button', { name: 'Play' }).click();
+  await expect(transport.getByRole('button', { name: 'Pause' })).toBeVisible();
   await expect(transport.getByRole('button', { name: 'Play' })).toBeVisible({ timeout: 10_000 });
   const resetPlayheadBox = await playhead.boundingBox();
   if (!resetPlayheadBox) {
@@ -679,6 +690,8 @@ test('audio editor localizes save and record actions in korean mode', async ({ p
   await expect(page.getByRole('button', { name: '다른 이름으로 저장' })).toHaveCount(1);
   await expect(page.getByRole('button', { name: '녹음 시작' })).toHaveCount(1);
   await expect(page.getByTestId('audio-playhead')).toHaveCount(1, { timeout: 60_000 });
+  await page.getByRole('button', { name: '트랙 추가' }).click();
+  await expect(page.getByText('빈 트랙 2')).toBeVisible();
 
   const waveformBox = await page.getByTestId('audio-waveform-scroll').boundingBox();
   if (!waveformBox) {

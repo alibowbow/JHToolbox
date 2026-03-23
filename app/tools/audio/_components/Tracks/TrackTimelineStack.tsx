@@ -363,7 +363,7 @@ export function TrackTimelineStack({
               {tracks.length === 0 ? (
                 <div className="px-3 py-8 text-sm text-[var(--text-secondary)]">{copy.empty}</div>
               ) : (
-                tracks.map((track) => {
+                tracks.map((track, trackIndex) => {
                   const clipDuration = track.buffer?.duration ?? 0;
                   const clipLeft = contentPadding + clamp(track.startTime / safeDuration, 0, 1) * contentWidth;
                   const clipWidth = track.buffer ? Math.max((clipDuration / safeDuration) * contentWidth, 72) : 0;
@@ -379,6 +379,10 @@ export function TrackTimelineStack({
                   );
                   const SourceIcon = getSourceIcon(track.source);
                   const sourceLabel = getSourceLabel(track.source, locale);
+                  const trackLabel =
+                    track.source === 'empty'
+                      ? `${copy.emptyTrack} ${trackIndex + 1}`
+                      : track.name;
 
                   return (
                     <div
@@ -394,7 +398,7 @@ export function TrackTimelineStack({
                             track.isActive ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                           }`}
                         >
-                          {track.name}
+                          {trackLabel}
                         </button>
                         <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-tertiary)]">
                           <SourceIcon size={11} strokeWidth={1.5} />

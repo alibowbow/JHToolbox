@@ -147,6 +147,18 @@ function hasTrackSelection(buffer: AudioBuffer | null, selection: AudioSelection
   return selection.start > 0.001 || selection.end < Math.max(buffer.duration - 0.001, 0);
 }
 
+function getVisibleTrackName(track: AudioProjectTrack | null, locale: 'en' | 'ko') {
+  if (!track) {
+    return null;
+  }
+
+  if (track.source === 'empty') {
+    return locale === 'ko' ? '빈 트랙' : 'Empty track';
+  }
+
+  return track.name;
+}
+
 export function AudioEditor({ mode }: AudioEditorProps) {
   const { locale } = useLocale();
   const copy = useMemo(() => getAudioEditorCopy(locale), [locale]);
@@ -201,7 +213,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const redoLabel = historyRef.current.redoLabel;
   const historyDepth = historyRef.current.depth;
   const hasActiveSelection = hasTrackSelection(buffer, selection);
-  const activeTrackName = activeTrack?.name ?? null;
+  const activeTrackName = getVisibleTrackName(activeTrack, locale);
   const projectDuration = mixdownBuffer?.duration ?? getMixdownDuration(projectTracks);
   const projectCurrentTime = isRecording ? recordingInsertTimeRef.current + recordingDuration : projectTime;
   const canSaveTrack = Boolean(buffer) && !isRecording;
@@ -802,15 +814,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       }
 
       if (isPlaying) {
-        audioEngine.pause();
-        if (buffer && audioEngine.buffer === buffer) {
-          const pausedTime = audioEngine.currentTime;
-          setCurrentTime(pausedTime);
-          setProjectTime(pausedTime + (activeTrack?.startTime ?? 0));
-        } else {
-          setProjectTime(audioEngine.currentTime);
-        }
-        setIsPlaying(false);
+        pauseCurrentPlayback();
         return;
       }
 
@@ -849,6 +853,30 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : copy.status.playbackFailed);
     }
+  };
+
+  const pauseCurrentPlayback = () => {
+    audioEngine.pause();
+    const pausedTime = audioEngine.currentTime;
+    const activeStart = activeTrackRef.current?.startTime ?? playbackProjectOffsetRef.current;
+    const activeBuffer = bufferRef.current;
+    const currentEngineBuffer = audioEngine.buffer;
+
+    if (activeBuffer && currentEngineBuffer === activeBuffer) {
+      setCurrentTime(pausedTime);
+      setProjectTime(pausedTime + activeStart);
+    } else if (mixdownBufferRef.current && currentEngineBuffer === mixdownBufferRef.current) {
+      setProjectTime(pausedTime);
+      if (activeTrackRef.current?.buffer) {
+        setCurrentTime(clamp(pausedTime - activeStart, 0, activeTrackRef.current.buffer.duration));
+      } else {
+        setCurrentTime(0);
+      }
+    } else {
+      setProjectTime(pausedTime);
+    }
+
+    setIsPlaying(false);
   };
 
   const handlePreviewMix = async () => {
@@ -907,11 +935,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
 
   const handleMoveTrack = (trackId: string, nextStartTime: number) => {
     if (isPlaying && activeTrackRef.current?.id === trackId) {
-      audioEngine.pause();
-      const pausedTime = audioEngine.currentTime;
-      setIsPlaying(false);
-      setCurrentTime(pausedTime);
-      setProjectTime(pausedTime + playbackProjectOffsetRef.current);
+      pauseCurrentPlayback();
     }
 
     updateTrack(trackId, (currentTrack) => ({
