@@ -1003,39 +1003,13 @@ export function TrackTimelineStack({
                             : 'bg-[rgba(0,212,200,0.05)] ring-1 ring-[rgba(127,127,127,0.25)]'
                         }`}
                         style={{ left: `${clipLeft}px`, width: `${clipWidth}px` }}
-                        onDoubleClick={(event) => {
-                          const target = event.target as HTMLElement;
-                          if (target.closest('[data-selection-handle]') || target.closest('[data-track-grip]')) {
-                            return;
-                          }
-
-                          event.stopPropagation();
-                          onSelectTrack(track.id);
-                          onSelectionChange(track.id, { start: clipStart, end: clipEnd });
-                        }}
-                        onClick={(event) => {
-                          // Fallback for the double-click select: the second
-                          // click of a double-click carries detail === 2 and is
-                          // more reliable than the dblclick event in automation.
-                          if (event.detail < 2) {
-                            return;
-                          }
-                          const target = event.target as HTMLElement;
-                          if (target.closest('[data-selection-handle]') || target.closest('[data-track-grip]')) {
-                            return;
-                          }
-                          onSelectTrack(track.id);
-                          onSelectionChange(track.id, { start: clipStart, end: clipEnd });
-                        }}
                         onPointerDown={(event) => {
                           const target = event.target as HTMLElement;
                           if (target.closest('[data-selection-handle]') || target.closest('[data-track-grip]')) {
                             return;
                           }
 
-                          // Avoid preventDefault here: it would suppress the
-                          // native dblclick used to select the whole clip.
-                          // `select-none` keeps drags from selecting text.
+                          event.preventDefault();
                           event.stopPropagation();
                           onSelectTrack(track.id);
 

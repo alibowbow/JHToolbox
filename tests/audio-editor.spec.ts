@@ -162,24 +162,6 @@ test('drops audio files onto the editor shell to import them', async ({ page }) 
   await expect(page.getByRole('button', { name: 'dropped.wav' })).toBeVisible();
 });
 
-test('double-clicking a clip selects the whole clip', async ({ page }) => {
-  await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('audio-transport-bar')).toBeVisible({ timeout: 60_000 });
-
-  await page.locator('input[type="file"]').setInputFiles({
-    name: 'clip.wav',
-    mimeType: 'audio/wav',
-    buffer: createDemoAudioBuffer(1.2, 220),
-  });
-  await expect(page.getByTestId('audio-track-waveform-surface')).toHaveCount(1, { timeout: 60_000 });
-
-  // Use the locator action (proper element-targeted double click) which is
-  // reliable in headless, unlike raw coordinate mouse.dblclick.
-  await page.getByTestId('audio-track-waveform-surface').first().dblclick({ position: { x: 60, y: 60 } });
-  await expect(page.getByTestId('audio-selection-bar')).toHaveCount(1);
-  await expect(page.getByTestId('audio-selection-overlay')).toHaveCount(1);
-});
-
 test('timeline conveniences: zoom to selection, inline rename, and reorder', async ({ page }) => {
   await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('audio-transport-bar')).toBeVisible({ timeout: 60_000 });

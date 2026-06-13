@@ -35,7 +35,7 @@ function getShortcutGroups(locale: 'en' | 'ko'): { title: string; close: string;
           items: [
             { keys: ['Ctrl', 'A'], label: '활성 클립 전체 선택' },
             { keys: ['Esc'], label: '선택 해제' },
-            { keys: ['더블클릭'], label: '클립 전체 선택' },
+            { keys: ['더블클릭'], label: '트랙 이름 바꾸기 (이름 위에서)' },
             { keys: ['Ctrl', '휠'], label: '타임라인 확대 / 축소' },
             { keys: ['Alt', '드래그'], label: '스냅 일시 해제' },
             { keys: ['?'], label: '이 패널 열기' },
@@ -73,7 +73,7 @@ function getShortcutGroups(locale: 'en' | 'ko'): { title: string; close: string;
         items: [
           { keys: ['Ctrl', 'A'], label: 'Select the active clip' },
           { keys: ['Esc'], label: 'Clear selection' },
-          { keys: ['Double-click'], label: 'Select a whole clip' },
+          { keys: ['Double-click'], label: 'Rename a track (on its name)' },
           { keys: ['Ctrl', 'Wheel'], label: 'Zoom the timeline' },
           { keys: ['Alt', 'Drag'], label: 'Temporarily disable snapping' },
           { keys: ['?'], label: 'Open this panel' },
