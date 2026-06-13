@@ -104,6 +104,10 @@ const LANE_H = 96;
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 32;
 const DRAG_THRESHOLD_PX = 4;
+// Touch: a quick press that barely moves is a tap (seek); anything else is a
+// one-finger pan handled by native horizontal scrolling.
+const TAP_MAX_MS = 300;
+const TAP_MOVE_PX = 10;
 
 const RULER_STEPS = [0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
 
@@ -241,7 +245,7 @@ function ClipWaveformWindow({
     <canvas
       ref={canvasRef}
       className="pointer-events-none absolute bottom-0"
-      style={{ left: `${windowLeft}px`, top: '20px' }}
+      style={{ left: `${windowLeft}px`, top: '24px' }}
     />
   );
 }
@@ -287,6 +291,20 @@ export function TrackTimelineStack({
   const hoverFrameRef = useRef<number | null>(null);
   const hoverClientXRef = useRef(0);
   const [editingTrack, setEditingTrack] = useState<{ id: string; value: string } | null>(null);
+
+  // Touch: a pending tap/scroll candidate (one finger on a clip or lane).
+  const touchGestureRef = useRef<{
+    pointerId: number;
+    trackId: string;
+    startX: number;
+    startY: number;
+    startTime: number;
+    seekTime: number;
+    moved: boolean;
+  } | null>(null);
+  // Latest values for window/touch listeners that must not re-bind each render.
+  const latestRef = useRef({ zoom, onZoomChange, onSeek, onSelectTrack, projectDuration });
+  latestRef.current = { zoom, onZoomChange, onSeek, onSelectTrack, projectDuration };
 
   const recordingActive = Boolean(recording?.active);
   const recordingEnd = recordingActive ? (recording?.insertTime ?? 0) + (recording?.elapsed ?? 0) : 0;
@@ -376,6 +394,104 @@ export function TrackTimelineStack({
     return () => node.removeEventListener('wheel', handleWheel);
   }, [onZoomChange, zoom]);
 
+  // Pinch-to-zoom with two fingers. Bound once; reads live values via refs so
+  // an in-progress pinch is never interrupted by a re-render.
+  useEffect(() => {
+    const node = viewportRef.current;
+    if (!node) {
+      return;
+    }
+
+    let startDistance = 0;
+    let startZoom = 1;
+    let pinching = false;
+
+    const distance = (touches: TouchList) =>
+      Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
+
+    const onTouchStart = (event: TouchEvent) => {
+      if (event.touches.length >= 2) {
+        pinching = true;
+        startDistance = distance(event.touches);
+        startZoom = latestRef.current.zoom;
+        // A second finger cancels any single-finger tap/drag in progress.
+        touchGestureRef.current = null;
+        interactionRef.current = null;
+        setInteraction(null);
+      }
+    };
+
+    const onTouchMove = (event: TouchEvent) => {
+      if (!pinching || event.touches.length < 2) {
+        return;
+      }
+      event.preventDefault();
+      const ratio = distance(event.touches) / Math.max(startDistance, 1);
+      latestRef.current.onZoomChange(clamp(startZoom * ratio, MIN_ZOOM, MAX_ZOOM));
+    };
+
+    const onTouchEnd = (event: TouchEvent) => {
+      if (event.touches.length < 2) {
+        pinching = false;
+      }
+    };
+
+    node.addEventListener('touchstart', onTouchStart, { passive: true });
+    node.addEventListener('touchmove', onTouchMove, { passive: false });
+    node.addEventListener('touchend', onTouchEnd);
+    node.addEventListener('touchcancel', onTouchEnd);
+    return () => {
+      node.removeEventListener('touchstart', onTouchStart);
+      node.removeEventListener('touchmove', onTouchMove);
+      node.removeEventListener('touchend', onTouchEnd);
+      node.removeEventListener('touchcancel', onTouchEnd);
+    };
+  }, []);
+
+  // Resolve a touch tap (seek + select) vs. a one-finger pan (native scroll).
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent) => {
+      const gesture = touchGestureRef.current;
+      if (!gesture || event.pointerId !== gesture.pointerId) {
+        return;
+      }
+      if (
+        Math.abs(event.clientX - gesture.startX) > TAP_MOVE_PX ||
+        Math.abs(event.clientY - gesture.startY) > TAP_MOVE_PX
+      ) {
+        gesture.moved = true;
+      }
+    };
+
+    const onPointerUp = (event: PointerEvent) => {
+      const gesture = touchGestureRef.current;
+      if (!gesture || event.pointerId !== gesture.pointerId) {
+        return;
+      }
+      touchGestureRef.current = null;
+      if (!gesture.moved && performance.now() - gesture.startTime < TAP_MAX_MS) {
+        latestRef.current.onSelectTrack(gesture.trackId);
+        latestRef.current.onSeek(clamp(gesture.seekTime, 0, Math.max(latestRef.current.projectDuration, 0)), gesture.trackId);
+      }
+    };
+
+    const onPointerCancel = (event: PointerEvent) => {
+      const gesture = touchGestureRef.current;
+      if (gesture && event.pointerId === gesture.pointerId) {
+        touchGestureRef.current = null;
+      }
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerCancel);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerCancel);
+    };
+  }, []);
+
   // Follow the playhead during playback unless the user is interacting.
   useEffect(() => {
     const node = viewportRef.current;
@@ -425,6 +541,22 @@ export function TrackTimelineStack({
     const innerX = clientX - rect.left + node.scrollLeft;
     return clamp((innerX - HEADER_W - LANE_PAD) / pixelsPerSecond, 0, safeDuration);
   };
+
+  // Record a one-finger touch on a clip/lane without preventing default, so the
+  // browser can pan horizontally; a real tap is resolved on pointer up.
+  const beginTouchGesture = (event: React.PointerEvent, trackId: string) => {
+    touchGestureRef.current = {
+      pointerId: event.pointerId,
+      trackId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startTime: performance.now(),
+      seekTime: getTimeFromClientX(event.clientX),
+      moved: false,
+    };
+  };
+
+  const isTouch = (event: React.PointerEvent) => event.pointerType !== 'mouse';
 
   // Magnetic snapping: clip edges, project bounds, playhead, and selection
   // bounds attract drags within an 8px radius. Hold Alt to bypass.
@@ -700,6 +832,7 @@ export function TrackTimelineStack({
         ref={viewportRef}
         data-testid="audio-waveform-scroll"
         className="overflow-x-auto overflow-y-hidden bg-[var(--waveform-bg)]"
+        style={{ touchAction: 'pan-x' }}
         onScroll={handleScroll}
       >
         <div className="relative" style={{ width: `${HEADER_W + laneWidth}px` }}>
@@ -713,7 +846,7 @@ export function TrackTimelineStack({
             </div>
             <div
               className="relative h-7 cursor-ew-resize select-none"
-              style={{ width: `${laneWidth}px` }}
+              style={{ width: `${laneWidth}px`, touchAction: 'none' }}
               onPointerDown={(event) => {
                 event.preventDefault();
                 onSeek(clamp(getTimeFromClientX(event.clientX), 0, Math.max(projectDuration, 0)));
@@ -739,7 +872,7 @@ export function TrackTimelineStack({
           <div
             className="relative"
             onPointerMove={(event) => {
-              if (interactionRef.current) {
+              if (interactionRef.current || event.pointerType !== 'mouse') {
                 return;
               }
 
@@ -772,7 +905,7 @@ export function TrackTimelineStack({
             {showPlayhead ? (
               <div
                 data-testid="audio-playhead"
-                className="absolute bottom-0 top-0 z-20 w-4 -translate-x-1/2 cursor-ew-resize"
+                className="absolute bottom-0 top-0 z-20 w-7 -translate-x-1/2 cursor-ew-resize"
                 style={{ left: `${HEADER_W + playheadLaneX}px` }}
               >
                 <button
@@ -782,7 +915,8 @@ export function TrackTimelineStack({
                     event.stopPropagation();
                     setInteraction({ kind: 'scrub' });
                   }}
-                  className="absolute inset-y-0 left-1/2 w-4 -translate-x-1/2 bg-transparent"
+                  className="absolute inset-y-0 left-1/2 w-7 -translate-x-1/2 bg-transparent"
+                  style={{ touchAction: 'none' }}
                   aria-label={copy.playhead}
                 >
                   <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 bg-[var(--playhead)]" />
@@ -975,6 +1109,12 @@ export function TrackTimelineStack({
                         return;
                       }
 
+                      if (isTouch(event)) {
+                        // One finger pans (native scroll); a tap seeks + selects.
+                        beginTouchGesture(event, track.id);
+                        return;
+                      }
+
                       event.preventDefault();
                       onSelectTrack(track.id);
                       onSeek(clamp(getTimeFromClientX(event.clientX), 0, Math.max(projectDuration, 0)), track.id);
@@ -1009,6 +1149,14 @@ export function TrackTimelineStack({
                             return;
                           }
 
+                          if (isTouch(event)) {
+                            // Touch: one finger pans the timeline, a tap seeks +
+                            // selects, and range selection is done with the
+                            // edge handles. Don't preventDefault (keeps scroll).
+                            beginTouchGesture(event, track.id);
+                            return;
+                          }
+
                           event.preventDefault();
                           event.stopPropagation();
                           onSelectTrack(track.id);
@@ -1031,11 +1179,12 @@ export function TrackTimelineStack({
                         <div
                           data-track-grip
                           data-testid="audio-track-drag-handle"
-                          className={`absolute inset-x-0 top-0 z-10 flex h-5 cursor-grab items-center gap-1 px-2 text-[10px] ${
+                          className={`absolute inset-x-0 top-0 z-10 flex h-6 cursor-grab items-center gap-1 px-2 text-[10px] ${
                             track.isActive
                               ? 'bg-[rgba(0,212,200,0.18)] text-[var(--text-primary)]'
                               : 'bg-[rgba(127,127,127,0.14)] text-[var(--text-secondary)]'
                           }`}
+                          style={{ touchAction: 'none' }}
                           onPointerDown={(event) => {
                             event.preventDefault();
                             event.stopPropagation();
@@ -1061,7 +1210,7 @@ export function TrackTimelineStack({
                           clipWidth={clipWidth}
                           windowLeft={winLeft}
                           windowWidth={winWidth}
-                          height={LANE_H - 8 - 20}
+                          height={LANE_H - 8 - 24}
                           theme={theme}
                           muted={track.muted}
                         />
@@ -1084,8 +1233,8 @@ export function TrackTimelineStack({
                               type="button"
                               data-selection-handle="start"
                               data-testid="audio-selection-handle-start"
-                              className="absolute inset-y-1 z-10 w-4 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent"
-                              style={{ left: hasSelectionOnClip ? `${selStartPct}%` : '8px' }}
+                              className="absolute inset-y-1 z-10 w-7 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent"
+                              style={{ left: hasSelectionOnClip ? `${selStartPct}%` : '8px', touchAction: 'none' }}
                               aria-label="Selection start"
                               onPointerDown={(event) => {
                                 event.preventDefault();
@@ -1101,15 +1250,15 @@ export function TrackTimelineStack({
                               }}
                             >
                               <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-[var(--selection-border)]" />
-                              <span className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
-                              <span className="absolute bottom-1.5 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
+                              <span className="absolute left-1/2 top-1 h-3 w-3 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
+                              <span className="absolute bottom-1 left-1/2 h-3 w-3 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
                             </button>
                             <button
                               type="button"
                               data-selection-handle="end"
                               data-testid="audio-selection-handle-end"
-                              className="absolute inset-y-1 z-10 w-4 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent"
-                              style={{ left: hasSelectionOnClip ? `${selEndPct}%` : 'calc(100% - 8px)' }}
+                              className="absolute inset-y-1 z-10 w-7 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent"
+                              style={{ left: hasSelectionOnClip ? `${selEndPct}%` : 'calc(100% - 8px)', touchAction: 'none' }}
                               aria-label="Selection end"
                               onPointerDown={(event) => {
                                 event.preventDefault();
@@ -1125,8 +1274,8 @@ export function TrackTimelineStack({
                               }}
                             >
                               <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-[var(--selection-border)]" />
-                              <span className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
-                              <span className="absolute bottom-1.5 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
+                              <span className="absolute left-1/2 top-1 h-3 w-3 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
+                              <span className="absolute bottom-1 left-1/2 h-3 w-3 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
                             </button>
                           </>
                         ) : null}
