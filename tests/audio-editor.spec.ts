@@ -173,12 +173,9 @@ test('double-clicking a clip selects the whole clip', async ({ page }) => {
   });
   await expect(page.getByTestId('audio-track-waveform-surface')).toHaveCount(1, { timeout: 60_000 });
 
-  const clip = page.getByTestId('audio-track-waveform-surface').first();
-  const clipBox = await clip.boundingBox();
-  if (!clipBox) {
-    throw new Error('Clip surface was not available.');
-  }
-  await page.mouse.dblclick(clipBox.x + clipBox.width * 0.5, clipBox.y + clipBox.height * 0.7);
+  // Use the locator action (proper element-targeted double click) which is
+  // reliable in headless, unlike raw coordinate mouse.dblclick.
+  await page.getByTestId('audio-track-waveform-surface').first().dblclick({ position: { x: 60, y: 60 } });
   await expect(page.getByTestId('audio-selection-bar')).toHaveCount(1);
   await expect(page.getByTestId('audio-selection-overlay')).toHaveCount(1);
 });

@@ -1013,6 +1013,20 @@ export function TrackTimelineStack({
                           onSelectTrack(track.id);
                           onSelectionChange(track.id, { start: clipStart, end: clipEnd });
                         }}
+                        onClick={(event) => {
+                          // Fallback for the double-click select: the second
+                          // click of a double-click carries detail === 2 and is
+                          // more reliable than the dblclick event in automation.
+                          if (event.detail < 2) {
+                            return;
+                          }
+                          const target = event.target as HTMLElement;
+                          if (target.closest('[data-selection-handle]') || target.closest('[data-track-grip]')) {
+                            return;
+                          }
+                          onSelectTrack(track.id);
+                          onSelectionChange(track.id, { start: clipStart, end: clipEnd });
+                        }}
                         onPointerDown={(event) => {
                           const target = event.target as HTMLElement;
                           if (target.closest('[data-selection-handle]') || target.closest('[data-track-grip]')) {
