@@ -50,6 +50,14 @@ function getAudioContext() {
   return sharedContext;
 }
 
+export function getSharedAudioContext() {
+  return getAudioContext();
+}
+
+export async function decodeAudioBlobToBuffer(blob: Blob) {
+  return await AudioEngine.getInstance().decodeBlob(blob);
+}
+
 function createEmptyAudioBuffer(duration = 0.01, sampleRate = 44100) {
   const context = getAudioContext();
   return context.createBuffer(2, Math.max(1, Math.ceil(duration * sampleRate)), sampleRate);

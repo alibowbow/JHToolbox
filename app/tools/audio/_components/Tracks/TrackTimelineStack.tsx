@@ -1,246 +1,383 @@
 'use client';
 
 import {
+  ClipboardPaste,
   FolderPlus,
   GripVertical,
+  Maximize2,
   Mic,
   Music4,
-  Play,
-  Radio,
+  Scissors,
   Trash2,
   Volume2,
   VolumeX,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useTheme } from '@/components/providers/theme-provider';
 import { renderWaveformOffscreen } from '@/lib/audio';
-import { clamp, formatTime } from '../audio-editor-utils';
-import { WaveformTimeline } from '../Waveform/WaveformTimeline';
-import type { AudioTrackListItem, AudioTrackSource } from './TrackListPanel';
+import { clamp, formatTime, getRangeStyle } from '../audio-editor-utils';
 
-type SelectionHandle = 'start' | 'end';
+export type TimelineTrackSource = 'file' | 'recording' | 'empty';
 
-interface TrackTimelineItem extends AudioTrackListItem {
+export interface TimelineTrack {
+  id: string;
+  name: string;
+  source: TimelineTrackSource;
+  startTime: number;
+  gain: number;
+  muted: boolean;
+  solo: boolean;
+  isActive: boolean;
   buffer: AudioBuffer | null;
 }
 
+export interface TimelineSelection {
+  start: number;
+  end: number;
+}
+
+export interface TimelineRecordingState {
+  active: boolean;
+  paused: boolean;
+  insertTime: number;
+  elapsed: number;
+}
+
 interface TrackTimelineStackProps {
-  tracks: TrackTimelineItem[];
-  duration: number;
+  tracks: TimelineTrack[];
+  projectDuration: number;
   currentTime: number;
+  isPlaying: boolean;
   zoom: number;
-  selectionStart?: number;
-  selectionEnd?: number;
-  onSelectTrack?: (trackId: string) => void;
-  onSeek?: (time: number, trackId?: string) => void;
-  onSelectionChange?: (trackId: string, nextSelection: { start: number; end: number }) => void;
-  onMoveTrack?: (trackId: string, nextStartTime: number) => void;
-  onAddTrack?: () => void;
-  onPreviewMix?: () => void;
-  onMuteToggle?: (trackId: string) => void;
-  onRemoveTrack?: (trackId: string) => void;
+  selection: TimelineSelection | null;
+  recording?: TimelineRecordingState | null;
+  canPaste: boolean;
+  canSplit: boolean;
+  onZoomChange: (nextZoom: number) => void;
+  onSelectTrack: (trackId: string) => void;
+  onSeek: (time: number, trackId?: string) => void;
+  onSelectionChange: (trackId: string, nextSelection: TimelineSelection) => void;
+  onMoveTrackStart: (trackId: string) => void;
+  onMoveTrack: (trackId: string, nextStartTime: number) => void;
+  onAddTrack: () => void;
+  onPaste: () => void;
+  onSplit: () => void;
+  onMuteToggle: (trackId: string) => void;
+  onSoloToggle: (trackId: string) => void;
+  onGainChange: (trackId: string, nextGain: number) => void;
+  onRemoveTrack: (trackId: string) => void;
 }
 
-type InteractionState =
-  | null
+type Interaction =
+  | { kind: 'scrub' }
+  | { kind: 'move-clip'; trackId: string; grabOffset: number; moved: boolean }
   | {
-      kind: 'move-playhead';
-    }
-  | {
-      kind: 'move-track';
+      kind: 'select-pending';
       trackId: string;
-      clipDuration: number;
-      pointerOffsetTime: number;
-      timelineDuration: number;
+      anchor: number;
+      clipStart: number;
+      clipEnd: number;
+      originX: number;
     }
-  | {
-      kind: 'selection';
-      trackId: string;
-      trackStartTime: number;
-      trackDuration: number;
-      anchorTime: number;
-      handle: SelectionHandle | null;
-      initialStart: number;
-      initialEnd: number;
-    };
+  | { kind: 'select'; trackId: string; anchor: number; clipStart: number; clipEnd: number }
+  | { kind: 'select-handle'; trackId: string; fixed: number; clipStart: number; clipEnd: number };
 
-function getSourceIcon(source: AudioTrackSource) {
-  switch (source) {
-    case 'recording':
-      return Mic;
-    case 'generated':
-      return Radio;
-    default:
-      return Music4;
-  }
-}
+const HEADER_W = 176;
+const LANE_PAD = 16;
+const LANE_H = 96;
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 32;
+const DRAG_THRESHOLD_PX = 4;
 
-function getCopy(locale: string) {
+const RULER_STEPS = [0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+
+function getTimelineCopy(locale: string) {
   if (locale === 'ko') {
     return {
       timeline: '멀티트랙',
       addTrack: '트랙 추가',
-      previewMix: '믹스 미리듣기',
       empty: '트랙이 아직 없습니다.',
       emptyTrack: '빈 트랙',
       start: '시작',
       file: '파일',
       recording: '녹음',
-      generated: '생성',
       emptySource: '빈 트랙',
       mute: '뮤트',
       unmute: '뮤트 해제',
+      solo: '솔로',
+      unsolo: '솔로 해제',
+      gain: '게인',
       remove: '삭제',
       dragTrack: '트랙 이동',
       playhead: '재생 헤드 이동',
+      zoomIn: '확대',
+      zoomOut: '축소',
+      zoomFit: '화면에 맞추기',
+      paste: '플레이헤드에 붙여넣기',
+      split: '플레이헤드에서 분할',
+      recordingLane: '녹음 중...',
     };
   }
 
   return {
     timeline: 'Multitrack',
     addTrack: 'Add track',
-    previewMix: 'Preview mix',
     empty: 'No tracks yet.',
     emptyTrack: 'Empty track',
     start: 'Start',
     file: 'File',
     recording: 'Recording',
-    generated: 'Generated',
     emptySource: 'Empty',
     mute: 'Mute',
     unmute: 'Unmute',
+    solo: 'Solo',
+    unsolo: 'Solo off',
+    gain: 'Gain',
     remove: 'Delete',
     dragTrack: 'Move track',
     playhead: 'Move playhead',
+    zoomIn: 'Zoom in',
+    zoomOut: 'Zoom out',
+    zoomFit: 'Fit to view',
+    paste: 'Paste at playhead',
+    split: 'Split at playhead',
+    recordingLane: 'Recording...',
   };
 }
 
-function getSourceLabel(source: AudioTrackSource, locale: string) {
-  const copy = getCopy(locale);
-
-  switch (source) {
-    case 'file':
-      return copy.file;
-    case 'recording':
-      return copy.recording;
-    case 'generated':
-      return copy.generated;
-    case 'empty':
-      return copy.emptySource;
-    default:
-      return copy.file;
-  }
+function getSourceIcon(source: TimelineTrackSource) {
+  return source === 'recording' ? Mic : Music4;
 }
 
-function ClipWaveform({
-  audioBuffer,
-  width,
+function pickRulerStep(pixelsPerSecond: number) {
+  for (const step of RULER_STEPS) {
+    if (step * pixelsPerSecond >= 64) {
+      return step;
+    }
+  }
+
+  return RULER_STEPS[RULER_STEPS.length - 1];
+}
+
+function ClipWaveformWindow({
+  buffer,
+  clipWidth,
+  windowLeft,
+  windowWidth,
   height,
   theme,
-  isMuted,
+  muted,
 }: {
-  audioBuffer: AudioBuffer;
-  width: number;
+  buffer: AudioBuffer;
+  clipWidth: number;
+  windowLeft: number;
+  windowWidth: number;
   height: number;
   theme: 'light' | 'dark';
-  isMuted: boolean;
+  muted: boolean;
 }) {
-  const [canvasNode, setCanvasNode] = useState<HTMLCanvasElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
-    if (!canvasNode) {
+    const canvas = canvasRef.current;
+    if (!canvas || windowWidth <= 0) {
       return;
     }
 
-    const dpr = window.devicePixelRatio || 1;
-    canvasNode.width = Math.round(width * dpr);
-    canvasNode.height = Math.round(height * dpr);
-    canvasNode.style.width = `${width}px`;
-    canvasNode.style.height = `${height}px`;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.max(1, Math.round(windowWidth * dpr));
+    canvas.height = Math.max(1, Math.round(height * dpr));
+    canvas.style.width = `${windowWidth}px`;
+    canvas.style.height = `${height}px`;
 
-    const context = canvasNode.getContext('2d');
+    const context = canvas.getContext('2d');
     if (!context) {
       return;
     }
 
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.scale(dpr, dpr);
-    context.clearRect(0, 0, width, height);
+    context.clearRect(0, 0, windowWidth, height);
 
-    const source = renderWaveformOffscreen(audioBuffer, Math.max(256, Math.round(width)), height, theme);
-    context.drawImage(source as CanvasImageSource, 0, 0, width, height);
+    const source = renderWaveformOffscreen(buffer, Math.max(256, Math.round(Math.min(clipWidth, 8192))), height, theme);
+    const sourceWidth = source.width;
+    const sx = clamp(windowLeft / Math.max(clipWidth, 1), 0, 1) * sourceWidth;
+    const sw = Math.max(1, clamp(windowWidth / Math.max(clipWidth, 1), 0, 1) * sourceWidth);
+    context.drawImage(source as CanvasImageSource, sx, 0, sw, source.height, 0, 0, windowWidth, height);
 
-    if (isMuted) {
+    if (muted) {
       context.fillStyle = theme === 'dark' ? 'rgba(2, 6, 23, 0.52)' : 'rgba(255, 255, 255, 0.44)';
-      context.fillRect(0, 0, width, height);
+      context.fillRect(0, 0, windowWidth, height);
     }
-  }, [audioBuffer, canvasNode, height, isMuted, theme, width]);
+  }, [buffer, clipWidth, height, muted, theme, windowLeft, windowWidth]);
 
-  return <canvas ref={setCanvasNode} className="block h-full w-full" />;
+  return (
+    <canvas
+      ref={canvasRef}
+      className="pointer-events-none absolute bottom-0"
+      style={{ left: `${windowLeft}px`, top: '20px' }}
+    />
+  );
 }
 
 export function TrackTimelineStack({
   tracks,
-  duration,
+  projectDuration,
   currentTime,
+  isPlaying,
   zoom,
-  selectionStart = 0,
-  selectionEnd = 0,
+  selection,
+  recording,
+  canPaste,
+  canSplit,
+  onZoomChange,
   onSelectTrack,
   onSeek,
   onSelectionChange,
+  onMoveTrackStart,
   onMoveTrack,
   onAddTrack,
-  onPreviewMix,
+  onPaste,
+  onSplit,
   onMuteToggle,
+  onSoloToggle,
+  onGainChange,
   onRemoveTrack,
 }: TrackTimelineStackProps) {
   const { locale } = useLocale();
   const { theme } = useTheme();
-  const copy = getCopy(locale);
+  const copy = getTimelineCopy(locale);
   const viewportRef = useRef<HTMLDivElement | null>(null);
-  const [viewportWidth, setViewportWidth] = useState(0);
-  const [interaction, setInteraction] = useState<InteractionState>(null);
-  const contentPadding = 24;
+  const [viewportWidth, setViewportWidth] = useState(960);
+  const [scrollLeft, setScrollLeft] = useState(0);
+  const scrollFrameRef = useRef<number | null>(null);
+  const [interaction, setInteraction] = useState<Interaction | null>(null);
+  const interactionRef = useRef<Interaction | null>(null);
+  const prevPpsRef = useRef<number | null>(null);
 
-  const maxTrackEnd = useMemo(
-    () => tracks.reduce((maxValue, track) => Math.max(maxValue, track.startTime + (track.buffer?.duration ?? 0)), 0),
-    [tracks],
-  );
+  const recordingActive = Boolean(recording?.active);
+  const recordingEnd = recordingActive ? (recording?.insertTime ?? 0) + (recording?.elapsed ?? 0) : 0;
+
   const safeDuration = Math.max(
-    duration,
-    maxTrackEnd + Math.max(2, duration * 0.15),
-    currentTime + 1,
-    6,
+    projectDuration + Math.max(0.5, projectDuration * 0.04),
+    currentTime + 0.5,
+    recordingEnd + 1,
+    4,
   );
-  const canvasWidth = Math.max(viewportWidth, Math.round(Math.max(viewportWidth, 720) * Math.max(zoom, 1)), 720);
-  const contentWidth = Math.max(canvasWidth - contentPadding * 2, 480);
-  const playheadLeft = contentPadding + clamp(currentTime / safeDuration, 0, 1) * contentWidth;
+
+  const laneWidth = Math.round(Math.max(320, viewportWidth - HEADER_W) * clamp(zoom, MIN_ZOOM, MAX_ZOOM));
+  const contentWidth = Math.max(laneWidth - LANE_PAD * 2, 160);
+  const pixelsPerSecond = contentWidth / safeDuration;
+
+  const timeToLaneX = (time: number) => LANE_PAD + time * pixelsPerSecond;
+  const playheadLaneX = timeToLaneX(clamp(currentTime, 0, safeDuration));
 
   useEffect(() => {
-    if (!viewportRef.current || typeof ResizeObserver === 'undefined') {
+    interactionRef.current = interaction ?? null;
+  }, [interaction]);
+
+  useEffect(() => {
+    const node = viewportRef.current;
+    if (!node || typeof ResizeObserver === 'undefined') {
       return;
     }
 
     const observer = new ResizeObserver((entries) => {
       const nextWidth = entries[0]?.contentRect.width ?? 0;
-      setViewportWidth(Math.max(720, Math.floor(nextWidth)));
+      if (nextWidth > 0) {
+        setViewportWidth(Math.floor(nextWidth));
+      }
     });
 
-    observer.observe(viewportRef.current);
+    observer.observe(node);
     return () => observer.disconnect();
   }, []);
 
-  const getProjectTimeFromClientX = (clientX: number, durationScale = safeDuration) => {
-    const viewportNode = viewportRef.current;
-    if (!viewportNode) {
+  // Keep the visible center anchored when zoom changes.
+  useLayoutEffect(() => {
+    const node = viewportRef.current;
+    const prevPps = prevPpsRef.current;
+    prevPpsRef.current = pixelsPerSecond;
+
+    if (!node || prevPps == null || Math.abs(prevPps - pixelsPerSecond) < 0.0001) {
+      return;
+    }
+
+    const centerTime = (node.scrollLeft + viewportWidth / 2 - HEADER_W - LANE_PAD) / prevPps;
+    const nextScroll = centerTime * pixelsPerSecond + HEADER_W + LANE_PAD - viewportWidth / 2;
+    node.scrollLeft = Math.max(0, nextScroll);
+    setScrollLeft(node.scrollLeft);
+  }, [pixelsPerSecond, viewportWidth]);
+
+  // Ctrl/Cmd + wheel zooms; needs a non-passive listener to prevent page zoom.
+  useEffect(() => {
+    const node = viewportRef.current;
+    if (!node) {
+      return;
+    }
+
+    const handleWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) {
+        return;
+      }
+
+      event.preventDefault();
+      const factor = event.deltaY < 0 ? 1.25 : 0.8;
+      onZoomChange(clamp(zoom * factor, MIN_ZOOM, MAX_ZOOM));
+    };
+
+    node.addEventListener('wheel', handleWheel, { passive: false });
+    return () => node.removeEventListener('wheel', handleWheel);
+  }, [onZoomChange, zoom]);
+
+  // Follow the playhead during playback unless the user is interacting.
+  useEffect(() => {
+    const node = viewportRef.current;
+    if (!node || !isPlaying || interactionRef.current) {
+      return;
+    }
+
+    const playheadAbs = HEADER_W + playheadLaneX;
+    const viewStart = node.scrollLeft + HEADER_W + 24;
+    const viewEnd = node.scrollLeft + viewportWidth - 48;
+
+    if (playheadAbs < viewStart || playheadAbs > viewEnd) {
+      node.scrollLeft = Math.max(0, playheadAbs - HEADER_W - viewportWidth * 0.25);
+      setScrollLeft(node.scrollLeft);
+    }
+  }, [isPlaying, playheadLaneX, viewportWidth]);
+
+  const handleScroll = () => {
+    if (scrollFrameRef.current != null) {
+      return;
+    }
+
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      setScrollLeft(viewportRef.current?.scrollLeft ?? 0);
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      if (scrollFrameRef.current != null) {
+        cancelAnimationFrame(scrollFrameRef.current);
+      }
+    };
+  }, []);
+
+  const getTimeFromClientX = (clientX: number) => {
+    const node = viewportRef.current;
+    if (!node) {
       return 0;
     }
 
-    const rect = viewportNode.getBoundingClientRect();
-    const x = clamp(clientX - rect.left + viewportNode.scrollLeft - contentPadding, 0, contentWidth);
-    return clamp((x / contentWidth) * durationScale, 0, durationScale);
+    const rect = node.getBoundingClientRect();
+    const innerX = clientX - rect.left + node.scrollLeft;
+    return clamp((innerX - HEADER_W - LANE_PAD) / pixelsPerSecond, 0, safeDuration);
   };
 
   useEffect(() => {
@@ -249,48 +386,76 @@ export function TrackTimelineStack({
     }
 
     const handlePointerMove = (event: PointerEvent) => {
-      const projectTime =
-        interaction.kind === 'move-track'
-          ? getProjectTimeFromClientX(event.clientX, interaction.timelineDuration)
-          : getProjectTimeFromClientX(event.clientX);
-
-      if (interaction.kind === 'move-playhead') {
-        onSeek?.(projectTime);
+      const time = getTimeFromClientX(event.clientX);
+      const current = interactionRef.current;
+      if (!current) {
         return;
       }
 
-      if (interaction.kind === 'move-track') {
-        const nextStartTime = Math.max(0, projectTime - interaction.pointerOffsetTime);
-        onMoveTrack?.(interaction.trackId, Number(nextStartTime.toFixed(3)));
+      if (current.kind === 'scrub') {
+        onSeek(clamp(time, 0, Math.max(projectDuration, 0)));
         return;
       }
 
-      const localTime = clamp(projectTime - interaction.trackStartTime, 0, interaction.trackDuration);
+      if (current.kind === 'move-clip') {
+        if (!current.moved) {
+          onMoveTrackStart(current.trackId);
+          setInteraction({ ...current, moved: true });
+        }
+        onMoveTrack(current.trackId, Math.max(0, Number((time - current.grabOffset).toFixed(3))));
+        return;
+      }
 
-      if (interaction.handle === 'start') {
-        onSelectionChange?.(interaction.trackId, {
-          start: localTime,
-          end: interaction.initialEnd,
+      if (current.kind === 'select-pending') {
+        const node = viewportRef.current;
+        const rect = node?.getBoundingClientRect();
+        const innerX = rect ? event.clientX - rect.left + (node?.scrollLeft ?? 0) : 0;
+        if (Math.abs(innerX - current.originX) < DRAG_THRESHOLD_PX) {
+          return;
+        }
+
+        const next: Interaction = {
+          kind: 'select',
+          trackId: current.trackId,
+          anchor: current.anchor,
+          clipStart: current.clipStart,
+          clipEnd: current.clipEnd,
+        };
+        setInteraction(next);
+        interactionRef.current = next;
+        const clamped = clamp(time, current.clipStart, current.clipEnd);
+        onSelectionChange(current.trackId, {
+          start: Math.min(current.anchor, clamped),
+          end: Math.max(current.anchor, clamped),
         });
         return;
       }
 
-      if (interaction.handle === 'end') {
-        onSelectionChange?.(interaction.trackId, {
-          start: interaction.initialStart,
-          end: localTime,
+      if (current.kind === 'select') {
+        const clamped = clamp(time, current.clipStart, current.clipEnd);
+        onSelectionChange(current.trackId, {
+          start: Math.min(current.anchor, clamped),
+          end: Math.max(current.anchor, clamped),
         });
         return;
       }
 
-      onSelectionChange?.(interaction.trackId, {
-        start: interaction.anchorTime,
-        end: localTime,
+      const clamped = clamp(time, current.clipStart, current.clipEnd);
+      onSelectionChange(current.trackId, {
+        start: Math.min(current.fixed, clamped),
+        end: Math.max(current.fixed, clamped),
       });
     };
 
     const handlePointerUp = () => {
+      const current = interactionRef.current;
+      if (current?.kind === 'select-pending') {
+        // A click (no drag) on a clip moves the playhead to the clicked time.
+        onSeek(clamp(current.anchor, 0, Math.max(projectDuration, 0)), current.trackId);
+      }
+
       setInteraction(null);
+      interactionRef.current = null;
     };
 
     window.addEventListener('pointermove', handlePointerMove);
@@ -300,317 +465,487 @@ export function TrackTimelineStack({
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
     };
-  }, [contentWidth, interaction, onMoveTrack, onSeek, onSelectionChange, safeDuration]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [interaction, pixelsPerSecond, projectDuration, safeDuration]);
+
+  const rulerStep = pickRulerStep(pixelsPerSecond);
+  const rulerTicks = useMemo(() => {
+    const count = Math.floor(safeDuration / rulerStep) + 1;
+    return Array.from({ length: Math.min(count, 2000) }, (_, index) => index * rulerStep);
+  }, [rulerStep, safeDuration]);
+
+  const windowStart = Math.max(0, scrollLeft - viewportWidth * 0.5);
+  const windowEnd = scrollLeft + viewportWidth * 1.5;
+
+  const showPlayhead = tracks.length > 0 || recordingActive;
 
   return (
     <section data-testid="audio-track-timeline-stack" className="audio-panel overflow-hidden rounded-[20px]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-2.5">
         <div className="flex items-center gap-3">
           <p className="audio-section-kicker mb-0">{copy.timeline}</p>
-          <span className="audio-mono text-xs text-[var(--text-tertiary)]">{formatTime(safeDuration)}</span>
+          <span className="audio-mono text-xs text-[var(--text-tertiary)]">{formatTime(Math.max(projectDuration, 0))}</span>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {onAddTrack ? (
-            <button type="button" onClick={onAddTrack} className="audio-button-secondary audio-focus-ring h-9 px-3">
-              <FolderPlus size={14} strokeWidth={1.5} />
-              {copy.addTrack}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-1.5 py-1">
+            <button
+              type="button"
+              onClick={() => onZoomChange(clamp(zoom / 1.5, MIN_ZOOM, MAX_ZOOM))}
+              disabled={zoom <= MIN_ZOOM}
+              className="audio-icon-button audio-focus-ring h-7 w-7"
+              aria-label={copy.zoomOut}
+              title={copy.zoomOut}
+            >
+              <ZoomOut size={13} strokeWidth={1.5} />
             </button>
-          ) : null}
-          {onPreviewMix && tracks.length > 1 ? (
-            <button type="button" onClick={onPreviewMix} className="audio-button-secondary audio-focus-ring h-9 px-3">
-              <Play size={14} strokeWidth={1.5} />
-              {copy.previewMix}
+            <span className="audio-mono min-w-[3rem] text-center text-[11px] text-[var(--text-secondary)]">
+              x{zoom >= 10 ? zoom.toFixed(0) : zoom.toFixed(1)}
+            </span>
+            <button
+              type="button"
+              onClick={() => onZoomChange(clamp(zoom * 1.5, MIN_ZOOM, MAX_ZOOM))}
+              disabled={zoom >= MAX_ZOOM}
+              className="audio-icon-button audio-focus-ring h-7 w-7"
+              aria-label={copy.zoomIn}
+              title={copy.zoomIn}
+            >
+              <ZoomIn size={13} strokeWidth={1.5} />
             </button>
-          ) : null}
+            <button
+              type="button"
+              onClick={() => onZoomChange(MIN_ZOOM)}
+              disabled={zoom <= MIN_ZOOM}
+              className="audio-icon-button audio-focus-ring h-7 w-7"
+              aria-label={copy.zoomFit}
+              title={copy.zoomFit}
+            >
+              <Maximize2 size={13} strokeWidth={1.5} />
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={onSplit}
+            disabled={!canSplit}
+            className="audio-button-secondary audio-focus-ring h-8 px-2.5 text-xs"
+            aria-label={copy.split}
+            title={copy.split}
+          >
+            <Scissors size={13} strokeWidth={1.5} />
+            <span className="hidden sm:inline">{copy.split}</span>
+          </button>
+          <button
+            type="button"
+            onClick={onPaste}
+            disabled={!canPaste}
+            className="audio-button-secondary audio-focus-ring h-8 px-2.5 text-xs"
+            aria-label={copy.paste}
+            title={copy.paste}
+          >
+            <ClipboardPaste size={13} strokeWidth={1.5} />
+            <span className="hidden sm:inline">{copy.paste}</span>
+          </button>
+          <button type="button" onClick={onAddTrack} className="audio-button-secondary audio-focus-ring h-8 px-2.5 text-xs">
+            <FolderPlus size={13} strokeWidth={1.5} />
+            {copy.addTrack}
+          </button>
         </div>
       </div>
 
       <div
         ref={viewportRef}
-        className={canvasWidth > viewportWidth + 1 ? 'overflow-x-auto' : 'overflow-x-hidden'}
         data-testid="audio-waveform-scroll"
+        className="overflow-x-auto overflow-y-hidden bg-[var(--waveform-bg)]"
+        onScroll={handleScroll}
       >
-        <div style={{ width: `${canvasWidth}px` }} className="relative min-w-full bg-[var(--waveform-bg)]">
-          <div className="pt-3">
-            <div style={{ width: `${contentWidth}px`, marginLeft: `${contentPadding}px` }}>
-              <WaveformTimeline duration={safeDuration} zoom={zoom} />
+        <div className="relative" style={{ width: `${HEADER_W + laneWidth}px` }}>
+          {/* Ruler */}
+          <div className="flex border-b border-[var(--border)]">
+            <div
+              className="sticky left-0 z-30 flex h-7 shrink-0 items-center border-r border-[var(--border)] bg-[var(--topbar-bg)] px-3"
+              style={{ width: `${HEADER_W}px` }}
+            >
+              <span className="audio-section-kicker mb-0">{copy.timeline}</span>
+            </div>
+            <div
+              className="relative h-7 cursor-ew-resize select-none"
+              style={{ width: `${laneWidth}px` }}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                onSeek(clamp(getTimeFromClientX(event.clientX), 0, Math.max(projectDuration, 0)));
+                setInteraction({ kind: 'scrub' });
+              }}
+            >
+              {rulerTicks.map((tick) => (
+                <span
+                  key={tick}
+                  className="absolute bottom-0 top-0 flex flex-col justify-between"
+                  style={{ left: `${timeToLaneX(tick)}px` }}
+                >
+                  <span className="audio-mono mt-0.5 -translate-x-1 text-[10px] leading-none text-[var(--text-tertiary)]">
+                    {formatTime(tick, rulerStep < 1)}
+                  </span>
+                  <span className="block h-1.5 w-px bg-[var(--border-strong)]" />
+                </span>
+              ))}
             </div>
           </div>
 
-          <div className="relative pb-4 pt-2">
-            <div
-              data-testid="audio-playhead"
-              className="absolute bottom-4 top-2 z-20 w-4 -translate-x-1/2 cursor-ew-resize"
-              style={{ left: `${playheadLeft}px` }}
-            >
-              <button
-                type="button"
-                onPointerDown={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setInteraction({ kind: 'move-playhead' });
-                  onSeek?.(getProjectTimeFromClientX(event.clientX));
-                }}
-                className="absolute inset-y-0 left-1/2 w-4 -translate-x-1/2 bg-transparent"
-                aria-label={copy.playhead}
+          {/* Lanes */}
+          <div className="relative">
+            {showPlayhead ? (
+              <div
+                data-testid="audio-playhead"
+                className="absolute bottom-0 top-0 z-20 w-4 -translate-x-1/2 cursor-ew-resize"
+                style={{ left: `${HEADER_W + playheadLaneX}px` }}
               >
-                <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 bg-[var(--playhead)]" />
-                <span className="absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 rounded-full border border-[var(--bg-base)] bg-[var(--playhead)]" />
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setInteraction({ kind: 'scrub' });
+                  }}
+                  className="absolute inset-y-0 left-1/2 w-4 -translate-x-1/2 bg-transparent"
+                  aria-label={copy.playhead}
+                >
+                  <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 bg-[var(--playhead)]" />
+                  <span className="absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 rounded-full border border-[var(--bg-base)] bg-[var(--playhead)]" />
+                </button>
+              </div>
+            ) : null}
 
-            <div className="space-y-2 px-3 pb-2">
-              {tracks.length === 0 ? (
-                <div className="px-3 py-8 text-sm text-[var(--text-secondary)]">{copy.empty}</div>
-              ) : (
-                tracks.map((track, trackIndex) => {
-                  const clipDuration = track.buffer?.duration ?? 0;
-                  const clipLeft = contentPadding + clamp(track.startTime / safeDuration, 0, 1) * contentWidth;
-                  const clipWidth = track.buffer ? Math.max((clipDuration / safeDuration) * contentWidth, 72) : 0;
-                  const selectionStartPercent =
-                    track.buffer && track.buffer.duration > 0 ? clamp(selectionStart / track.buffer.duration, 0, 1) : 0;
-                  const selectionEndPercent =
-                    track.buffer && track.buffer.duration > 0 ? clamp(selectionEnd / track.buffer.duration, 0, 1) : 1;
-                  const isFullSelection = Boolean(
-                    track.isActive &&
-                      track.buffer &&
-                      selectionStartPercent <= 0.001 &&
-                      selectionEndPercent >= 0.999,
-                  );
-                  const SourceIcon = getSourceIcon(track.source);
-                  const sourceLabel = getSourceLabel(track.source, locale);
-                  const trackLabel =
-                    track.source === 'empty'
-                      ? `${copy.emptyTrack} ${trackIndex + 1}`
-                      : track.name;
+            {tracks.length === 0 && !recordingActive ? (
+              <div className="flex">
+                <div
+                  className="sticky left-0 z-30 shrink-0 border-r border-[var(--border)] bg-[var(--bg-surface)]"
+                  style={{ width: `${HEADER_W}px` }}
+                />
+                <div className="px-4 py-8 text-sm text-[var(--text-secondary)]">{copy.empty}</div>
+              </div>
+            ) : null}
 
-                  return (
+            {tracks.map((track, trackIndex) => {
+              const buffer = track.buffer;
+              const clipDuration = buffer?.duration ?? 0;
+              const clipStart = Math.max(0, track.startTime);
+              const clipEnd = clipStart + clipDuration;
+              const clipLeft = timeToLaneX(clipStart);
+              const clipWidth = buffer ? Math.max(clipDuration * pixelsPerSecond, 24) : 0;
+
+              const selOverlapStart = selection ? Math.max(selection.start, clipStart) : null;
+              const selOverlapEnd = selection ? Math.min(selection.end, clipEnd) : null;
+              const hasSelectionOnClip =
+                track.isActive &&
+                buffer != null &&
+                selOverlapStart != null &&
+                selOverlapEnd != null &&
+                selOverlapEnd - selOverlapStart > 0.0005;
+
+              const selStartPct = hasSelectionOnClip && clipDuration > 0 ? ((selOverlapStart! - clipStart) / clipDuration) * 100 : 0;
+              const selEndPct = hasSelectionOnClip && clipDuration > 0 ? ((selOverlapEnd! - clipStart) / clipDuration) * 100 : 100;
+
+              const SourceIcon = getSourceIcon(track.source);
+              const trackLabel = track.source === 'empty' ? `${copy.emptyTrack} ${trackIndex + 1}` : track.name;
+
+              const clipAbsLeft = HEADER_W + clipLeft;
+              const winLeft = clamp(windowStart - clipAbsLeft, 0, Math.max(clipWidth - 1, 0));
+              const winWidth = clamp(windowEnd - clipAbsLeft, 0, clipWidth) - winLeft;
+
+              return (
+                <div
+                  key={track.id}
+                  data-testid="audio-track-stack-row"
+                  className={`flex border-b border-[var(--border)] ${track.isActive ? '' : 'opacity-95'}`}
+                >
+                  {/* Mixer cell */}
+                  <div
+                    className={`sticky left-0 z-30 shrink-0 border-r px-3 py-2 ${
+                      track.isActive
+                        ? 'border-[var(--accent)] bg-[var(--bg-surface)]'
+                        : 'border-[var(--border)] bg-[var(--bg-surface)]'
+                    }`}
+                    style={{ width: `${HEADER_W}px` }}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => onSelectTrack(track.id)}
+                        className={`min-w-0 flex-1 truncate text-left text-[13px] font-medium transition ${
+                          track.isActive
+                            ? 'text-[var(--text-primary)]'
+                            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                        }`}
+                        title={trackLabel}
+                      >
+                        {trackLabel}
+                      </button>
+                      <SourceIcon size={12} strokeWidth={1.5} className="shrink-0 text-[var(--text-tertiary)]" />
+                    </div>
+                    <p className="audio-mono mt-0.5 text-[10px] text-[var(--text-tertiary)]">
+                      {copy.start} {formatTime(clipStart, false)}
+                      {buffer ? ` · ${formatTime(clipDuration, false)}` : ` · ${copy.emptySource}`}
+                    </p>
+                    <div className="mt-1.5 flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => onMuteToggle(track.id)}
+                        className={`audio-focus-ring inline-flex h-6 w-6 items-center justify-center rounded-md border text-[10px] font-semibold transition ${
+                          track.muted
+                            ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.14)] text-[var(--accent)]'
+                            : 'border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                        }`}
+                        aria-label={track.muted ? copy.unmute : copy.mute}
+                        aria-pressed={track.muted}
+                        title={track.muted ? copy.unmute : copy.mute}
+                      >
+                        {track.muted ? <VolumeX size={12} strokeWidth={1.5} /> : <Volume2 size={12} strokeWidth={1.5} />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onSoloToggle(track.id)}
+                        className={`audio-focus-ring inline-flex h-6 w-6 items-center justify-center rounded-md border text-[10px] font-semibold transition ${
+                          track.solo
+                            ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.14)] text-[var(--accent)]'
+                            : 'border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                        }`}
+                        aria-label={track.solo ? copy.unsolo : copy.solo}
+                        aria-pressed={track.solo}
+                        title={track.solo ? copy.unsolo : copy.solo}
+                      >
+                        S
+                      </button>
+                      <input
+                        type="range"
+                        min={0}
+                        max={2}
+                        step={0.05}
+                        value={track.gain}
+                        onChange={(event) => onGainChange(track.id, Number(event.target.value))}
+                        style={getRangeStyle(track.gain, 0, 2)}
+                        className="audio-range audio-focus-ring min-w-0 flex-1"
+                        aria-label={`${copy.gain} ${trackLabel}`}
+                        title={`${copy.gain} ${track.gain.toFixed(2)}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => onRemoveTrack(track.id)}
+                        className="audio-focus-ring inline-flex h-6 w-6 items-center justify-center rounded-md border border-[rgba(255,77,77,0.35)] text-[var(--status-recording)] transition hover:bg-[rgba(255,77,77,0.12)]"
+                        aria-label={copy.remove}
+                        title={copy.remove}
+                      >
+                        <Trash2 size={12} strokeWidth={1.5} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Lane */}
+                  <div
+                    className="relative"
+                    style={{ width: `${laneWidth}px`, height: `${LANE_H}px` }}
+                    onPointerDown={(event) => {
+                      const target = event.target as HTMLElement;
+                      if (target.closest('[data-track-clip]')) {
+                        return;
+                      }
+
+                      event.preventDefault();
+                      onSelectTrack(track.id);
+                      onSeek(clamp(getTimeFromClientX(event.clientX), 0, Math.max(projectDuration, 0)), track.id);
+                      setInteraction({ kind: 'scrub' });
+                    }}
+                  >
                     <div
-                      key={track.id}
-                      data-testid="audio-track-stack-row"
-                      className={`relative py-2 ${track.isActive ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}
-                    >
-                      <div className="flex flex-wrap items-center gap-2 px-1 pb-2">
-                        <button
-                          type="button"
-                          onClick={() => onSelectTrack?.(track.id)}
-                          className={`truncate text-left text-sm font-medium transition ${
-                            track.isActive ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                          }`}
-                        >
-                          {trackLabel}
-                        </button>
-                        <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-tertiary)]">
-                          <SourceIcon size={11} strokeWidth={1.5} />
-                          {sourceLabel}
-                        </span>
-                        <span className="audio-mono text-xs text-[var(--text-secondary)]">
-                          {copy.start} {formatTime(track.startTime)}
-                        </span>
-                        {track.buffer ? (
-                          <span className="audio-mono text-xs text-[var(--text-tertiary)]">{formatTime(track.buffer.duration)}</span>
-                        ) : (
-                          <span className="audio-mono text-xs text-[var(--text-tertiary)]">{copy.emptySource}</span>
-                        )}
+                      className="pointer-events-none absolute inset-y-1 opacity-20"
+                      style={{
+                        left: `${LANE_PAD}px`,
+                        right: `${LANE_PAD}px`,
+                        backgroundImage:
+                          'linear-gradient(to right, var(--border) 0, var(--border) 1px, transparent 1px, transparent 100%)',
+                        backgroundSize: `${Math.max(rulerStep * pixelsPerSecond, 24)}px 100%`,
+                      }}
+                    />
+                    <div className="pointer-events-none absolute inset-x-4 top-1/2 h-px -translate-y-1/2 bg-[var(--border)] opacity-60" />
 
-                        <div className="ml-auto flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            data-track-drag-handle
-                            data-testid="audio-track-drag-handle"
-                            onPointerDown={(event) => {
-                              if (!track.buffer) {
-                                return;
-                              }
-
-                              event.preventDefault();
-                              event.stopPropagation();
-                              onSelectTrack?.(track.id);
-                              const pointerTime = getProjectTimeFromClientX(event.clientX);
-                                setInteraction({
-                                  kind: 'move-track',
-                                  trackId: track.id,
-                                  clipDuration,
-                                  pointerOffsetTime: clamp(pointerTime - track.startTime, 0, clipDuration),
-                                  timelineDuration: safeDuration,
-                                });
-                              }}
-                            className="audio-focus-ring inline-flex h-8 items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--bg-surface)] px-3 text-xs text-[var(--text-secondary)] transition hover:text-[var(--text-primary)]"
-                            aria-label={copy.dragTrack}
-                          >
-                            <GripVertical size={13} strokeWidth={1.5} />
-                            {copy.dragTrack}
-                          </button>
-                          {onMuteToggle ? (
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                onMuteToggle(track.id);
-                              }}
-                              className={`audio-focus-ring inline-flex h-8 items-center gap-1 rounded-full border px-3 text-xs transition ${
-                                track.muted
-                                  ? 'border-[var(--accent)] bg-[rgba(0,212,200,0.12)] text-[var(--accent)]'
-                                  : 'border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                              }`}
-                              aria-label={track.muted ? copy.unmute : copy.mute}
-                            >
-                              {track.muted ? <VolumeX size={13} strokeWidth={1.5} /> : <Volume2 size={13} strokeWidth={1.5} />}
-                              {track.muted ? copy.unmute : copy.mute}
-                            </button>
-                          ) : null}
-                          {onRemoveTrack ? (
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                onRemoveTrack(track.id);
-                              }}
-                              className="audio-focus-ring inline-flex h-8 items-center gap-1 rounded-full border border-[rgba(255,77,77,0.35)] bg-[rgba(255,77,77,0.08)] px-3 text-xs text-[var(--status-recording)] transition hover:bg-[rgba(255,77,77,0.14)]"
-                              aria-label={copy.remove}
-                            >
-                              <Trash2 size={13} strokeWidth={1.5} />
-                              {copy.remove}
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-
+                    {buffer ? (
                       <div
-                        className="relative h-20 overflow-hidden"
+                        data-track-clip
+                        data-testid="audio-track-waveform-surface"
+                        className={`absolute inset-y-1 overflow-hidden rounded-[10px] ${
+                          track.isActive
+                            ? 'bg-[rgba(0,212,200,0.10)] ring-1 ring-[var(--accent)]'
+                            : 'bg-[rgba(0,212,200,0.05)] ring-1 ring-[rgba(127,127,127,0.25)]'
+                        }`}
+                        style={{ left: `${clipLeft}px`, width: `${clipWidth}px` }}
                         onPointerDown={(event) => {
                           const target = event.target as HTMLElement;
-                          if (
-                            target.closest('[data-track-clip]') ||
-                            target.closest('[data-selection-handle]') ||
-                            target.closest('[data-track-drag-handle]')
-                          ) {
+                          if (target.closest('[data-selection-handle]') || target.closest('[data-track-grip]')) {
                             return;
                           }
 
-                          onSelectTrack?.(track.id);
-                          onSeek?.(track.buffer ? getProjectTimeFromClientX(event.clientX) : track.startTime, track.id);
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onSelectTrack(track.id);
+
+                          const node = viewportRef.current;
+                          const rect = node?.getBoundingClientRect();
+                          const originX = rect ? event.clientX - rect.left + (node?.scrollLeft ?? 0) : 0;
+                          const anchor = clamp(getTimeFromClientX(event.clientX), clipStart, clipEnd);
+                          setInteraction({
+                            kind: 'select-pending',
+                            trackId: track.id,
+                            anchor,
+                            clipStart,
+                            clipEnd,
+                            originX,
+                          });
                         }}
                       >
+                        {/* Grip strip: drag to move the clip in time */}
                         <div
-                          className="pointer-events-none absolute inset-y-1 left-[24px] right-[24px] opacity-25"
-                          style={{
-                            backgroundImage:
-                              'linear-gradient(to right, var(--border) 0, var(--border) 1px, transparent 1px, transparent 100%)',
-                            backgroundSize: `${Math.max(contentWidth / Math.max(safeDuration, 1), 24)}px calc(100% - 8px)`,
+                          data-track-grip
+                          data-testid="audio-track-drag-handle"
+                          className={`absolute inset-x-0 top-0 z-10 flex h-5 cursor-grab items-center gap-1 px-2 text-[10px] ${
+                            track.isActive
+                              ? 'bg-[rgba(0,212,200,0.18)] text-[var(--text-primary)]'
+                              : 'bg-[rgba(127,127,127,0.14)] text-[var(--text-secondary)]'
+                          }`}
+                          onPointerDown={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onSelectTrack(track.id);
+                            const pointerTime = getTimeFromClientX(event.clientX);
+                            setInteraction({
+                              kind: 'move-clip',
+                              trackId: track.id,
+                              grabOffset: clamp(pointerTime - clipStart, 0, clipDuration),
+                              moved: false,
+                            });
                           }}
+                          title={copy.dragTrack}
+                        >
+                          <GripVertical size={10} strokeWidth={1.5} className="shrink-0" />
+                          <span className="truncate">{trackLabel}</span>
+                        </div>
+
+                        <ClipWaveformWindow
+                          buffer={buffer}
+                          clipWidth={clipWidth}
+                          windowLeft={winLeft}
+                          windowWidth={winWidth}
+                          height={LANE_H - 8 - 20}
+                          theme={theme}
+                          muted={track.muted}
                         />
 
-                        <div className="pointer-events-none absolute inset-x-[24px] top-1/2 h-px -translate-y-1/2 bg-[var(--border)] opacity-60" />
-
-                        {track.buffer ? (
-                          <div
-                            data-track-clip
-                            data-testid="audio-track-waveform-surface"
-                            className={`absolute inset-y-1 overflow-hidden rounded-[12px] ${
-                              track.isActive
-                                ? 'bg-[rgba(0,212,200,0.12)] ring-1 ring-[var(--accent)]'
-                                : 'bg-[rgba(0,212,200,0.06)] ring-1 ring-[rgba(255,255,255,0.08)]'
-                            }`}
-                            style={{
-                              left: `${clipLeft}px`,
-                              width: `${clipWidth}px`,
-                            }}
-                            onPointerDown={(event) => {
-                              event.stopPropagation();
-                              onSelectTrack?.(track.id);
-                              const trackBuffer = track.buffer;
-                              if (!trackBuffer) {
-                                return;
-                              }
-
-                              const handle = (event.target as HTMLElement).closest<HTMLElement>('[data-selection-handle]')
-                                ?.dataset.selectionHandle as SelectionHandle | undefined;
-                              const projectTime = getProjectTimeFromClientX(event.clientX);
-                              const localTime = clamp(projectTime - track.startTime, 0, trackBuffer.duration);
-
-                              onSeek?.(projectTime, track.id);
-                              setInteraction({
-                                kind: 'selection',
-                                trackId: track.id,
-                                trackStartTime: track.startTime,
-                                trackDuration: trackBuffer.duration,
-                                anchorTime: localTime,
-                                handle: handle ?? null,
-                                initialStart: track.isActive ? selectionStart : 0,
-                                initialEnd: track.isActive ? selectionEnd : trackBuffer.duration,
-                              });
-                            }}
-                          >
-                            <div className="pointer-events-none absolute inset-y-0 left-0 w-px bg-[var(--accent)] opacity-80" />
-                            <ClipWaveform
-                              audioBuffer={track.buffer}
-                              width={Math.max(clipWidth, 32)}
-                              height={80}
-                              theme={theme}
-                              isMuted={track.muted}
-                            />
-
-                            {track.isActive ? (
-                              <>
-                                {!isFullSelection ? (
-                                  <div
-                                    data-testid="audio-selection-overlay"
-                                    className="pointer-events-none absolute inset-y-0 bg-[var(--selection-bg)]"
-                                    style={{
-                                      left: `${selectionStartPercent * 100}%`,
-                                      width: `${Math.max((selectionEndPercent - selectionStartPercent) * 100, 0.6)}%`,
-                                      boxShadow:
-                                        'inset 2px 0 0 var(--selection-border), inset -2px 0 0 var(--selection-border)',
-                                    }}
-                                  />
-                                ) : null}
-
-                                <button
-                                  type="button"
-                                  data-selection-handle="start"
-                                  data-testid="audio-selection-handle-start"
-                                  className="absolute inset-y-1 left-0 z-10 w-4 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent"
-                                  style={{ left: isFullSelection ? '8px' : `${selectionStartPercent * 100}%` }}
-                                  aria-label="Selection start"
-                                >
-                                  <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-[var(--selection-border)]" />
-                                  <span className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
-                                  <span className="absolute bottom-1.5 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
-                                </button>
-                                <button
-                                  type="button"
-                                  data-selection-handle="end"
-                                  data-testid="audio-selection-handle-end"
-                                  className="absolute inset-y-1 z-10 w-4 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent"
-                                  style={{ left: isFullSelection ? 'calc(100% - 8px)' : `${selectionEndPercent * 100}%` }}
-                                  aria-label="Selection end"
-                                >
-                                  <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-[var(--selection-border)]" />
-                                  <span className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
-                                  <span className="absolute bottom-1.5 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
-                                </button>
-                              </>
+                        {track.isActive ? (
+                          <>
+                            {hasSelectionOnClip ? (
+                              <div
+                                data-testid="audio-selection-overlay"
+                                className="pointer-events-none absolute inset-y-0 bg-[var(--selection-bg)]"
+                                style={{
+                                  left: `${selStartPct}%`,
+                                  width: `${Math.max(selEndPct - selStartPct, 0.4)}%`,
+                                  boxShadow: 'inset 2px 0 0 var(--selection-border), inset -2px 0 0 var(--selection-border)',
+                                }}
+                              />
                             ) : null}
-                          </div>
-                        ) : (
-                          <div
-                            data-testid="audio-track-empty-lane"
-                            className={`absolute inset-y-1 left-[24px] right-[24px] flex items-center rounded-[12px] border border-dashed px-4 text-sm ${
-                              track.isActive
-                                ? 'border-[var(--accent)] text-[var(--text-primary)]'
-                                : 'border-[var(--border)] text-[var(--text-secondary)]'
-                            }`}
-                          >
-                            {copy.emptyTrack}
-                          </div>
-                        )}
+
+                            <button
+                              type="button"
+                              data-selection-handle="start"
+                              data-testid="audio-selection-handle-start"
+                              className="absolute inset-y-1 z-10 w-4 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent"
+                              style={{ left: hasSelectionOnClip ? `${selStartPct}%` : '8px' }}
+                              aria-label="Selection start"
+                              onPointerDown={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                onSelectTrack(track.id);
+                                setInteraction({
+                                  kind: 'select-handle',
+                                  trackId: track.id,
+                                  fixed: hasSelectionOnClip ? selOverlapEnd! : clipEnd,
+                                  clipStart,
+                                  clipEnd,
+                                });
+                              }}
+                            >
+                              <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-[var(--selection-border)]" />
+                              <span className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
+                              <span className="absolute bottom-1.5 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
+                            </button>
+                            <button
+                              type="button"
+                              data-selection-handle="end"
+                              data-testid="audio-selection-handle-end"
+                              className="absolute inset-y-1 z-10 w-4 -translate-x-1/2 cursor-col-resize rounded-full bg-transparent"
+                              style={{ left: hasSelectionOnClip ? `${selEndPct}%` : 'calc(100% - 8px)' }}
+                              aria-label="Selection end"
+                              onPointerDown={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                onSelectTrack(track.id);
+                                setInteraction({
+                                  kind: 'select-handle',
+                                  trackId: track.id,
+                                  fixed: hasSelectionOnClip ? selOverlapStart! : clipStart,
+                                  clipStart,
+                                  clipEnd,
+                                });
+                              }}
+                            >
+                              <span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full bg-[var(--selection-border)]" />
+                              <span className="absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
+                              <span className="absolute bottom-1.5 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--waveform-handle-outline)] bg-[var(--selection-border)]" />
+                            </button>
+                          </>
+                        ) : null}
                       </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+                    ) : (
+                      <div
+                        data-testid="audio-track-empty-lane"
+                        className={`absolute inset-y-1 flex items-center rounded-[10px] border border-dashed px-4 text-sm ${
+                          track.isActive
+                            ? 'border-[var(--accent)] text-[var(--text-primary)]'
+                            : 'border-[var(--border)] text-[var(--text-secondary)]'
+                        }`}
+                        style={{ left: `${LANE_PAD}px`, right: `${LANE_PAD}px` }}
+                      >
+                        {copy.emptyTrack}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {recordingActive ? (
+              <div data-testid="audio-recording-lane" className="flex border-b border-[var(--border)]">
+                <div
+                  className="sticky left-0 z-30 flex shrink-0 items-center gap-2 border-r border-[var(--border)] bg-[var(--bg-surface)] px-3 py-2"
+                  style={{ width: `${HEADER_W}px` }}
+                >
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full bg-[var(--status-recording)] ${recording?.paused ? '' : 'animate-pulse'}`}
+                  />
+                  <span className="text-[13px] text-[var(--text-secondary)]">{copy.recordingLane}</span>
+                </div>
+                <div className="relative" style={{ width: `${laneWidth}px`, height: `${LANE_H}px` }}>
+                  <div
+                    className="absolute inset-y-2 rounded-[10px] bg-[rgba(255,77,77,0.16)] ring-1 ring-[rgba(255,77,77,0.45)]"
+                    style={{
+                      left: `${timeToLaneX(recording?.insertTime ?? 0)}px`,
+                      width: `${Math.max((recording?.elapsed ?? 0) * pixelsPerSecond, 6)}px`,
+                    }}
+                  >
+                    <span className="audio-mono absolute left-2 top-1 text-[10px] text-[var(--status-recording)]">
+                      {formatTime(recording?.elapsed ?? 0)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>

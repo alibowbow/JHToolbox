@@ -14,13 +14,13 @@ const TEXT_PAGE_WIDTH = 1240;
 const TEXT_PAGE_HEIGHT = 1754;
 const TEXT_MARGIN = 104;
 
-type PdfTextPage = {
+export type PdfTextPage = {
   pageNumber: number;
   text: string;
   lines: string[];
 };
 
-type TextBlock =
+export type TextBlock =
   | { kind: 'title' | 'caption' | 'body'; text: string }
   | { kind: 'gap' | 'page-break' };
 
@@ -162,7 +162,7 @@ function resolvePdfWatermarkImage(files: File[]) {
   return files.find((file) => file.type.startsWith('image/'));
 }
 
-function escapeXml(value: string) {
+export function escapeXml(value: string) {
   return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -171,7 +171,7 @@ function escapeXml(value: string) {
     .replace(/'/g, '&apos;');
 }
 
-function decodeXmlEntities(value: string) {
+export function decodeXmlEntities(value: string) {
   return value
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
@@ -534,12 +534,12 @@ async function canvasesToPdfBlob(canvases: HTMLCanvasElement[]) {
   return blobFromBytes(bytes, 'application/pdf');
 }
 
-async function renderBlocksToPdfBlob(blocks: TextBlock[]) {
+export async function renderBlocksToPdfBlob(blocks: TextBlock[]) {
   const canvases = renderBlocksToCanvases(blocks);
   return await canvasesToPdfBlob(canvases);
 }
 
-async function extractPdfTextPages(
+export async function extractPdfTextPages(
   file: File,
   onProgress?: (value: number) => void,
 ): Promise<PdfTextPage[]> {
@@ -592,6 +592,114 @@ async function extractPdfTextPages(
   }
 
   return pages;
+}
+
+export type PdfStyledLine = {
+  text: string;
+  fontSize: number;
+  isHeading: boolean;
+  align: 'left' | 'center';
+};
+
+export type PdfStyledPage = {
+  pageNumber: number;
+  lines: PdfStyledLine[];
+};
+
+/**
+ * Extract PDF text grouped into lines, keeping the rendered font size and a
+ * heading/alignment guess. PDFs carry no semantic structure, so size is the
+ * most reliable signal: the most common line size is treated as body text and
+ * noticeably larger lines become headings.
+ */
+export async function extractPdfStyledPages(
+  file: File,
+  onProgress?: (value: number) => void,
+): Promise<PdfStyledPage[]> {
+  const pdfjsLib = await getPdfJs();
+  const input = new Uint8Array(await file.arrayBuffer());
+  const documentHandle = await pdfjsLib.getDocument({
+    data: input,
+    useWorkerFetch: false,
+  }).promise;
+
+  type RawLine = { text: string; fontSize: number; minX: number; maxX: number };
+  const rawPages: Array<{ pageNumber: number; viewportWidth: number; lines: RawLine[] }> = [];
+  const sizeCounts = new Map<number, number>();
+
+  for (let pageNo = 1; pageNo <= documentHandle.numPages; pageNo += 1) {
+    onProgress?.((pageNo - 1) / Math.max(1, documentHandle.numPages));
+    const page = await documentHandle.getPage(pageNo);
+    const viewport = page.getViewport({ scale: 1 });
+    const textContent = await page.getTextContent();
+    const rows = new Map<number, Array<{ x: number; endX: number; text: string; size: number }>>();
+
+    for (const item of textContent.items as Array<{ str?: string; width?: number; height?: number; transform?: number[] }>) {
+      const text = String(item.str ?? '');
+      if (!text.trim()) {
+        continue;
+      }
+
+      const transform = Array.isArray(item.transform) ? item.transform : [0, 0, 0, 0, 0, 0];
+      const x = Number(transform[4] ?? 0);
+      const y = Math.round(Number(transform[5] ?? 0) / 4) * 4;
+      const scaleY = Math.hypot(Number(transform[1] ?? 0), Number(transform[3] ?? 0));
+      const size = Math.round((scaleY || Number(item.height ?? 0) || 12) * 10) / 10;
+      const width = Number(item.width ?? 0);
+      const bucket = rows.get(y) ?? [];
+      bucket.push({ x, endX: x + width, text, size });
+      rows.set(y, bucket);
+    }
+
+    const lines = Array.from(rows.entries())
+      .sort((left, right) => right[0] - left[0])
+      .map(([, entries]) => {
+        entries.sort((left, right) => left.x - right.x);
+        const text = entries
+          .map((entry) => entry.text)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        const fontSize = entries.reduce((maxSize, entry) => Math.max(maxSize, entry.size), 0) || 12;
+        const minX = Math.min(...entries.map((entry) => entry.x));
+        const maxX = Math.max(...entries.map((entry) => entry.endX));
+        return { text, fontSize, minX, maxX };
+      })
+      .filter((line) => line.text.length > 0);
+
+    for (const line of lines) {
+      const key = Math.round(line.fontSize);
+      sizeCounts.set(key, (sizeCounts.get(key) ?? 0) + 1);
+    }
+
+    rawPages.push({ pageNumber: pageNo, viewportWidth: viewport.width, lines });
+  }
+
+  let bodySize = 12;
+  let bestCount = -1;
+  for (const [size, count] of sizeCounts) {
+    if (count > bestCount) {
+      bestCount = count;
+      bodySize = size;
+    }
+  }
+
+  return rawPages.map((raw) => ({
+    pageNumber: raw.pageNumber,
+    lines: raw.lines.map((line) => {
+      const center =
+        line.minX > raw.viewportWidth * 0.18 &&
+        raw.viewportWidth - line.maxX > raw.viewportWidth * 0.18 &&
+        line.maxX - line.minX < raw.viewportWidth * 0.7;
+
+      return {
+        text: line.text,
+        fontSize: Math.max(8, Math.round(line.fontSize)),
+        isHeading: line.fontSize >= bodySize + 1.5,
+        align: center ? 'center' : 'left',
+      };
+    }),
+  }));
 }
 
 function createWorkbookFromPdfPages(pages: PdfTextPage[]) {
@@ -683,7 +791,15 @@ async function renderTallCanvasToPdfBlob(canvas: HTMLCanvasElement) {
 }
 
 async function renderHtmlFileToPdf(file: File, width: number) {
-  const html = await file.text();
+  return await renderHtmlStringToPdfBlob(await file.text(), width);
+}
+
+/**
+ * Render an HTML string into a multi-page PDF using a sandboxed iframe and
+ * html2canvas. Shared by html-to-pdf and the HWPX → PDF pipeline so rich
+ * markup (headings, bold, tables, images) is preserved visually.
+ */
+export async function renderHtmlStringToPdfBlob(html: string, width: number) {
   const iframe = document.createElement('iframe');
   iframe.style.position = 'fixed';
   iframe.style.left = '-10000px';

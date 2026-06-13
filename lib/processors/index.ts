@@ -1,5 +1,6 @@
 import { ProcessContext, ProcessedFile } from '@/types/processor';
 import { processPdfTool } from '@/lib/processors/pdf';
+import { processHwpxTool } from '@/lib/processors/hwpx';
 import { processImageTool } from '@/lib/processors/image';
 import { processOcrTool } from '@/lib/processors/ocr';
 import { processMediaTool } from '@/lib/processors/media';
@@ -65,6 +66,8 @@ const IMAGE_TOOLS = new Set([
   'svg-png',
 ]);
 
+const HWPX_TOOLS = new Set(['pdf-to-hwpx', 'hwpx-to-pdf']);
+
 const OCR_TOOLS = new Set(['ocr-image-to-text', 'ocr-pdf-to-text']);
 const MEDIA_TOOLS = new Set([
   'video-to-gif',
@@ -119,6 +122,10 @@ const WEB_TOOLS = new Set(['qr-generator', 'url-image', 'url-pdf', 'detect-cms',
 export async function runTool(ctx: ProcessContext): Promise<ProcessedFile[]> {
   if (PDF_TOOLS.has(ctx.toolId)) {
     return await processPdfTool(ctx);
+  }
+
+  if (HWPX_TOOLS.has(ctx.toolId)) {
+    return await processHwpxTool(ctx);
   }
 
   if (IMAGE_TOOLS.has(ctx.toolId)) {

@@ -1,4 +1,4 @@
-import { cloneAudioBuffer, createAudioBufferLike } from '@/lib/audio';
+import { cloneAudioBuffer, createAudioBuffer, createAudioBufferLike } from '@/lib/audio';
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -168,6 +168,129 @@ export function applyGainToAudioRange(buffer: AudioBuffer, startSec: number, end
 
     for (let sampleIndex = startSample; sampleIndex < endSample; sampleIndex += 1) {
       channelData[sampleIndex] = clampSample(channelData[sampleIndex] * safeGain);
+    }
+  }
+
+  return nextBuffer;
+}
+
+function getOfflineAudioContextCtor() {
+  return (
+    globalThis.OfflineAudioContext ??
+    (globalThis as typeof globalThis & { webkitOfflineAudioContext?: typeof OfflineAudioContext }).webkitOfflineAudioContext ??
+    null
+  );
+}
+
+export function resampleAudioBuffer(buffer: AudioBuffer, targetSampleRate: number) {
+  if (Math.abs(buffer.sampleRate - targetSampleRate) < 1) {
+    return buffer;
+  }
+
+  const rate = buffer.sampleRate / targetSampleRate;
+  const nextLength = Math.max(1, Math.round(buffer.length / rate));
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, channelIndex) => {
+    const channelData = buffer.getChannelData(channelIndex);
+    const nextChannel = new Float32Array(nextLength);
+
+    for (let sampleIndex = 0; sampleIndex < nextLength; sampleIndex += 1) {
+      const sourceIndexFloat = sampleIndex * rate;
+      const sourceIndex = Math.min(buffer.length - 1, Math.floor(sourceIndexFloat));
+      const nextSourceIndex = Math.min(buffer.length - 1, sourceIndex + 1);
+      const mix = sourceIndexFloat - sourceIndex;
+      nextChannel[sampleIndex] = lerp(channelData[sourceIndex] ?? 0, channelData[nextSourceIndex] ?? 0, mix);
+    }
+
+    return nextChannel;
+  });
+
+  const resampled = createAudioBuffer(buffer.numberOfChannels, nextLength, targetSampleRate);
+  channels.forEach((channelData, channelIndex) => {
+    resampled.copyToChannel(channelData, channelIndex);
+  });
+
+  return resampled;
+}
+
+export function insertAudioAtTime(buffer: AudioBuffer | null, clip: AudioBuffer, atSec: number) {
+  if (!buffer) {
+    return cloneAudioBuffer(clip);
+  }
+
+  const alignedClip = resampleAudioBuffer(clip, buffer.sampleRate);
+  const insertSample = secondsToSample(buffer, Math.max(0, atSec));
+  const channelCount = Math.max(buffer.numberOfChannels, alignedClip.numberOfChannels);
+  const nextLength = buffer.length + alignedClip.length;
+  const nextBuffer = createAudioBuffer(channelCount, nextLength, buffer.sampleRate);
+
+  for (let channelIndex = 0; channelIndex < channelCount; channelIndex += 1) {
+    const target = nextBuffer.getChannelData(channelIndex);
+    const sourceChannel = buffer.getChannelData(Math.min(channelIndex, buffer.numberOfChannels - 1));
+    const clipChannel = alignedClip.getChannelData(Math.min(channelIndex, alignedClip.numberOfChannels - 1));
+
+    target.set(sourceChannel.subarray(0, insertSample), 0);
+    target.set(clipChannel, insertSample);
+    target.set(sourceChannel.subarray(insertSample), insertSample + clipChannel.length);
+  }
+
+  return nextBuffer;
+}
+
+export type AudioEqBands = {
+  lowGainDb: number;
+  midGainDb: number;
+  highGainDb: number;
+};
+
+export async function applyEqToAudioRange(
+  buffer: AudioBuffer,
+  startSec: number,
+  endSec: number,
+  eq: AudioEqBands,
+): Promise<AudioBuffer> {
+  const OfflineAudioContextCtor = getOfflineAudioContextCtor();
+  if (!OfflineAudioContextCtor) {
+    throw new Error('Offline audio rendering is unavailable in this browser.');
+  }
+
+  const segment = extractAudioRange(buffer, startSec, endSec);
+  const offlineContext = new OfflineAudioContextCtor(segment.numberOfChannels, segment.length, segment.sampleRate);
+  const source = offlineContext.createBufferSource();
+  source.buffer = segment;
+
+  const lowShelf = offlineContext.createBiquadFilter();
+  lowShelf.type = 'lowshelf';
+  lowShelf.frequency.value = 120;
+  lowShelf.gain.value = eq.lowGainDb;
+
+  const midPeak = offlineContext.createBiquadFilter();
+  midPeak.type = 'peaking';
+  midPeak.frequency.value = 1000;
+  midPeak.Q.value = 0.9;
+  midPeak.gain.value = eq.midGainDb;
+
+  const highShelf = offlineContext.createBiquadFilter();
+  highShelf.type = 'highshelf';
+  highShelf.frequency.value = 8000;
+  highShelf.gain.value = eq.highGainDb;
+
+  source.connect(lowShelf);
+  lowShelf.connect(midPeak);
+  midPeak.connect(highShelf);
+  highShelf.connect(offlineContext.destination);
+  source.start();
+
+  const rendered = await offlineContext.startRendering();
+  const startSample = secondsToSample(buffer, Math.min(startSec, endSec));
+  const endSample = secondsToSample(buffer, Math.max(startSec, endSec));
+  const nextBuffer = cloneAudioBuffer(buffer);
+
+  for (let channelIndex = 0; channelIndex < nextBuffer.numberOfChannels; channelIndex += 1) {
+    const target = nextBuffer.getChannelData(channelIndex);
+    const renderedChannel = rendered.getChannelData(Math.min(channelIndex, rendered.numberOfChannels - 1));
+
+    for (let sampleIndex = startSample; sampleIndex < endSample; sampleIndex += 1) {
+      target[sampleIndex] = clampSample(renderedChannel[sampleIndex - startSample] ?? 0);
     }
   }
 
