@@ -146,6 +146,68 @@ test('split at playhead creates a second clip and cut/paste works through the cl
   await expect(page.getByText('Clipboard audio pasted.')).toBeVisible();
 });
 
+test('drops audio files onto the editor shell to import them', async ({ page }) => {
+  await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('audio-transport-bar')).toBeVisible({ timeout: 60_000 });
+
+  const dataTransfer = await page.evaluateHandle((bytes) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([new Uint8Array(bytes)], 'dropped.wav', { type: 'audio/wav' }));
+    return transfer;
+  }, Array.from(createDemoAudioBuffer(0.6, 220)));
+
+  await page.dispatchEvent('[data-testid="audio-editor-shell"]', 'drop', { dataTransfer });
+
+  await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1, { timeout: 60_000 });
+  await expect(page.getByRole('button', { name: 'dropped.wav' })).toBeVisible();
+});
+
+test('timeline conveniences: zoom to selection, inline rename, and reorder', async ({ page }) => {
+  await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('audio-transport-bar')).toBeVisible({ timeout: 60_000 });
+
+  await page.locator('input[type="file"]').setInputFiles([
+    { name: 'a.wav', mimeType: 'audio/wav', buffer: createDemoAudioBuffer(0.8, 220) },
+    { name: 'b.wav', mimeType: 'audio/wav', buffer: createDemoAudioBuffer(0.8, 330) },
+  ]);
+  await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(2, { timeout: 60_000 });
+
+  // Build a selection by dragging across the first clip (reliable in headless).
+  const firstClip = page.getByTestId('audio-track-waveform-surface').first();
+  const clipBox = await firstClip.boundingBox();
+  if (!clipBox) {
+    throw new Error('First clip surface was not available.');
+  }
+  await page.mouse.move(clipBox.x + clipBox.width * 0.2, clipBox.y + clipBox.height * 0.7);
+  await page.mouse.down();
+  await page.mouse.move(clipBox.x + clipBox.width * 0.7, clipBox.y + clipBox.height * 0.7, { steps: 12 });
+  await page.mouse.up();
+  await expect(page.getByTestId('audio-selection-bar')).toHaveCount(1);
+
+  // Zoom-to-selection expands the timeline beyond the viewport.
+  await page.getByRole('button', { name: 'Zoom to selection' }).click();
+  const zoomedMetrics = await page.getByTestId('audio-waveform-scroll').evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+  }));
+  expect(zoomedMetrics.scrollWidth - zoomedMetrics.clientWidth).toBeGreaterThan(40);
+  await page.getByRole('button', { name: 'Fit to view' }).click();
+
+  // Inline rename: double-click the track name, type, press Enter.
+  await page.getByRole('button', { name: 'a.wav' }).dblclick();
+  const renameInput = page.getByLabel('Track name');
+  await expect(renameInput).toBeVisible();
+  await renameInput.fill('renamed-a.wav');
+  await renameInput.press('Enter');
+  await expect(page.getByRole('button', { name: 'renamed-a.wav' })).toBeVisible();
+
+  // Reorder: move the second track (b.wav) above the first.
+  await page.getByRole('button', { name: 'Move track up' }).nth(1).click();
+  await expect(
+    page.getByTestId('audio-track-stack-row').first().getByRole('button', { name: 'b.wav' }),
+  ).toBeVisible();
+});
+
 test('pdf to hwpx converts the sample pdf into an hwpx package', async ({ page }) => {
   await page.goto('/tools/pdf/pdf-to-hwpx');
 
