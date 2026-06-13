@@ -1,6 +1,6 @@
 'use client';
 
-import { Download, FolderOpen, MoreHorizontal, Repeat, RotateCcw, Waves } from 'lucide-react';
+import { Download, FolderOpen, Keyboard, MoreHorizontal, Repeat, RotateCcw, Waves } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { AUDIO_SESSION_EXTENSION } from '../audio-session';
@@ -19,6 +19,7 @@ interface EditorToolbarProps {
   onSaveAs: (options: { filename: string; format: SaveFormat; target: SaveTarget }) => void;
   onReset: () => void;
   onToggleLoop: () => void;
+  onShowShortcuts?: () => void;
 }
 
 function getBaseName(fileName: string | null) {
@@ -53,6 +54,7 @@ export function EditorToolbar({
   onSaveAs,
   onReset,
   onToggleLoop,
+  onShowShortcuts,
 }: EditorToolbarProps) {
   const { locale } = useLocale();
   const copy = getAudioEditorCopy(locale);
@@ -333,6 +335,19 @@ export function EditorToolbar({
                   <Repeat size={14} strokeWidth={1.5} />
                   {loopEnabled ? copy.toolbar.loopOn : copy.toolbar.loopOff}
                 </button>
+                {onShowShortcuts ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onShowShortcuts();
+                      setMenuOpen(false);
+                    }}
+                    className="audio-menu-item"
+                  >
+                    <Keyboard size={14} strokeWidth={1.5} />
+                    {copy.toolbar.shortcuts}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => {
@@ -344,10 +359,6 @@ export function EditorToolbar({
                   <RotateCcw size={14} strokeWidth={1.5} />
                   {copy.toolbar.reset}
                 </button>
-              </div>
-              <div className="mt-2 border-t border-[var(--border)] px-2 pt-2">
-                <p className="audio-section-kicker">{copy.toolbar.shortcuts}</p>
-                <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-secondary)]">{copy.toolbar.shortcutHint}</p>
               </div>
             </div>
           ) : null}

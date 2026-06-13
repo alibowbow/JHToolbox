@@ -41,9 +41,16 @@ import {
 } from './audio-editor-utils';
 import { EffectsPanel } from './Effects/EffectsPanel';
 import { SelectionBar } from './Selection/SelectionBar';
+import { ShortcutsModal } from './ShortcutsModal';
 import { TrackTimelineStack } from './Tracks/TrackTimelineStack';
 import { EditorToolbar } from './Toolbar/EditorToolbar';
 import { TransportBar } from './Transport/TransportBar';
+
+const DROPPABLE_AUDIO_PATTERN = /\.(mp3|wav|m4a|aac|ogg|flac|webm|mp4|jhaudio)$/i;
+
+function isDroppableAudioFile(file: File) {
+  return file.type.startsWith('audio/') || DROPPABLE_AUDIO_PATTERN.test(file.name);
+}
 
 interface AudioEditorProps {
   mode: AudioEditorMode;
@@ -117,6 +124,10 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [, setHistoryVersion] = useState(0);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const dragDepthRef = useRef(0);
+  const showShortcutsRef = useRef(false);
 
   const [isRecording, setIsRecording] = useState(false);
   const [isRecordingPaused, setIsRecordingPaused] = useState(false);
@@ -196,6 +207,10 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   useEffect(() => {
     clipboardRef.current = clipboard;
   }, [clipboard]);
+
+  useEffect(() => {
+    showShortcutsRef.current = showShortcuts;
+  }, [showShortcuts]);
 
   // Keep an existing track active.
   useEffect(() => {
@@ -477,6 +492,38 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     void trackId;
     historyRef.current.push(copy.commands.moveClip, tracksRef.current);
     bumpHistory();
+  };
+
+  const handleRenameTrack = (trackId: string, nextName: string) => {
+    const name = nextName.trim();
+    if (!name) {
+      return;
+    }
+
+    updateTrackLive(trackId, (track) => (track.name === name ? track : { ...track, name }));
+  };
+
+  const handleReorderTrack = (trackId: string, direction: 'up' | 'down') => {
+    const current = [...tracksRef.current];
+    const fromIndex = current.findIndex((track) => track.id === trackId);
+    const toIndex = direction === 'up' ? fromIndex - 1 : fromIndex + 1;
+
+    if (fromIndex < 0 || toIndex < 0 || toIndex >= current.length) {
+      return;
+    }
+
+    [current[fromIndex], current[toIndex]] = [current[toIndex], current[fromIndex]];
+    commitTracks(copy.commands.reorderTrack, current, { status: null });
+  };
+
+  const handleDroppedFiles = (droppedFiles: File[]) => {
+    const audioFiles = droppedFiles.filter(isDroppableAudioFile);
+    if (audioFiles.length === 0) {
+      setLoadError(copy.fileDrop.dropNotAudio);
+      return;
+    }
+
+    void importFiles(audioFiles);
   };
 
   const handleMoveTrack = (trackId: string, nextStartTime: number) => {
@@ -1246,7 +1293,17 @@ export function AudioEditor({ mode }: AudioEditorProps) {
 
     if (event.key === 'Escape') {
       event.preventDefault();
+      if (showShortcutsRef.current) {
+        setShowShortcuts(false);
+        return;
+      }
       handleClearSelection();
+      return;
+    }
+
+    if (event.key === '?') {
+      event.preventDefault();
+      setShowShortcuts((value) => !value);
       return;
     }
 
@@ -1265,6 +1322,15 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     if (!primaryModifier && key === 'l') {
       event.preventDefault();
       setLoopEnabled((value) => !value);
+      return;
+    }
+
+    if (!primaryModifier && key === 'm') {
+      event.preventDefault();
+      const track = activeTrackRef.current;
+      if (track) {
+        updateTrackLive(track.id, (current) => ({ ...current, muted: !current.muted }));
+      }
       return;
     }
 
@@ -1322,7 +1388,54 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       : ['Trim', 'Audio convert', 'Record', 'Multitrack', 'Reverb', 'Amplify', 'EQ'];
 
   return (
-    <div data-mode={mode} className="audio-studio audio-studio-shell flex min-h-[calc(100dvh-5.5rem)] flex-col">
+    <div
+      data-mode={mode}
+      data-testid="audio-editor-shell"
+      className="audio-studio audio-studio-shell relative flex min-h-[calc(100dvh-5.5rem)] flex-col"
+      onDragEnter={(event) => {
+        if (isRecording || !Array.from(event.dataTransfer.types).includes('Files')) {
+          return;
+        }
+        event.preventDefault();
+        dragDepthRef.current += 1;
+        setIsDragOver(true);
+      }}
+      onDragOver={(event) => {
+        if (isRecording || !Array.from(event.dataTransfer.types).includes('Files')) {
+          return;
+        }
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+      }}
+      onDragLeave={(event) => {
+        if (!isDragOver) {
+          return;
+        }
+        event.preventDefault();
+        dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+        if (dragDepthRef.current === 0) {
+          setIsDragOver(false);
+        }
+      }}
+      onDrop={(event) => {
+        if (isRecording) {
+          return;
+        }
+        event.preventDefault();
+        dragDepthRef.current = 0;
+        setIsDragOver(false);
+        handleDroppedFiles(Array.from(event.dataTransfer.files ?? []));
+      }}
+    >
+      {isDragOver ? (
+        <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-[rgba(0,0,0,0.35)] p-6">
+          <div className="rounded-2xl border-2 border-dashed border-[var(--accent)] bg-[var(--bg-surface)] px-8 py-6 text-center shadow-xl">
+            <p className="text-sm font-semibold text-[var(--text-primary)]">{copy.fileDrop.dropOverlayTitle}</p>
+            <p className="mt-1 text-xs text-[var(--text-secondary)]">{copy.fileDrop.dropOverlayHint}</p>
+          </div>
+        </div>
+      ) : null}
+
       <input
         ref={fileInputRef}
         type="file"
@@ -1345,6 +1458,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
         onSaveAs={({ format, filename, target }) => void handleSaveAs({ format, filename, target })}
         onReset={handleResetProject}
         onToggleLoop={() => setLoopEnabled((currentValue) => !currentValue)}
+        onShowShortcuts={() => setShowShortcuts(true)}
       />
 
       <div className="border-b border-[var(--border)] bg-[var(--topbar-bg)] px-3 py-3 sm:px-4">
@@ -1373,7 +1487,11 @@ export function AudioEditor({ mode }: AudioEditorProps) {
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 sm:p-4">
         {tracks.length === 0 && !isRecording ? (
-          <div className="audio-panel rounded-[20px] p-6 sm:p-8">
+          <div
+            className="audio-panel cursor-pointer rounded-[20px] border border-dashed border-[var(--border)] p-6 transition hover:border-[var(--accent)] sm:p-8"
+            onClick={openPicker}
+            data-testid="audio-empty-dropzone"
+          >
             <div className="mx-auto flex min-h-[180px] max-w-3xl flex-col justify-center gap-4">
               <p className="text-sm text-[var(--text-secondary)]">{emptyStatePromptText}</p>
               <div className="flex flex-wrap gap-2">
@@ -1386,6 +1504,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
                   </span>
                 ))}
               </div>
+              <p className="text-xs text-[var(--text-tertiary)]">{copy.fileDrop.clickOrDropHint}</p>
             </div>
           </div>
         ) : null}
@@ -1426,6 +1545,8 @@ export function AudioEditor({ mode }: AudioEditorProps) {
             onSelectionChange={handleSelectionChange}
             onMoveTrackStart={handleMoveTrackStart}
             onMoveTrack={handleMoveTrack}
+            onRenameTrack={handleRenameTrack}
+            onReorderTrack={handleReorderTrack}
             onAddTrack={handleAddEmptyTrack}
             onPaste={handlePaste}
             onSplit={handleSplit}
@@ -1466,6 +1587,8 @@ export function AudioEditor({ mode }: AudioEditorProps) {
           />
         ) : null}
       </div>
+
+      {showShortcuts ? <ShortcutsModal locale={locale} onClose={() => setShowShortcuts(false)} /> : null}
     </div>
   );
 }

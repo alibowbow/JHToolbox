@@ -1,7 +1,10 @@
 'use client';
 
 import {
+  ChevronDown,
+  ChevronUp,
   ClipboardPaste,
+  Focus,
   FolderPlus,
   GripVertical,
   Maximize2,
@@ -62,6 +65,8 @@ interface TrackTimelineStackProps {
   onSelectionChange: (trackId: string, nextSelection: TimelineSelection) => void;
   onMoveTrackStart: (trackId: string) => void;
   onMoveTrack: (trackId: string, nextStartTime: number) => void;
+  onRenameTrack: (trackId: string, nextName: string) => void;
+  onReorderTrack: (trackId: string, direction: 'up' | 'down') => void;
   onAddTrack: () => void;
   onPaste: () => void;
   onSplit: () => void;
@@ -73,7 +78,15 @@ interface TrackTimelineStackProps {
 
 type Interaction =
   | { kind: 'scrub' }
-  | { kind: 'move-clip'; trackId: string; grabOffset: number; moved: boolean }
+  | {
+      kind: 'move-clip';
+      trackId: string;
+      originStartTime: number;
+      originClientX: number;
+      ppsAtStart: number;
+      clipDuration: number;
+      moved: boolean;
+    }
   | {
       kind: 'select-pending';
       trackId: string;
@@ -116,9 +129,14 @@ function getTimelineCopy(locale: string) {
       zoomIn: '확대',
       zoomOut: '축소',
       zoomFit: '화면에 맞추기',
+      zoomSelection: '선택 구간 확대',
       paste: '플레이헤드에 붙여넣기',
       split: '플레이헤드에서 분할',
       recordingLane: '녹음 중...',
+      renameHint: '더블클릭해서 이름 바꾸기',
+      renameLabel: '트랙 이름',
+      moveUp: '트랙 위로',
+      moveDown: '트랙 아래로',
     };
   }
 
@@ -142,9 +160,14 @@ function getTimelineCopy(locale: string) {
     zoomIn: 'Zoom in',
     zoomOut: 'Zoom out',
     zoomFit: 'Fit to view',
+    zoomSelection: 'Zoom to selection',
     paste: 'Paste at playhead',
     split: 'Split at playhead',
     recordingLane: 'Recording...',
+    renameHint: 'Double-click to rename',
+    renameLabel: 'Track name',
+    moveUp: 'Move track up',
+    moveDown: 'Move track down',
   };
 }
 
@@ -239,6 +262,8 @@ export function TrackTimelineStack({
   onSelectionChange,
   onMoveTrackStart,
   onMoveTrack,
+  onRenameTrack,
+  onReorderTrack,
   onAddTrack,
   onPaste,
   onSplit,
@@ -257,6 +282,11 @@ export function TrackTimelineStack({
   const [interaction, setInteraction] = useState<Interaction | null>(null);
   const interactionRef = useRef<Interaction | null>(null);
   const prevPpsRef = useRef<number | null>(null);
+  const pendingFocusTimeRef = useRef<number | null>(null);
+  const [hoverTime, setHoverTime] = useState<number | null>(null);
+  const hoverFrameRef = useRef<number | null>(null);
+  const hoverClientXRef = useRef(0);
+  const [editingTrack, setEditingTrack] = useState<{ id: string; value: string } | null>(null);
 
   const recordingActive = Boolean(recording?.active);
   const recordingEnd = recordingActive ? (recording?.insertTime ?? 0) + (recording?.elapsed ?? 0) : 0;
@@ -296,13 +326,26 @@ export function TrackTimelineStack({
     return () => observer.disconnect();
   }, []);
 
-  // Keep the visible center anchored when zoom changes.
+  // Keep the visible center anchored when zoom changes; a pending focus time
+  // (e.g. zoom-to-selection) takes priority over center preservation.
   useLayoutEffect(() => {
     const node = viewportRef.current;
     const prevPps = prevPpsRef.current;
     prevPpsRef.current = pixelsPerSecond;
 
-    if (!node || prevPps == null || Math.abs(prevPps - pixelsPerSecond) < 0.0001) {
+    if (!node) {
+      return;
+    }
+
+    const focusTime = pendingFocusTimeRef.current;
+    if (focusTime != null) {
+      pendingFocusTimeRef.current = null;
+      node.scrollLeft = Math.max(0, HEADER_W + LANE_PAD + focusTime * pixelsPerSecond - viewportWidth / 2);
+      setScrollLeft(node.scrollLeft);
+      return;
+    }
+
+    if (prevPps == null || Math.abs(prevPps - pixelsPerSecond) < 0.0001) {
       return;
     }
 
@@ -366,6 +409,9 @@ export function TrackTimelineStack({
       if (scrollFrameRef.current != null) {
         cancelAnimationFrame(scrollFrameRef.current);
       }
+      if (hoverFrameRef.current != null) {
+        cancelAnimationFrame(hoverFrameRef.current);
+      }
     };
   }, []);
 
@@ -380,6 +426,70 @@ export function TrackTimelineStack({
     return clamp((innerX - HEADER_W - LANE_PAD) / pixelsPerSecond, 0, safeDuration);
   };
 
+  // Magnetic snapping: clip edges, project bounds, playhead, and selection
+  // bounds attract drags within an 8px radius. Hold Alt to bypass.
+  const collectSnapTargets = (excludeTrackId?: string) => {
+    const targets: number[] = [0, Math.max(projectDuration, 0), clamp(currentTime, 0, safeDuration)];
+
+    for (const track of tracks) {
+      if (track.id === excludeTrackId || !track.buffer) {
+        continue;
+      }
+      const start = Math.max(0, track.startTime);
+      targets.push(start, start + track.buffer.duration);
+    }
+
+    if (selection) {
+      targets.push(selection.start, selection.end);
+    }
+
+    return targets;
+  };
+
+  const snapToTargets = (time: number, targets: number[], disabled: boolean) => {
+    if (disabled) {
+      return time;
+    }
+
+    const threshold = 8 / pixelsPerSecond;
+    let best = time;
+    let bestDistance = threshold;
+
+    for (const target of targets) {
+      const distance = Math.abs(time - target);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = target;
+      }
+    }
+
+    return best;
+  };
+
+  const zoomToSelection = () => {
+    if (!selection || selection.end - selection.start < 0.01) {
+      return;
+    }
+
+    const selectionLength = selection.end - selection.start;
+    const base = Math.max(320, viewportWidth - HEADER_W);
+    const targetContent = (viewportWidth - HEADER_W) * 0.8 * (safeDuration / selectionLength);
+    const nextZoom = clamp((targetContent + LANE_PAD * 2) / base, MIN_ZOOM, MAX_ZOOM);
+    const focusTime = (selection.start + selection.end) / 2;
+
+    if (Math.abs(nextZoom - zoom) < 0.001) {
+      const node = viewportRef.current;
+      if (node) {
+        node.scrollLeft = Math.max(0, HEADER_W + LANE_PAD + focusTime * pixelsPerSecond - viewportWidth / 2);
+        setScrollLeft(node.scrollLeft);
+      }
+      return;
+    }
+
+    pendingFocusTimeRef.current = focusTime;
+    onZoomChange(nextZoom);
+  };
+
   useEffect(() => {
     if (!interaction) {
       return;
@@ -392,8 +502,11 @@ export function TrackTimelineStack({
         return;
       }
 
+      const snapDisabled = event.altKey;
+
       if (current.kind === 'scrub') {
-        onSeek(clamp(time, 0, Math.max(projectDuration, 0)));
+        const snapped = snapToTargets(time, collectSnapTargets(), snapDisabled);
+        onSeek(clamp(snapped, 0, Math.max(projectDuration, 0)));
         return;
       }
 
@@ -402,7 +515,34 @@ export function TrackTimelineStack({
           onMoveTrackStart(current.trackId);
           setInteraction({ ...current, moved: true });
         }
-        onMoveTrack(current.trackId, Math.max(0, Number((time - current.grabOffset).toFixed(3))));
+
+        // Delta-based dragging keeps the clip glued to the pointer even when
+        // the timeline scale shifts as the project duration grows.
+        let nextStart = Math.max(0, current.originStartTime + (event.clientX - current.originClientX) / current.ppsAtStart);
+
+        if (!snapDisabled) {
+          const targets = collectSnapTargets(current.trackId);
+          const threshold = 8 / pixelsPerSecond;
+          let bestAdjust = 0;
+          let bestDistance = threshold;
+
+          for (const target of targets) {
+            const startDelta = target - nextStart;
+            if (Math.abs(startDelta) < bestDistance) {
+              bestDistance = Math.abs(startDelta);
+              bestAdjust = startDelta;
+            }
+            const endDelta = target - (nextStart + current.clipDuration);
+            if (Math.abs(endDelta) < bestDistance) {
+              bestDistance = Math.abs(endDelta);
+              bestAdjust = endDelta;
+            }
+          }
+
+          nextStart = Math.max(0, nextStart + bestAdjust);
+        }
+
+        onMoveTrack(current.trackId, Number(nextStart.toFixed(3)));
         return;
       }
 
@@ -423,27 +563,21 @@ export function TrackTimelineStack({
         };
         setInteraction(next);
         interactionRef.current = next;
-        const clamped = clamp(time, current.clipStart, current.clipEnd);
-        onSelectionChange(current.trackId, {
-          start: Math.min(current.anchor, clamped),
-          end: Math.max(current.anchor, clamped),
-        });
+      }
+
+      const active = interactionRef.current;
+      if (!active || (active.kind !== 'select' && active.kind !== 'select-handle')) {
         return;
       }
 
-      if (current.kind === 'select') {
-        const clamped = clamp(time, current.clipStart, current.clipEnd);
-        onSelectionChange(current.trackId, {
-          start: Math.min(current.anchor, clamped),
-          end: Math.max(current.anchor, clamped),
-        });
-        return;
-      }
+      const selectionTargets = [active.clipStart, active.clipEnd, clamp(currentTime, 0, safeDuration)];
+      const snapped = snapToTargets(time, selectionTargets, snapDisabled);
+      const clamped = clamp(snapped, active.clipStart, active.clipEnd);
+      const anchor = active.kind === 'select' ? active.anchor : active.fixed;
 
-      const clamped = clamp(time, current.clipStart, current.clipEnd);
-      onSelectionChange(current.trackId, {
-        start: Math.min(current.fixed, clamped),
-        end: Math.max(current.fixed, clamped),
+      onSelectionChange(active.trackId, {
+        start: Math.min(anchor, clamped),
+        end: Math.max(anchor, clamped),
       });
     };
 
@@ -456,6 +590,7 @@ export function TrackTimelineStack({
 
       setInteraction(null);
       interactionRef.current = null;
+      setHoverTime(null);
     };
 
     window.addEventListener('pointermove', handlePointerMove);
@@ -520,6 +655,16 @@ export function TrackTimelineStack({
               title={copy.zoomFit}
             >
               <Maximize2 size={13} strokeWidth={1.5} />
+            </button>
+            <button
+              type="button"
+              onClick={zoomToSelection}
+              disabled={!selection || selection.end - selection.start < 0.01}
+              className="audio-icon-button audio-focus-ring h-7 w-7"
+              aria-label={copy.zoomSelection}
+              title={copy.zoomSelection}
+            >
+              <Focus size={13} strokeWidth={1.5} />
             </button>
           </div>
           <button
@@ -591,7 +736,39 @@ export function TrackTimelineStack({
           </div>
 
           {/* Lanes */}
-          <div className="relative">
+          <div
+            className="relative"
+            onPointerMove={(event) => {
+              if (interactionRef.current) {
+                return;
+              }
+
+              hoverClientXRef.current = event.clientX;
+              if (hoverFrameRef.current != null) {
+                return;
+              }
+
+              hoverFrameRef.current = requestAnimationFrame(() => {
+                hoverFrameRef.current = null;
+                if (!interactionRef.current) {
+                  setHoverTime(getTimeFromClientX(hoverClientXRef.current));
+                }
+              });
+            }}
+            onPointerLeave={() => setHoverTime(null)}
+          >
+            {hoverTime != null && !interaction && showPlayhead ? (
+              <div
+                className="pointer-events-none absolute bottom-0 top-0 z-10"
+                style={{ left: `${HEADER_W + timeToLaneX(hoverTime)}px` }}
+              >
+                <span className="absolute inset-y-0 left-0 w-px bg-[var(--text-tertiary)] opacity-40" />
+                <span className="audio-mono absolute left-1.5 top-1 whitespace-nowrap rounded border border-[var(--border)] bg-[var(--bg-surface)] px-1 py-0.5 text-[10px] text-[var(--text-secondary)]">
+                  {formatTime(hoverTime)}
+                </span>
+              </div>
+            ) : null}
+
             {showPlayhead ? (
               <div
                 data-testid="audio-playhead"
@@ -666,18 +843,68 @@ export function TrackTimelineStack({
                     }`}
                     style={{ width: `${HEADER_W}px` }}
                   >
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1">
+                      {editingTrack?.id === track.id ? (
+                        <input
+                          autoFocus
+                          type="text"
+                          value={editingTrack.value}
+                          aria-label={copy.renameLabel}
+                          onChange={(event) => setEditingTrack({ id: track.id, value: event.target.value })}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              onRenameTrack(track.id, editingTrack.value);
+                              setEditingTrack(null);
+                            }
+                            if (event.key === 'Escape') {
+                              setEditingTrack(null);
+                            }
+                          }}
+                          onBlur={() => {
+                            onRenameTrack(track.id, editingTrack.value);
+                            setEditingTrack(null);
+                          }}
+                          className="audio-field audio-focus-ring h-6 min-w-0 flex-1 px-1.5 text-[12px]"
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => onSelectTrack(track.id)}
+                          onDoubleClick={() => {
+                            if (track.source !== 'empty') {
+                              setEditingTrack({ id: track.id, value: track.name });
+                            }
+                          }}
+                          className={`min-w-0 flex-1 truncate text-left text-[13px] font-medium transition ${
+                            track.isActive
+                              ? 'text-[var(--text-primary)]'
+                              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                          }`}
+                          title={`${trackLabel} · ${copy.renameHint}`}
+                        >
+                          {trackLabel}
+                        </button>
+                      )}
                       <button
                         type="button"
-                        onClick={() => onSelectTrack(track.id)}
-                        className={`min-w-0 flex-1 truncate text-left text-[13px] font-medium transition ${
-                          track.isActive
-                            ? 'text-[var(--text-primary)]'
-                            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                        }`}
-                        title={trackLabel}
+                        onClick={() => onReorderTrack(track.id, 'up')}
+                        disabled={trackIndex === 0}
+                        className="audio-focus-ring inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border border-[var(--border)] text-[var(--text-tertiary)] transition hover:text-[var(--text-primary)] disabled:opacity-30"
+                        aria-label={copy.moveUp}
+                        title={copy.moveUp}
                       >
-                        {trackLabel}
+                        <ChevronUp size={11} strokeWidth={1.5} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onReorderTrack(track.id, 'down')}
+                        disabled={trackIndex === tracks.length - 1}
+                        className="audio-focus-ring inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border border-[var(--border)] text-[var(--text-tertiary)] transition hover:text-[var(--text-primary)] disabled:opacity-30"
+                        aria-label={copy.moveDown}
+                        title={copy.moveDown}
+                      >
+                        <ChevronDown size={11} strokeWidth={1.5} />
                       </button>
                       <SourceIcon size={12} strokeWidth={1.5} className="shrink-0 text-[var(--text-tertiary)]" />
                     </div>
@@ -776,6 +1003,16 @@ export function TrackTimelineStack({
                             : 'bg-[rgba(0,212,200,0.05)] ring-1 ring-[rgba(127,127,127,0.25)]'
                         }`}
                         style={{ left: `${clipLeft}px`, width: `${clipWidth}px` }}
+                        onDoubleClick={(event) => {
+                          const target = event.target as HTMLElement;
+                          if (target.closest('[data-selection-handle]') || target.closest('[data-track-grip]')) {
+                            return;
+                          }
+
+                          event.preventDefault();
+                          onSelectTrack(track.id);
+                          onSelectionChange(track.id, { start: clipStart, end: clipEnd });
+                        }}
                         onPointerDown={(event) => {
                           const target = event.target as HTMLElement;
                           if (target.closest('[data-selection-handle]') || target.closest('[data-track-grip]')) {
@@ -813,11 +1050,13 @@ export function TrackTimelineStack({
                             event.preventDefault();
                             event.stopPropagation();
                             onSelectTrack(track.id);
-                            const pointerTime = getTimeFromClientX(event.clientX);
                             setInteraction({
                               kind: 'move-clip',
                               trackId: track.id,
-                              grabOffset: clamp(pointerTime - clipStart, 0, clipDuration),
+                              originStartTime: clipStart,
+                              originClientX: event.clientX,
+                              ppsAtStart: pixelsPerSecond,
+                              clipDuration,
                               moved: false,
                             });
                           }}
