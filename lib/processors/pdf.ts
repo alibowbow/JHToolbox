@@ -14,13 +14,13 @@ const TEXT_PAGE_WIDTH = 1240;
 const TEXT_PAGE_HEIGHT = 1754;
 const TEXT_MARGIN = 104;
 
-type PdfTextPage = {
+export type PdfTextPage = {
   pageNumber: number;
   text: string;
   lines: string[];
 };
 
-type TextBlock =
+export type TextBlock =
   | { kind: 'title' | 'caption' | 'body'; text: string }
   | { kind: 'gap' | 'page-break' };
 
@@ -162,7 +162,7 @@ function resolvePdfWatermarkImage(files: File[]) {
   return files.find((file) => file.type.startsWith('image/'));
 }
 
-function escapeXml(value: string) {
+export function escapeXml(value: string) {
   return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -171,7 +171,7 @@ function escapeXml(value: string) {
     .replace(/'/g, '&apos;');
 }
 
-function decodeXmlEntities(value: string) {
+export function decodeXmlEntities(value: string) {
   return value
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
@@ -534,12 +534,12 @@ async function canvasesToPdfBlob(canvases: HTMLCanvasElement[]) {
   return blobFromBytes(bytes, 'application/pdf');
 }
 
-async function renderBlocksToPdfBlob(blocks: TextBlock[]) {
+export async function renderBlocksToPdfBlob(blocks: TextBlock[]) {
   const canvases = renderBlocksToCanvases(blocks);
   return await canvasesToPdfBlob(canvases);
 }
 
-async function extractPdfTextPages(
+export async function extractPdfTextPages(
   file: File,
   onProgress?: (value: number) => void,
 ): Promise<PdfTextPage[]> {

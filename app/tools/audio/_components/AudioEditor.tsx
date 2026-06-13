@@ -3,23 +3,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import {
-  EditHistory,
+  ProjectHistory,
+  ProjectPlayer,
   type AudioProjectTrack,
-  audioEngine,
-  createAudioBuffer,
+  decodeAudioBlobToBuffer,
   exportAudio,
   getMixdownDuration,
   mixAudioTracks,
 } from '@/lib/audio';
 import { createWavRecordingSession, type WavRecordingSession } from '@/lib/processors/audio-recording';
 import {
+  applyEqToAudioRange,
   applyFadeToAudioRange,
   applyGainToAudioRange,
   applyPitchToAudioRange,
   applyReverbToAudioRange,
   applySpeedToAudioRange,
   extractAudioRange,
-  isSilentAudioBuffer,
+  insertAudioAtTime,
   removeAudioRange,
 } from './audio-buffer-transforms';
 import { getAudioEditorCopy } from './audio-editor-copy';
@@ -28,28 +29,28 @@ import {
   isAudioSessionFile,
   parseAudioSessionFile,
   saveAudioSession,
+  type ProjectSelection,
 } from './audio-session';
 import {
   type AudioEditorMode,
   type AudioEffectTab,
   type AudioEffectsState,
-  type AudioSelection,
   AUDIO_ACCEPT,
   DEFAULT_EFFECTS,
-  DEFAULT_SELECTION,
   clamp,
-  formatTime,
-  normalizeSelection,
 } from './audio-editor-utils';
 import { EffectsPanel } from './Effects/EffectsPanel';
 import { SelectionBar } from './Selection/SelectionBar';
-import { TrackTimelineStack as MultiTrackTimeline } from './Tracks/TrackTimelineStack';
+import { TrackTimelineStack } from './Tracks/TrackTimelineStack';
 import { EditorToolbar } from './Toolbar/EditorToolbar';
 import { TransportBar } from './Transport/TransportBar';
 
 interface AudioEditorProps {
   mode: AudioEditorMode;
 }
+
+const MIN_SELECTION_SEC = 0.001;
+const MAX_ZOOM = 32;
 
 function isTypingTarget(target: EventTarget | null) {
   return (
@@ -68,83 +69,22 @@ function createTrackId(prefix = 'track') {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function createProjectTrack(name: string, buffer: AudioBuffer, source: AudioProjectTrack['source']): AudioProjectTrack {
+function createProjectTrack(
+  name: string,
+  buffer: AudioBuffer | null,
+  source: AudioProjectTrack['source'],
+  startTime = 0,
+): AudioProjectTrack {
   return {
     id: createTrackId(source === 'recording' ? 'take' : 'track'),
     name,
     buffer,
-    startTime: 0,
+    startTime,
     gain: 1,
     muted: false,
     solo: false,
     source,
   };
-}
-
-function createEmptyTrack(trackNumber: number, locale: 'en' | 'ko'): AudioProjectTrack {
-  return {
-    id: createTrackId('track'),
-    name: locale === 'ko' ? `빈 트랙 ${trackNumber}` : `Empty track ${trackNumber}`,
-    buffer: null,
-    startTime: 0,
-    gain: 1,
-    muted: false,
-    solo: false,
-    source: 'empty',
-  };
-}
-
-function writeBufferSegment(target: AudioBuffer, source: AudioBuffer, offsetSeconds: number) {
-  const targetOffset = Math.max(0, Math.round(offsetSeconds * target.sampleRate));
-
-  for (let channelIndex = 0; channelIndex < target.numberOfChannels; channelIndex += 1) {
-    const targetChannel = target.getChannelData(channelIndex);
-    const sourceChannel = source.getChannelData(Math.min(channelIndex, source.numberOfChannels - 1));
-
-    for (let sampleIndex = 0; sampleIndex < sourceChannel.length; sampleIndex += 1) {
-      const writeIndex = targetOffset + sampleIndex;
-      if (writeIndex >= targetChannel.length) {
-        break;
-      }
-
-      targetChannel[writeIndex] = sourceChannel[sampleIndex] ?? 0;
-    }
-  }
-}
-
-function overwriteTrackBuffer(track: AudioProjectTrack, recordingBuffer: AudioBuffer, insertTime: number) {
-  if (!track.buffer) {
-    return {
-      buffer: recordingBuffer,
-      startTime: insertTime,
-    };
-  }
-
-  const existingBuffer = track.buffer;
-  const nextStart = Math.min(track.startTime, insertTime);
-  const nextEnd = Math.max(track.startTime + existingBuffer.duration, insertTime + recordingBuffer.duration);
-  const nextDuration = Math.max(nextEnd - nextStart, recordingBuffer.duration, existingBuffer.duration, 0.05);
-  const nextBuffer = createAudioBuffer(
-    Math.max(existingBuffer.numberOfChannels, recordingBuffer.numberOfChannels),
-    Math.max(1, Math.ceil(nextDuration * existingBuffer.sampleRate)),
-    existingBuffer.sampleRate,
-  );
-
-  writeBufferSegment(nextBuffer, existingBuffer, track.startTime - nextStart);
-  writeBufferSegment(nextBuffer, recordingBuffer, insertTime - nextStart);
-
-  return {
-    buffer: nextBuffer,
-    startTime: nextStart,
-  };
-}
-
-function hasTrackSelection(buffer: AudioBuffer | null, selection: AudioSelection) {
-  if (!buffer) {
-    return false;
-  }
-
-  return selection.start > 0.001 || selection.end < Math.max(buffer.duration - 0.001, 0);
 }
 
 function getVisibleTrackName(track: AudioProjectTrack | null, locale: 'en' | 'ko') {
@@ -162,115 +102,153 @@ function getVisibleTrackName(track: AudioProjectTrack | null, locale: 'en' | 'ko
 export function AudioEditor({ mode }: AudioEditorProps) {
   const { locale } = useLocale();
   const copy = useMemo(() => getAudioEditorCopy(locale), [locale]);
-  const [projectTracks, setProjectTracks] = useState<AudioProjectTrack[]>([]);
+
+  const [tracks, setTracks] = useState<AudioProjectTrack[]>([]);
   const [activeTrackId, setActiveTrackId] = useState<string | null>(null);
-  const [mixdownBuffer, setMixdownBuffer] = useState<AudioBuffer | null>(null);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [projectTime, setProjectTime] = useState(0);
+  const [playhead, setPlayhead] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [selection, setSelection] = useState<ProjectSelection | null>(null);
+  const [clipboard, setClipboard] = useState<AudioBuffer | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [loopEnabled, setLoopEnabled] = useState(false);
+  const [effects, setEffects] = useState<AudioEffectsState>(DEFAULT_EFFECTS);
+  const [activeTab, setActiveTab] = useState<AudioEffectTab>('fade');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(1);
-  const [selection, setSelection] = useState<AudioSelection>(DEFAULT_SELECTION);
-  const [effects, setEffects] = useState<AudioEffectsState>(DEFAULT_EFFECTS);
-  const [activeTab, setActiveTab] = useState<AudioEffectTab>('fade');
-  const [loopEnabled, setLoopEnabled] = useState(false);
-  const [isSilent, setIsSilent] = useState(false);
   const [, setHistoryVersion] = useState(0);
+
   const [isRecording, setIsRecording] = useState(false);
   const [isRecordingPaused, setIsRecordingPaused] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
-  const [recordingPeaks, setRecordingPeaks] = useState<number[]>([]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const historyRef = useRef(new EditHistory());
-  const bufferRef = useRef<AudioBuffer | null>(null);
-  const mixdownBufferRef = useRef<AudioBuffer | null>(null);
+  const playerRef = useRef<ProjectPlayer | null>(null);
+  const historyRef = useRef(new ProjectHistory());
+  const tracksRef = useRef<AudioProjectTrack[]>([]);
   const activeTrackRef = useRef<AudioProjectTrack | null>(null);
-  const activeTrackIdRef = useRef<string | null>(null);
+  const playheadRef = useRef(0);
+  const selectionRef = useRef<ProjectSelection | null>(null);
+  const clipboardRef = useRef<AudioBuffer | null>(null);
+  const busyRef = useRef(false);
+
   const recordingSessionRef = useRef<WavRecordingSession | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const recordingTimerRef = useRef<number | null>(null);
   const recordingStartRef = useRef<number | null>(null);
   const recordingPausedRef = useRef(false);
-  const recordingAccumulatedDurationRef = useRef(0);
-  const recordingTargetTrackIdRef = useRef<string | null>(null);
+  const recordingAccumulatedRef = useRef(0);
   const recordingInsertTimeRef = useRef(0);
-  const playbackProjectOffsetRef = useRef(0);
+
+  const getPlayer = () => {
+    if (!playerRef.current) {
+      playerRef.current = new ProjectPlayer();
+    }
+
+    return playerRef.current;
+  };
 
   const activeTrack = useMemo(
-    () => projectTracks.find((track) => track.id === activeTrackId) ?? projectTracks[0] ?? null,
-    [activeTrackId, projectTracks],
+    () => tracks.find((track) => track.id === activeTrackId) ?? tracks[0] ?? null,
+    [activeTrackId, tracks],
   );
-  const getTrackById = (trackId: string | null | undefined) =>
-    projectTracks.find((track) => track.id === trackId) ?? null;
-  const buffer = activeTrack?.buffer ?? null;
-  const duration = buffer?.duration ?? 0;
+  const projectDuration = useMemo(() => getMixdownDuration(tracks), [tracks]);
+  const recordingEnd = isRecording ? recordingInsertTimeRef.current + recordingDuration : 0;
+  const displayDuration = Math.max(projectDuration, recordingEnd);
+  const projectCurrentTime = isRecording ? recordingEnd : playhead;
+  const activeTrackName = getVisibleTrackName(activeTrack, locale);
+
   const canUndo = historyRef.current.canUndo;
   const canRedo = historyRef.current.canRedo;
   const undoLabel = historyRef.current.undoLabel;
   const redoLabel = historyRef.current.redoLabel;
   const historyDepth = historyRef.current.depth;
-  const hasActiveSelection = hasTrackSelection(buffer, selection);
-  const activeTrackName = getVisibleTrackName(activeTrack, locale);
-  const projectDuration = mixdownBuffer?.duration ?? getMixdownDuration(projectTracks);
-  const projectCurrentTime = isRecording ? recordingInsertTimeRef.current + recordingDuration : projectTime;
-  const canSaveTrack = Boolean(buffer) && !isRecording;
-  const canSaveMix = Boolean(projectTracks.some((track) => track.buffer)) && !isRecording;
-  const canSaveSession = projectTracks.length > 0 && !isRecording;
+
+  const canSaveTrack = Boolean(activeTrack?.buffer) && !isRecording;
+  const canSaveMix = tracks.some((track) => track.buffer) && !isRecording;
+  const canSaveSession = tracks.length > 0 && !isRecording;
+
+  const activeClipStart = activeTrack?.buffer ? Math.max(0, activeTrack.startTime) : 0;
+  const activeClipEnd = activeTrack?.buffer ? activeClipStart + activeTrack.buffer.duration : 0;
+  const canSplit =
+    Boolean(activeTrack?.buffer) &&
+    !isRecording &&
+    playhead > activeClipStart + 0.01 &&
+    playhead < activeClipEnd - 0.01;
+  const canPaste = Boolean(clipboard) && !isRecording;
 
   useEffect(() => {
-    bufferRef.current = buffer;
-  }, [buffer]);
-
-  useEffect(() => {
-    mixdownBufferRef.current = mixdownBuffer;
-  }, [mixdownBuffer]);
+    tracksRef.current = tracks;
+  }, [tracks]);
 
   useEffect(() => {
     activeTrackRef.current = activeTrack;
   }, [activeTrack]);
 
   useEffect(() => {
-    if (projectTracks.length === 0) {
-      setActiveTrackId(null);
-      return;
-    }
-
-    if (!activeTrackId || !projectTracks.some((track) => track.id === activeTrackId)) {
-      setActiveTrackId(projectTracks[0]?.id ?? null);
-    }
-  }, [activeTrackId, projectTracks]);
+    playheadRef.current = playhead;
+  }, [playhead]);
 
   useEffect(() => {
-    if (activeTrackIdRef.current === activeTrackId) {
+    selectionRef.current = selection;
+  }, [selection]);
+
+  useEffect(() => {
+    clipboardRef.current = clipboard;
+  }, [clipboard]);
+
+  // Keep an existing track active.
+  useEffect(() => {
+    if (tracks.length === 0) {
+      if (activeTrackId !== null) {
+        setActiveTrackId(null);
+      }
       return;
     }
 
-    activeTrackIdRef.current = activeTrackId;
-    historyRef.current.clear();
-    setHistoryVersion((value) => value + 1);
-    setLoopEnabled(false);
+    if (!activeTrackId || !tracks.some((track) => track.id === activeTrackId)) {
+      setActiveTrackId(tracks[0]?.id ?? null);
+    }
+  }, [activeTrackId, tracks]);
 
-    if (!buffer) {
-      setSelection(DEFAULT_SELECTION);
-      setCurrentTime(0);
-      setIsSilent(false);
+  // Feed track changes to the realtime player (live gain / mute / solo).
+  useEffect(() => {
+    getPlayer().syncTracks(
+      tracks.map((track) => ({
+        id: track.id,
+        buffer: track.buffer,
+        startTime: track.startTime,
+        gain: track.gain,
+        muted: track.muted,
+        solo: track.solo,
+      })),
+    );
+  }, [tracks]);
+
+  useEffect(() => {
+    const player = getPlayer();
+    const unsubscribeTick = player.onTick((nextTime) => {
+      setPlayhead(nextTime);
+    });
+    const unsubscribeEnded = player.onEnded(() => {
       setIsPlaying(false);
-      audioEngine.stop();
-      return;
-    }
+      setPlayhead(0);
+    });
+    const unsubscribePreview = player.onPreviewEnded(() => {
+      setIsPlaying(false);
+    });
 
-    const nextProjectTime = clamp(projectTime, 0, Math.max(projectDuration, activeTrack?.startTime ?? 0, 0));
-    const nextCurrentTime = clamp(nextProjectTime - (activeTrack?.startTime ?? 0), 0, buffer.duration);
-    setSelection(normalizeSelection(0, buffer.duration, buffer.duration, selection.trimMode));
-    setCurrentTime(nextCurrentTime);
-    setIsSilent(isSilentAudioBuffer(buffer));
-    setIsPlaying(false);
-    playbackProjectOffsetRef.current = activeTrack?.startTime ?? 0;
-    audioEngine.setBuffer(buffer, nextCurrentTime);
-  }, [activeTrack, activeTrackId, buffer, projectDuration, projectTime, selection.trimMode]);
+    return () => {
+      unsubscribeTick();
+      unsubscribeEnded();
+      unsubscribePreview();
+    };
+  }, []);
+
+  useEffect(() => {
+    const player = getPlayer();
+    player.setLoop(loopEnabled && selection ? selection : null);
+  }, [loopEnabled, selection]);
 
   useEffect(() => {
     return () => {
@@ -278,200 +256,709 @@ export function AudioEditor({ mode }: AudioEditorProps) {
         window.clearInterval(recordingTimerRef.current);
       }
 
-      const stream = recordingStreamRef.current;
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
-      }
+      recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
 
       const recordingSession = recordingSessionRef.current;
       if (recordingSession) {
         void recordingSession.cleanup().catch(() => undefined);
       }
+
+      playerRef.current?.dispose();
+      playerRef.current = null;
     };
   }, []);
 
-  useEffect(() => {
-    const unsubscribeTime = audioEngine.onTimeUpdate((nextTime) => {
-      const activeBuffer = bufferRef.current;
-      const activeTrackState = activeTrackRef.current;
-      const mixBuffer = mixdownBufferRef.current;
+  const bumpHistory = () => setHistoryVersion((value) => value + 1);
 
-      if (mixBuffer && audioEngine.buffer === mixBuffer) {
-        setProjectTime(nextTime);
-
-        if (activeTrackState?.buffer) {
-          setCurrentTime(clamp(nextTime - activeTrackState.startTime, 0, activeTrackState.buffer.duration));
-        } else {
-          setCurrentTime(0);
-        }
-        return;
-      }
-
-      setCurrentTime(nextTime);
-
-      if (activeTrackState && activeBuffer && audioEngine.buffer === activeBuffer) {
-        setProjectTime(nextTime + playbackProjectOffsetRef.current);
-      }
-    });
-    const unsubscribeEnded = audioEngine.onEnded(() => {
-      setIsPlaying(false);
-      const activeBuffer = bufferRef.current;
-      const mixBuffer = mixdownBufferRef.current;
-      const activeTrackState = activeTrackRef.current;
-
-      if (mixBuffer && audioEngine.buffer === mixBuffer) {
-        setProjectTime(0);
-        setCurrentTime(0);
-
-        if (activeBuffer) {
-          audioEngine.setBuffer(activeBuffer, 0);
-        }
-        return;
-      }
-
-      setCurrentTime(0);
-      setProjectTime(activeTrackState?.startTime ?? 0);
-
-      if (activeBuffer && audioEngine.buffer !== activeBuffer) {
-        audioEngine.setBuffer(activeBuffer, 0);
-        return;
-      }
-
-      if (activeBuffer) {
-        audioEngine.seekTo(0);
-      }
-    });
-
-    return () => {
-      unsubscribeTime();
-      unsubscribeEnded();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!buffer) {
-      setCurrentTime(0);
-      if (projectTracks.length === 0) {
-        setProjectTime(0);
-      }
-      setIsPlaying(false);
-      setSelection(DEFAULT_SELECTION);
-      setIsSilent(false);
-      return;
-    }
-
-    const nextProjectTime = clamp(projectTime, 0, Math.max(projectDuration, activeTrack?.startTime ?? 0, 0));
-    const nextLocalTime = clamp(nextProjectTime - (activeTrack?.startTime ?? 0), 0, buffer.duration);
-
-    setCurrentTime((currentValue) => (Math.abs(currentValue - nextLocalTime) > 0.001 ? nextLocalTime : currentValue));
-    setSelection((currentSelection) =>
-      normalizeSelection(currentSelection.start, currentSelection.end || buffer.duration, buffer.duration, currentSelection.trimMode),
+  const syncPlayerTracks = (nextTracks: AudioProjectTrack[]) => {
+    getPlayer().syncTracks(
+      nextTracks.map((track) => ({
+        id: track.id,
+        buffer: track.buffer,
+        startTime: track.startTime,
+        gain: track.gain,
+        muted: track.muted,
+        solo: track.solo,
+      })),
     );
-    setIsSilent(isSilentAudioBuffer(buffer));
+  };
 
-    if (audioEngine.buffer !== buffer) {
-      playbackProjectOffsetRef.current = activeTrack?.startTime ?? 0;
-      audioEngine.setBuffer(buffer, nextLocalTime);
+  const commitTracks = (
+    label: string,
+    nextTracks: AudioProjectTrack[],
+    options: {
+      activeTrackId?: string | null;
+      selection?: ProjectSelection | null;
+      playhead?: number;
+      status?: string | null;
+    } = {},
+  ) => {
+    historyRef.current.push(label, tracksRef.current);
+    bumpHistory();
+    setTracks(nextTracks);
+    // Sync the player synchronously so playhead clamping below sees the new duration.
+    syncPlayerTracks(nextTracks);
+
+    if (options.activeTrackId !== undefined) {
+      setActiveTrackId(options.activeTrackId);
+    }
+
+    if (options.selection !== undefined) {
+      setSelection(options.selection);
+    }
+
+    if (options.playhead !== undefined) {
+      const nextDuration = getMixdownDuration(nextTracks);
+      const nextPlayhead = clamp(options.playhead, 0, Math.max(nextDuration, 0));
+      setPlayhead(nextPlayhead);
+      getPlayer().seek(nextPlayhead);
+    }
+
+    setStatusMessage(options.status !== undefined ? options.status : copy.status.effectApplied(label));
+    setLoadError(null);
+  };
+
+  const handleUndo = () => {
+    const entry = historyRef.current.undo(tracksRef.current);
+    if (!entry) {
       return;
     }
 
-    if (!isPlaying && Math.abs(audioEngine.currentTime - nextLocalTime) > 0.001) {
-      playbackProjectOffsetRef.current = activeTrack?.startTime ?? 0;
-      audioEngine.seekTo(nextLocalTime);
+    bumpHistory();
+    setTracks(entry.tracks);
+    syncPlayerTracks(entry.tracks);
+    setSelection(null);
+    const nextDuration = getMixdownDuration(entry.tracks);
+    if (playheadRef.current > nextDuration) {
+      setPlayhead(nextDuration);
+      getPlayer().seek(nextDuration);
     }
-  }, [activeTrack?.startTime, buffer, isPlaying, projectDuration, projectTime, projectTracks.length]);
+    setStatusMessage(copy.status.undoApplied);
+  };
 
-  useEffect(() => {
-    if (!buffer || !loopEnabled) {
-      audioEngine.setLoop(0, 0);
+  const handleRedo = () => {
+    const entry = historyRef.current.redo(tracksRef.current);
+    if (!entry) {
       return;
     }
 
-    audioEngine.setLoop(selection.start, selection.end);
-  }, [buffer, loopEnabled, selection.end, selection.start]);
+    bumpHistory();
+    setTracks(entry.tracks);
+    syncPlayerTracks(entry.tracks);
+    setSelection(null);
+    const nextDuration = getMixdownDuration(entry.tracks);
+    if (playheadRef.current > nextDuration) {
+      setPlayhead(nextDuration);
+      getPlayer().seek(nextDuration);
+    }
+    setStatusMessage(copy.status.redoApplied);
+  };
 
-  useEffect(() => {
-    if (projectTracks.length === 0) {
-      setMixdownBuffer(null);
+  const openPicker = () => {
+    if (isRecording || !fileInputRef.current) {
       return;
     }
 
-    let cancelled = false;
+    fileInputRef.current.value = '';
+    fileInputRef.current.click();
+  };
 
-    const renderMixdown = async () => {
+  const applySessionState = (sessionState: Awaited<ReturnType<typeof parseAudioSessionFile>>) => {
+    getPlayer().stop();
+    historyRef.current.clear();
+    bumpHistory();
+    setTracks(sessionState.tracks);
+    setActiveTrackId(sessionState.activeTrackId);
+    setZoom(clamp(sessionState.zoom, 1, MAX_ZOOM));
+    setSelection(sessionState.selection);
+    setEffects(sessionState.effects);
+    setActiveTab(sessionState.activeTab);
+    setLoopEnabled(sessionState.loopEnabled);
+    setIsPlaying(false);
+    const nextDuration = getMixdownDuration(sessionState.tracks);
+    const nextPlayhead = clamp(sessionState.playhead, 0, Math.max(nextDuration, 0));
+    setPlayhead(nextPlayhead);
+    setWarningMessage(null);
+    setLoadError(null);
+    setStatusMessage(locale === 'ko' ? '오디오 세션을 불러왔습니다.' : 'Loaded the audio session.');
+  };
+
+  const importFiles = async (nextFiles: File[]) => {
+    if (nextFiles.length === 0) {
+      return;
+    }
+
+    const player = getPlayer();
+    player.pause();
+    player.stopPreview(false);
+    setIsPlaying(false);
+    setLoadError(null);
+    setWarningMessage(nextFiles.some((file) => file.size > 100 * 1024 * 1024) ? copy.fileDrop.largeFileWarning : null);
+
+    try {
+      if (nextFiles.length === 1 && isAudioSessionFile(nextFiles[0])) {
+        const sessionState = await parseAudioSessionFile(nextFiles[0]);
+        applySessionState(sessionState);
+        return;
+      }
+
+      const decodedTracks: AudioProjectTrack[] = [];
+
+      for (const file of nextFiles) {
+        setStatusMessage(copy.status.loading(file.name));
+        const decoded = await decodeAudioBlobToBuffer(file);
+        decodedTracks.push(createProjectTrack(file.name, decoded, 'file'));
+      }
+
+      const targetTrack = activeTrackRef.current;
+      let nextTracks: AudioProjectTrack[];
+      let nextActiveId: string | null;
+
+      if (targetTrack && !targetTrack.buffer && decodedTracks.length > 0) {
+        const [filledTrack, ...remainingTracks] = decodedTracks;
+        nextTracks = tracksRef.current.map((track) =>
+          track.id === targetTrack.id
+            ? { ...track, name: filledTrack.name, buffer: filledTrack.buffer, source: 'file' as const }
+            : track,
+        );
+        if (remainingTracks.length > 0) {
+          nextTracks = [...nextTracks, ...remainingTracks];
+        }
+        nextActiveId = targetTrack.id;
+      } else {
+        nextTracks = [...tracksRef.current, ...decodedTracks];
+        nextActiveId = decodedTracks.at(-1)?.id ?? activeTrackId;
+      }
+
+      commitTracks(copy.commands.importAudio, nextTracks, {
+        activeTrackId: nextActiveId,
+        selection: null,
+        status: null,
+      });
+    } catch (error) {
+      setStatusMessage(null);
+      setLoadError(error instanceof Error ? error.message : copy.status.decodeFailed);
+    }
+  };
+
+  const handleAddEmptyTrack = () => {
+    const nextTrack = createProjectTrack(
+      locale === 'ko' ? `빈 트랙 ${tracks.length + 1}` : `Empty track ${tracks.length + 1}`,
+      null,
+      'empty',
+    );
+    commitTracks(copy.commands.addTrack, [...tracksRef.current, nextTrack], {
+      activeTrackId: nextTrack.id,
+      status: locale === 'ko' ? '빈 트랙을 추가했습니다.' : 'Added an empty track.',
+    });
+  };
+
+  const updateTrackLive = (trackId: string, updater: (track: AudioProjectTrack) => AudioProjectTrack) => {
+    setTracks((currentTracks) => currentTracks.map((track) => (track.id === trackId ? updater(track) : track)));
+  };
+
+  const handleRemoveTrack = (trackId: string) => {
+    const nextTracks = tracksRef.current.filter((track) => track.id !== trackId);
+    commitTracks(copy.commands.deleteTrack, nextTracks, {
+      activeTrackId: activeTrackId === trackId ? nextTracks[0]?.id ?? null : undefined,
+      selection: null,
+      status: null,
+    });
+
+    if (nextTracks.length === 0) {
+      getPlayer().stop();
+      setIsPlaying(false);
+      setPlayhead(0);
+      setWarningMessage(null);
+    }
+  };
+
+  const handleMoveTrackStart = (trackId: string) => {
+    void trackId;
+    historyRef.current.push(copy.commands.moveClip, tracksRef.current);
+    bumpHistory();
+  };
+
+  const handleMoveTrack = (trackId: string, nextStartTime: number) => {
+    updateTrackLive(trackId, (track) => ({ ...track, startTime: Math.max(0, nextStartTime) }));
+  };
+
+  const seekTo = (time: number, trackId?: string) => {
+    if (isRecording) {
+      return;
+    }
+
+    if (trackId && trackId !== activeTrackId) {
+      setActiveTrackId(trackId);
+    }
+
+    const player = getPlayer();
+    if (player.previewing) {
+      player.stopPreview(false);
+      setIsPlaying(false);
+    }
+    player.seek(clamp(time, 0, Math.max(projectDuration, 0)));
+  };
+
+  const seekBy = (delta: number) => {
+    seekTo(playheadRef.current + delta);
+  };
+
+  const handlePlayPause = () => {
+    if (isRecording) {
+      return;
+    }
+
+    const player = getPlayer();
+
+    if (isPlaying) {
+      if (player.previewing) {
+        player.stopPreview(false);
+      } else {
+        player.pause();
+      }
+      setIsPlaying(false);
+      return;
+    }
+
+    if (projectDuration <= 0) {
+      return;
+    }
+
+    try {
+      player.play(playheadRef.current);
+      setIsPlaying(true);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : copy.status.playbackFailed);
+    }
+  };
+
+  const getEditRange = () => {
+    const track = activeTrackRef.current;
+    if (!track?.buffer) {
+      return null;
+    }
+
+    const clipStart = Math.max(0, track.startTime);
+    const clipEnd = clipStart + track.buffer.duration;
+    const currentSelection = selectionRef.current;
+    const projectStart = currentSelection ? clamp(currentSelection.start, clipStart, clipEnd) : clipStart;
+    const projectEnd = currentSelection ? clamp(currentSelection.end, clipStart, clipEnd) : clipEnd;
+
+    if (projectEnd - projectStart < MIN_SELECTION_SEC) {
+      return null;
+    }
+
+    return {
+      track,
+      buffer: track.buffer,
+      clipStart,
+      clipEnd,
+      projectStart,
+      projectEnd,
+      localStart: projectStart - clipStart,
+      localEnd: projectEnd - clipStart,
+    };
+  };
+
+  const runBufferEdit = async (
+    label: string,
+    transform: (buffer: AudioBuffer, localStart: number, localEnd: number) => AudioBuffer | Promise<AudioBuffer>,
+    options: { requireSelection?: boolean; after?: (range: NonNullable<ReturnType<typeof getEditRange>>) => void } = {},
+  ) => {
+    if (busyRef.current || isRecording) {
+      return;
+    }
+
+    if (options.requireSelection && !selectionRef.current) {
+      setLoadError(copy.status.selectionRequired);
+      return;
+    }
+
+    const range = getEditRange();
+    if (!range) {
+      setLoadError(selectionRef.current ? copy.status.selectionRequired : copy.status.trackRequired);
+      return;
+    }
+
+    busyRef.current = true;
+    try {
+      const nextBuffer = await transform(range.buffer, range.localStart, range.localEnd);
+      commitTracks(
+        label,
+        tracksRef.current.map((track) => (track.id === range.track.id ? { ...track, buffer: nextBuffer } : track)),
+      );
+      options.after?.(range);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : copy.status.exportFailed);
+    } finally {
+      busyRef.current = false;
+    }
+  };
+
+  const handleSelectionChange = (trackId: string, nextSelection: ProjectSelection) => {
+    if (trackId !== activeTrackId) {
+      setActiveTrackId(trackId);
+    }
+
+    if (nextSelection.end - nextSelection.start < MIN_SELECTION_SEC) {
+      return;
+    }
+
+    setSelection({
+      start: Math.min(nextSelection.start, nextSelection.end),
+      end: Math.max(nextSelection.start, nextSelection.end),
+    });
+  };
+
+  const adjustSelectionBound = (bound: 'start' | 'end', value: number) => {
+    const track = activeTrackRef.current;
+    if (!track?.buffer) {
+      return;
+    }
+
+    const clipStart = Math.max(0, track.startTime);
+    const clipEnd = clipStart + track.buffer.duration;
+    const current = selectionRef.current ?? { start: clipStart, end: clipEnd };
+    const clamped = clamp(value, clipStart, clipEnd);
+    const next =
+      bound === 'start'
+        ? { start: Math.min(clamped, current.end - MIN_SELECTION_SEC), end: current.end }
+        : { start: current.start, end: Math.max(clamped, current.start + MIN_SELECTION_SEC) };
+
+    setSelection({
+      start: clamp(Math.min(next.start, next.end), clipStart, clipEnd),
+      end: clamp(Math.max(next.start, next.end), clipStart, clipEnd),
+    });
+  };
+
+  const handleSelectAll = () => {
+    const track = activeTrackRef.current;
+    if (!track?.buffer) {
+      return;
+    }
+
+    const clipStart = Math.max(0, track.startTime);
+    setSelection({ start: clipStart, end: clipStart + track.buffer.duration });
+    setStatusMessage(copy.status.selectedAll);
+  };
+
+  const handleClearSelection = () => {
+    setSelection(null);
+    setStatusMessage(copy.status.selectionCleared);
+  };
+
+  const playSelection = () => {
+    const range = getEditRange();
+    if (!range || !selectionRef.current || isRecording) {
+      return;
+    }
+
+    const segment = extractAudioRange(range.buffer, range.localStart, range.localEnd);
+    getPlayer().previewBuffer(segment);
+    setIsPlaying(true);
+  };
+
+  const handleCopySelection = () => {
+    const range = getEditRange();
+    if (!range || !selectionRef.current) {
+      setLoadError(copy.status.selectionRequired);
+      return;
+    }
+
+    setClipboard(extractAudioRange(range.buffer, range.localStart, range.localEnd));
+    setStatusMessage(copy.status.copied);
+    setLoadError(null);
+  };
+
+  const handleCutSelection = () => {
+    const range = getEditRange();
+    if (!range || !selectionRef.current) {
+      setLoadError(copy.status.selectionRequired);
+      return;
+    }
+
+    setClipboard(extractAudioRange(range.buffer, range.localStart, range.localEnd));
+    void runBufferEdit(
+      copy.commands.cutSelection,
+      (buffer, localStart, localEnd) => removeAudioRange(buffer, localStart, localEnd),
+      {
+        requireSelection: true,
+        after: (editRange) => {
+          setSelection(null);
+          seekTo(editRange.projectStart);
+          setStatusMessage(copy.status.cutDone);
+        },
+      },
+    );
+  };
+
+  const handleRemoveSelection = () => {
+    void runBufferEdit(
+      copy.commands.removeSelection,
+      (buffer, localStart, localEnd) => removeAudioRange(buffer, localStart, localEnd),
+      {
+        requireSelection: true,
+        after: (editRange) => {
+          setSelection(null);
+          seekTo(editRange.projectStart);
+        },
+      },
+    );
+  };
+
+  const handleTrimSelection = () => {
+    const range = getEditRange();
+    if (!range || !selectionRef.current) {
+      setLoadError(copy.status.selectionRequired);
+      return;
+    }
+
+    const trimmed = extractAudioRange(range.buffer, range.localStart, range.localEnd);
+    commitTracks(
+      copy.commands.keepSelection,
+      tracksRef.current.map((track) =>
+        track.id === range.track.id ? { ...track, buffer: trimmed, startTime: range.projectStart } : track,
+      ),
+      { selection: null, playhead: range.projectStart },
+    );
+  };
+
+  const handlePaste = () => {
+    const clip = clipboardRef.current;
+    if (!clip || isRecording) {
+      setLoadError(copy.status.clipboardEmpty);
+      return;
+    }
+
+    const pasteAt = playheadRef.current;
+    const target = activeTrackRef.current;
+
+    if (!target) {
+      const nextTrack = createProjectTrack(locale === 'ko' ? '붙여넣은 클립' : 'Pasted clip', clip, 'file', pasteAt);
+      commitTracks(copy.commands.paste, [...tracksRef.current, nextTrack], {
+        activeTrackId: nextTrack.id,
+        status: copy.status.pasted,
+      });
+      return;
+    }
+
+    if (!target.buffer) {
+      commitTracks(
+        copy.commands.paste,
+        tracksRef.current.map((track) =>
+          track.id === target.id ? { ...track, buffer: clip, startTime: pasteAt, source: 'file' as const } : track,
+        ),
+        { status: copy.status.pasted },
+      );
+      return;
+    }
+
+    const clipStart = Math.max(0, target.startTime);
+    const localAt = clamp(pasteAt - clipStart, 0, target.buffer.duration);
+    const nextBuffer = insertAudioAtTime(target.buffer, clip, localAt);
+    commitTracks(
+      copy.commands.paste,
+      tracksRef.current.map((track) => (track.id === target.id ? { ...track, buffer: nextBuffer } : track)),
+      { status: copy.status.pasted, playhead: clipStart + localAt + clip.duration },
+    );
+  };
+
+  const handleSplit = () => {
+    const track = activeTrackRef.current;
+    if (!track?.buffer || isRecording) {
+      setLoadError(copy.status.trackRequired);
+      return;
+    }
+
+    const clipStart = Math.max(0, track.startTime);
+    const clipEnd = clipStart + track.buffer.duration;
+    const splitAt = playheadRef.current;
+
+    if (splitAt <= clipStart + 0.01 || splitAt >= clipEnd - 0.01) {
+      setLoadError(copy.status.splitOutside);
+      return;
+    }
+
+    const localSplit = splitAt - clipStart;
+    const firstBuffer = extractAudioRange(track.buffer, 0, localSplit);
+    const secondBuffer = extractAudioRange(track.buffer, localSplit, track.buffer.duration);
+    const secondTrack: AudioProjectTrack = {
+      ...track,
+      id: createTrackId('track'),
+      name: `${track.name} (2)`,
+      buffer: secondBuffer,
+      startTime: splitAt,
+    };
+
+    const nextTracks: AudioProjectTrack[] = [];
+    for (const item of tracksRef.current) {
+      if (item.id === track.id) {
+        nextTracks.push({ ...item, buffer: firstBuffer });
+        nextTracks.push(secondTrack);
+      } else {
+        nextTracks.push(item);
+      }
+    }
+
+    commitTracks(copy.commands.split, nextTracks, { selection: null, status: copy.status.splitDone });
+  };
+
+  const previewEffect = async (tab: AudioEffectTab) => {
+    if (isRecording || busyRef.current) {
+      return;
+    }
+
+    const range = getEditRange();
+    if (!range) {
+      setLoadError(copy.status.loadFirst);
+      return;
+    }
+
+    const segment = extractAudioRange(range.buffer, range.localStart, range.localEnd);
+
+    try {
+      let processed = segment;
+      let status: string = copy.status.previewFade;
+
+      if (tab === 'fade') {
+        processed = applyFadeToAudioRange(segment, 0, segment.duration, effects.fadeIn, effects.fadeOut);
+        status = copy.status.previewFade;
+      } else if (tab === 'speed') {
+        processed = applySpeedToAudioRange(segment, 0, segment.duration, effects.speed);
+        status = copy.status.previewSpeed;
+      } else if (tab === 'pitch') {
+        processed = applyPitchToAudioRange(segment, 0, segment.duration, effects.pitch);
+        status = copy.status.previewPitch;
+      } else if (tab === 'amplify') {
+        processed = applyGainToAudioRange(segment, 0, segment.duration, effects.gain);
+        status = copy.status.previewAmplify;
+      } else if (tab === 'reverb') {
+        processed = applyReverbToAudioRange(segment, 0, segment.duration, effects.reverbDecay, effects.reverbMix);
+        status = copy.status.previewReverb;
+      } else {
+        processed = await applyEqToAudioRange(segment, 0, segment.duration, {
+          lowGainDb: effects.low,
+          midGainDb: effects.mid,
+          highGainDb: effects.high,
+        });
+        status = copy.status.previewEq;
+      }
+
+      getPlayer().previewBuffer(processed);
+      setIsPlaying(true);
+      setStatusMessage(status);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : copy.status.playbackFailed);
+    }
+  };
+
+  const applyEffect = (tab: AudioEffectTab) => {
+    if (tab === 'fade') {
+      void runBufferEdit(copy.commands.fadeEnvelope, (buffer, localStart, localEnd) =>
+        applyFadeToAudioRange(buffer, localStart, localEnd, effects.fadeIn, effects.fadeOut),
+      );
+      return;
+    }
+
+    if (tab === 'speed') {
+      void runBufferEdit(copy.commands.speedChange, (buffer, localStart, localEnd) =>
+        applySpeedToAudioRange(buffer, localStart, localEnd, effects.speed),
+      );
+      return;
+    }
+
+    if (tab === 'pitch') {
+      void runBufferEdit(copy.commands.pitchShift, (buffer, localStart, localEnd) =>
+        applyPitchToAudioRange(buffer, localStart, localEnd, effects.pitch),
+      );
+      return;
+    }
+
+    if (tab === 'amplify') {
+      void runBufferEdit(copy.commands.amplify, (buffer, localStart, localEnd) =>
+        applyGainToAudioRange(buffer, localStart, localEnd, effects.gain),
+      );
+      return;
+    }
+
+    if (tab === 'reverb') {
+      void runBufferEdit(copy.commands.reverb, (buffer, localStart, localEnd) =>
+        applyReverbToAudioRange(buffer, localStart, localEnd, effects.reverbDecay, effects.reverbMix),
+      );
+      return;
+    }
+
+    void runBufferEdit(copy.commands.eq, (buffer, localStart, localEnd) =>
+      applyEqToAudioRange(buffer, localStart, localEnd, {
+        lowGainDb: effects.low,
+        midGainDb: effects.mid,
+        highGainDb: effects.high,
+      }),
+    );
+  };
+
+  const handleSaveAs = async ({
+    format,
+    filename,
+    target,
+  }: {
+    format: 'wav' | 'mp3';
+    filename: string;
+    target: 'track' | 'mix' | 'session';
+  }) => {
+    if (target === 'session') {
+      if (tracksRef.current.length === 0) {
+        setLoadError(copy.status.loadFirst);
+        return;
+      }
+
       try {
-        const mixed = await mixAudioTracks(projectTracks);
-        if (!cancelled) {
-          setMixdownBuffer(mixed);
-        }
-      } catch {
-        if (!cancelled) {
-          setMixdownBuffer(null);
-        }
+        setStatusMessage(locale === 'ko' ? '세션 파일을 저장하는 중입니다...' : 'Saving the session file...');
+        const saved = await saveAudioSession({
+          filename: filename.trim() || activeTrackName || 'audio-session',
+          state: {
+            activeTrackId,
+            playhead: playheadRef.current,
+            zoom,
+            selection: selectionRef.current,
+            effects,
+            activeTab,
+            loopEnabled,
+            tracks: tracksRef.current,
+          },
+        });
+
+        setStatusMessage(saved ? (locale === 'ko' ? '세션 파일을 저장했습니다.' : 'Saved the session file.') : null);
+        return;
+      } catch (error) {
+        setLoadError(error instanceof Error ? error.message : copy.status.exportFailed);
+        return;
       }
-    };
+    }
 
-    void renderMixdown();
+    try {
+      setStatusMessage(copy.status.exportPreparing(format));
+      const exportBuffer =
+        target === 'mix' ? await mixAudioTracks(tracksRef.current) : activeTrackRef.current?.buffer ?? null;
 
-    return () => {
-      cancelled = true;
-    };
-  }, [projectTracks]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (isTypingTarget(event.target)) {
+      if (!exportBuffer) {
+        setLoadError(copy.status.loadFirst);
         return;
       }
 
-      const primaryModifier = event.metaKey || event.ctrlKey;
+      const saved = await exportAudio({
+        buffer: exportBuffer,
+        format,
+        filename: filename.trim() || (target === 'mix' ? 'audio-mix' : activeTrackName || 'audio-export'),
+        quality: 0.82,
+      });
 
-      if (primaryModifier && event.key.toLowerCase() === 'z') {
-        event.preventDefault();
-        handleUndo();
-        return;
-      }
-
-      if (primaryModifier && event.key.toLowerCase() === 'y') {
-        event.preventDefault();
-        handleRedo();
-        return;
-      }
-
-      if (primaryModifier && event.key.toLowerCase() === 'a' && buffer) {
-        event.preventDefault();
-        setSelection(normalizeSelection(0, buffer.duration, buffer.duration, selection.trimMode));
-        setStatusMessage(copy.status.selectedAll);
-        return;
-      }
-
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        setSelection(DEFAULT_SELECTION);
-        setStatusMessage(copy.status.selectionCleared);
-        return;
-      }
-
-      if (event.code === 'Space') {
-        event.preventDefault();
-        void handlePlayPause();
-        return;
-      }
-
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        seekBy(event.shiftKey ? -1 : -0.1);
-      }
-
-      if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        seekBy(event.shiftKey ? 1 : 0.1);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [buffer, copy, currentTime, duration, isPlaying, isRecording, selection.trimMode]);
+      setStatusMessage(saved ? copy.status.exportReady(format) : null);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : copy.status.exportFailed);
+    }
+  };
 
   const clearRecordingTimer = () => {
     if (recordingTimerRef.current != null) {
@@ -486,7 +973,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
         ? 0
         : (Date.now() - recordingStartRef.current) / 1000;
 
-    return recordingAccumulatedDurationRef.current + activeSpan;
+    return recordingAccumulatedRef.current + activeSpan;
   };
 
   const startRecordingTimer = () => {
@@ -501,592 +988,8 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   };
 
   const stopRecordingStream = () => {
-    const stream = recordingStreamRef.current;
-    if (!stream) {
-      return;
-    }
-
-    stream.getTracks().forEach((track) => track.stop());
+    recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
     recordingStreamRef.current = null;
-  };
-
-  const openPicker = () => {
-    if (isRecording || !fileInputRef.current) {
-      return;
-    }
-
-    fileInputRef.current.value = '';
-    fileInputRef.current.click();
-  };
-
-  const replaceActiveTrackBuffer = (nextBuffer: AudioBuffer, nextStatus: string) => {
-    if (!activeTrack) {
-      return;
-    }
-
-    setProjectTracks((currentTracks) =>
-      currentTracks.map((track) => (track.id === activeTrack.id ? { ...track, buffer: nextBuffer } : track)),
-    );
-    setCurrentTime(0);
-    setProjectTime(activeTrack.startTime);
-    setSelection(normalizeSelection(0, nextBuffer.duration, nextBuffer.duration, selection.trimMode));
-    setStatusMessage(nextStatus);
-    setIsPlaying(false);
-    audioEngine.setBuffer(nextBuffer, 0);
-  };
-
-  const applySessionState = (sessionState: Awaited<ReturnType<typeof parseAudioSessionFile>>) => {
-    audioEngine.stop();
-    historyRef.current.clear();
-    setHistoryVersion((value) => value + 1);
-    setProjectTracks(sessionState.tracks);
-    setActiveTrackId(sessionState.activeTrackId);
-    setProjectTime(sessionState.projectTime);
-    setZoom(sessionState.zoom);
-    setSelection(sessionState.selection);
-    setEffects(sessionState.effects);
-    setActiveTab(sessionState.activeTab);
-    setLoopEnabled(sessionState.loopEnabled);
-    setCurrentTime(0);
-    setIsPlaying(false);
-    setWarningMessage(null);
-    setLoadError(null);
-    setStatusMessage(locale === 'ko' ? '\uC624\uB514\uC624 \uC138\uC158\uC744 \uBD88\uB7EC\uC654\uC2B5\uB2C8\uB2E4.' : 'Loaded the audio session.');
-  };
-
-  const importFiles = async (nextFiles: File[]) => {
-    if (nextFiles.length === 0) {
-      return;
-    }
-
-    audioEngine.stop();
-    setIsPlaying(false);
-    setIsLoading(true);
-    setLoadError(null);
-    setWarningMessage(
-      nextFiles.some((file) => file.size > 100 * 1024 * 1024) ? copy.fileDrop.largeFileWarning : null,
-    );
-
-    try {
-      if (nextFiles.length === 1 && isAudioSessionFile(nextFiles[0])) {
-        const sessionState = await parseAudioSessionFile(nextFiles[0]);
-        applySessionState(sessionState);
-        return;
-      }
-
-      const decodedTracks: AudioProjectTrack[] = [];
-
-      for (const file of nextFiles) {
-        setStatusMessage(copy.status.loading(file.name));
-        const decoded = await audioEngine.decodeFile(file);
-        decodedTracks.push(createProjectTrack(file.name, decoded, 'file'));
-      }
-
-      const targetTrack = activeTrackRef.current;
-
-      if (targetTrack && !targetTrack.buffer && decodedTracks.length > 0) {
-        const [filledTrack, ...remainingTracks] = decodedTracks;
-        setProjectTracks((currentTracks) => {
-          const nextTracks: AudioProjectTrack[] = currentTracks.map((track) =>
-            track.id === targetTrack.id
-              ? {
-                  ...track,
-                  name: filledTrack.name,
-                  buffer: filledTrack.buffer,
-                  source: 'file' as const,
-                }
-              : track,
-          );
-
-          return remainingTracks.length > 0 ? [...nextTracks, ...remainingTracks] : nextTracks;
-        });
-        setActiveTrackId(targetTrack.id);
-      } else {
-        setProjectTracks((currentTracks) => [...currentTracks, ...decodedTracks]);
-        setActiveTrackId(decodedTracks.at(-1)?.id ?? null);
-      }
-      setStatusMessage(null);
-    } catch (error) {
-      setStatusMessage(null);
-      setLoadError(error instanceof Error ? error.message : copy.status.decodeFailed);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleAddEmptyTrack = () => {
-    const nextTrack = createEmptyTrack(projectTracks.length + 1, locale);
-    setProjectTracks((currentTracks) => [...currentTracks, nextTrack]);
-    setActiveTrackId(nextTrack.id);
-    setStatusMessage(locale === 'ko' ? '\uBE48 \uD2B8\uB799\uC744 \uCD94\uAC00\uD588\uC2B5\uB2C8\uB2E4.' : 'Added an empty track.');
-  };
-
-  const updateTrack = (trackId: string, updater: (track: AudioProjectTrack) => AudioProjectTrack) => {
-    setProjectTracks((currentTracks) => currentTracks.map((track) => (track.id === trackId ? updater(track) : track)));
-  };
-
-  const removeTrack = (trackId: string) => {
-    audioEngine.stop();
-    setIsPlaying(false);
-
-    setProjectTracks((currentTracks) => {
-      const nextTracks = currentTracks.filter((track) => track.id !== trackId);
-
-      if (activeTrackId === trackId) {
-        setActiveTrackId(nextTracks[0]?.id ?? null);
-      }
-
-      if (nextTracks.length === 0) {
-        setSelection(DEFAULT_SELECTION);
-        setProjectTime(0);
-        setStatusMessage(null);
-        setWarningMessage(null);
-        setLoadError(null);
-      }
-
-      return nextTracks;
-    });
-  };
-
-  const toggleTrackMute = (trackId: string) => {
-    updateTrack(trackId, (currentTrack) => ({
-      ...currentTrack,
-      muted: !currentTrack.muted,
-    }));
-  };
-
-  const applyBufferCommand = (label: string, transform: (currentBuffer: AudioBuffer) => AudioBuffer) => {
-    if (!buffer) {
-      setLoadError(copy.status.loadFirst);
-      return;
-    }
-
-    const nextBuffer = historyRef.current.apply(buffer, {
-      label,
-      execute: transform,
-    });
-
-    setHistoryVersion((value) => value + 1);
-    replaceActiveTrackBuffer(nextBuffer, copy.status.effectApplied(label));
-  };
-
-  const commitSelection = (
-    nextSelection: { start: number; end: number },
-    targetTrack: AudioProjectTrack | null = activeTrackRef.current,
-  ) => {
-    const targetDuration = targetTrack?.buffer?.duration ?? duration;
-    const normalized = normalizeSelection(nextSelection.start, nextSelection.end, targetDuration, selection.trimMode);
-    setSelection(normalized);
-
-    if (loopEnabled) {
-      audioEngine.setLoop(normalized.start, normalized.end);
-    }
-
-    const trackProjectStart = targetTrack?.startTime ?? 0;
-    const selectionProjectStart = trackProjectStart + normalized.start;
-    const selectionProjectEnd = trackProjectStart + normalized.end;
-
-    if (projectTime < selectionProjectStart || projectTime > selectionProjectEnd) {
-      setCurrentTime(normalized.start);
-      setProjectTime(selectionProjectStart);
-
-      if (targetTrack?.buffer && audioEngine.buffer === targetTrack.buffer) {
-        audioEngine.seekTo(normalized.start);
-      } else if (targetTrack?.buffer) {
-        audioEngine.setBuffer(targetTrack.buffer, normalized.start);
-      }
-    }
-  };
-
-  const handleUndo = () => {
-    if (!buffer) {
-      return;
-    }
-
-    const nextBuffer = historyRef.current.undo(buffer);
-    if (!nextBuffer) {
-      return;
-    }
-
-    setHistoryVersion((value) => value + 1);
-    replaceActiveTrackBuffer(nextBuffer, copy.status.undoApplied);
-  };
-
-  const handleRedo = () => {
-    if (!buffer) {
-      return;
-    }
-
-    const nextBuffer = historyRef.current.redo(buffer);
-    if (!nextBuffer) {
-      return;
-    }
-
-    setHistoryVersion((value) => value + 1);
-    replaceActiveTrackBuffer(nextBuffer, copy.status.redoApplied);
-  };
-
-  const handleSaveAs = async ({
-    format,
-    filename,
-    target,
-  }: {
-    format: 'wav' | 'mp3';
-    filename: string;
-    target: 'track' | 'mix' | 'session';
-  }) => {
-    if (target === 'session') {
-      if (projectTracks.length === 0) {
-        setLoadError(copy.status.loadFirst);
-        return;
-      }
-
-      try {
-        setStatusMessage(locale === 'ko' ? '\uC138\uC158 \uD30C\uC77C\uC744 \uC800\uC7A5\uD558\uB294 \uC911\uC785\uB2C8\uB2E4...' : 'Saving the session file...');
-        const saved = await saveAudioSession({
-          filename: filename.trim() || activeTrackName || 'audio-session',
-          state: {
-            activeTrackId,
-            projectTime,
-            zoom,
-            selection,
-            effects,
-            activeTab,
-            loopEnabled,
-            tracks: projectTracks,
-          },
-        });
-
-        if (saved) {
-          setStatusMessage(locale === 'ko' ? '\uC138\uC158 \uD30C\uC77C\uC744 \uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4.' : 'Saved the session file.');
-        }
-        return;
-      } catch (error) {
-        setLoadError(error instanceof Error ? error.message : copy.status.exportFailed);
-        return;
-      }
-    }
-
-    try {
-      setStatusMessage(copy.status.exportPreparing(format));
-      const exportBuffer =
-        target === 'mix'
-          ? ((await mixAudioTracks(projectTracks)) ?? mixdownBuffer ?? buffer)
-          : buffer;
-
-      if (!exportBuffer) {
-        setLoadError(copy.status.loadFirst);
-        return;
-      }
-
-      const saved = await exportAudio({
-        buffer: exportBuffer,
-        format,
-        filename:
-          filename.trim() ||
-          (target === 'mix'
-            ? locale === 'ko'
-              ? 'audio-mix'
-              : 'audio-mix'
-            : activeTrackName || 'audio-export'),
-        quality: 0.82,
-      });
-
-      if (saved) {
-        setStatusMessage(copy.status.exportReady(format));
-      } else {
-        setStatusMessage(null);
-      }
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : copy.status.exportFailed);
-    }
-  };
-
-  const handlePlayPause = async () => {
-    if (isRecording) {
-      return;
-    }
-
-    try {
-      const playbackBuffer = buffer ?? mixdownBuffer;
-      if (!playbackBuffer) {
-        return;
-      }
-
-      if (isPlaying) {
-        pauseCurrentPlayback();
-        return;
-      }
-
-      if (!buffer) {
-        const nextProjectTime = audioEngine.buffer === playbackBuffer ? audioEngine.currentTime : projectTime;
-        const playbackStart = nextProjectTime >= playbackBuffer.duration - 0.001 ? 0 : clamp(nextProjectTime, 0, playbackBuffer.duration);
-        playbackProjectOffsetRef.current = 0;
-        if (audioEngine.buffer !== playbackBuffer) {
-          audioEngine.setBuffer(playbackBuffer, playbackStart);
-        } else if (Math.abs(audioEngine.currentTime - playbackStart) > 0.001) {
-          audioEngine.seekTo(playbackStart);
-        }
-
-        setProjectTime(playbackStart);
-        audioEngine.play(playbackStart);
-        setIsPlaying(true);
-        return;
-      }
-
-      const activeStart = activeTrack?.startTime ?? 0;
-      const cursorTime = clamp(projectTime - activeStart, 0, duration);
-      const nextStart = audioEngine.buffer === buffer ? audioEngine.currentTime : cursorTime;
-      const playbackStart = nextStart >= duration - 0.001 ? 0 : clamp(nextStart, 0, duration);
-      playbackProjectOffsetRef.current = activeStart;
-
-      if (audioEngine.buffer !== buffer) {
-        audioEngine.setBuffer(buffer, playbackStart);
-      } else if (Math.abs(audioEngine.currentTime - playbackStart) > 0.001) {
-        audioEngine.seekTo(playbackStart);
-      }
-
-      setCurrentTime(playbackStart);
-      setProjectTime(playbackStart + activeStart);
-      audioEngine.play(playbackStart);
-      setIsPlaying(true);
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : copy.status.playbackFailed);
-    }
-  };
-
-  const pauseCurrentPlayback = () => {
-    audioEngine.pause();
-    const pausedTime = audioEngine.currentTime;
-    const activeStart = activeTrackRef.current?.startTime ?? playbackProjectOffsetRef.current;
-    const activeBuffer = bufferRef.current;
-    const currentEngineBuffer = audioEngine.buffer;
-
-    if (activeBuffer && currentEngineBuffer === activeBuffer) {
-      setCurrentTime(pausedTime);
-      setProjectTime(pausedTime + activeStart);
-    } else if (mixdownBufferRef.current && currentEngineBuffer === mixdownBufferRef.current) {
-      setProjectTime(pausedTime);
-      if (activeTrackRef.current?.buffer) {
-        setCurrentTime(clamp(pausedTime - activeStart, 0, activeTrackRef.current.buffer.duration));
-      } else {
-        setCurrentTime(0);
-      }
-    } else {
-      setProjectTime(pausedTime);
-    }
-
-    setIsPlaying(false);
-  };
-
-  const handlePreviewMix = async () => {
-    if (projectTracks.length < 2 || isRecording) {
-      return;
-    }
-
-    try {
-      const mixed = (await mixAudioTracks(projectTracks)) ?? mixdownBuffer;
-      if (!mixed) {
-        return;
-      }
-
-      audioEngine.previewSlice(mixed, 0, mixed.duration);
-      setCurrentTime(0);
-      setProjectTime(0);
-      setIsPlaying(true);
-      setStatusMessage(locale === 'ko' ? '\uBA40\uD2F0\uD2B8\uB799 \uBBF9\uC2A4\uB97C \uBBF8\uB9AC \uB4E3\uB294 \uC911\uC785\uB2C8\uB2E4.' : 'Previewing the multitrack mix.');
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : copy.status.playbackFailed);
-    }
-  };
-
-  const seekToProjectTime = (nextProjectTime: number, targetTrack: AudioProjectTrack | null = activeTrackRef.current) => {
-    if (isRecording) {
-      return;
-    }
-
-    const safeProjectTime = clamp(nextProjectTime, 0, Math.max(projectDuration, 0));
-    setProjectTime(safeProjectTime);
-
-    if (targetTrack?.buffer) {
-      const localTime = clamp(safeProjectTime - targetTrack.startTime, 0, targetTrack.buffer.duration);
-      setCurrentTime(localTime);
-      playbackProjectOffsetRef.current = targetTrack.startTime;
-
-      if (audioEngine.buffer === targetTrack.buffer) {
-        audioEngine.seekTo(localTime);
-      } else {
-        audioEngine.setBuffer(targetTrack.buffer, localTime);
-      }
-      return;
-    }
-
-    setCurrentTime(0);
-    playbackProjectOffsetRef.current = 0;
-
-    if (mixdownBuffer) {
-      if (audioEngine.buffer === mixdownBuffer) {
-        audioEngine.seekTo(safeProjectTime);
-      } else {
-        audioEngine.setBuffer(mixdownBuffer, safeProjectTime);
-      }
-    }
-  };
-
-  const handleMoveTrack = (trackId: string, nextStartTime: number) => {
-    if (isPlaying && activeTrackRef.current?.id === trackId) {
-      pauseCurrentPlayback();
-    }
-
-    updateTrack(trackId, (currentTrack) => ({
-      ...currentTrack,
-      startTime: Number(nextStartTime.toFixed(3)),
-    }));
-  };
-
-  const seekBy = (delta: number) => {
-    if (isRecording) {
-      return;
-    }
-
-    seekToProjectTime(projectCurrentTime + delta);
-  };
-
-  const seekToBoundary = (boundary: 'start' | 'end') => {
-    if (isRecording) {
-      return;
-    }
-
-    seekToProjectTime(boundary === 'start' ? 0 : projectDuration);
-  };
-
-  const handleTimelineSeek = (time: number, trackId?: string) => {
-    const targetTrack = trackId ? getTrackById(trackId) : activeTrack;
-
-    if (trackId && trackId !== activeTrackId) {
-      setActiveTrackId(trackId);
-    }
-
-    seekToProjectTime(time, targetTrack);
-  };
-
-  const playSelection = async () => {
-    if (!buffer || selection.end <= selection.start || isRecording) {
-      return;
-    }
-
-    audioEngine.previewSlice(buffer, selection.start, selection.end);
-    setCurrentTime(selection.start);
-    setProjectTime(selection.start + (activeTrack?.startTime ?? 0));
-    setIsPlaying(true);
-  };
-
-  const previewBuffer = () => {
-    if (!buffer) {
-      return null;
-    }
-
-    return extractAudioRange(buffer, selection.start, selection.end);
-  };
-
-  const handlePreview = (tab: AudioEffectTab) => {
-    if (isRecording) {
-      return;
-    }
-
-    const segmentBuffer = previewBuffer();
-    if (!segmentBuffer) {
-      setLoadError(copy.status.loadFirst);
-      return;
-    }
-
-    if (tab === 'fade') {
-      audioEngine.previewWithFade(segmentBuffer, effects.fadeIn, effects.fadeOut);
-      setStatusMessage(copy.status.previewFade);
-      setIsPlaying(true);
-      return;
-    }
-
-    if (tab === 'speed') {
-      audioEngine.previewWithSpeed(segmentBuffer, effects.speed);
-      setStatusMessage(copy.status.previewSpeed);
-      setIsPlaying(true);
-      return;
-    }
-
-    if (tab === 'pitch') {
-      audioEngine.previewWithPitch(segmentBuffer, effects.pitch);
-      setStatusMessage(copy.status.previewPitch);
-      setIsPlaying(true);
-      return;
-    }
-
-    if (tab === 'amplify') {
-      const amplifiedBuffer = applyGainToAudioRange(segmentBuffer, 0, segmentBuffer.duration, effects.gain);
-      audioEngine.previewSlice(amplifiedBuffer, 0, amplifiedBuffer.duration);
-      setStatusMessage(copy.status.previewAmplify);
-      setIsPlaying(true);
-      return;
-    }
-
-    if (tab === 'reverb') {
-      const reverbedBuffer = applyReverbToAudioRange(segmentBuffer, 0, segmentBuffer.duration, effects.reverbDecay, effects.reverbMix);
-      audioEngine.previewSlice(reverbedBuffer, 0, reverbedBuffer.duration);
-      setStatusMessage(copy.status.previewReverb);
-      setIsPlaying(true);
-      return;
-    }
-
-    audioEngine.previewWithEq(segmentBuffer, {
-      lowGainDb: effects.low,
-      midGainDb: effects.mid,
-      highGainDb: effects.high,
-    });
-    setStatusMessage(copy.status.previewEq);
-    setIsPlaying(true);
-  };
-
-  const handleApplyEffect = (tab: AudioEffectTab) => {
-    if (isRecording) {
-      return;
-    }
-
-    if (tab === 'fade') {
-      applyBufferCommand(copy.commands.fadeEnvelope, (currentBuffer) =>
-        applyFadeToAudioRange(currentBuffer, selection.start, selection.end, effects.fadeIn, effects.fadeOut),
-      );
-      return;
-    }
-
-    if (tab === 'speed') {
-      applyBufferCommand(copy.commands.speedChange, (currentBuffer) =>
-        applySpeedToAudioRange(currentBuffer, selection.start, selection.end, effects.speed),
-      );
-      return;
-    }
-
-    if (tab === 'pitch') {
-      applyBufferCommand(copy.commands.pitchShift, (currentBuffer) =>
-        applyPitchToAudioRange(currentBuffer, selection.start, selection.end, effects.pitch),
-      );
-      return;
-    }
-
-    if (tab === 'amplify') {
-      applyBufferCommand(copy.commands.amplify, (currentBuffer) =>
-        applyGainToAudioRange(currentBuffer, selection.start, selection.end, effects.gain),
-      );
-      return;
-    }
-
-    if (tab === 'reverb') {
-      applyBufferCommand(copy.commands.reverb, (currentBuffer) =>
-        applyReverbToAudioRange(currentBuffer, selection.start, selection.end, effects.reverbDecay, effects.reverbMix),
-      );
-      return;
-    }
-
-    setStatusMessage(copy.status.eqQueued);
   };
 
   const handleStartRecording = async () => {
@@ -1099,41 +1002,23 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       return;
     }
 
-    audioEngine.stop();
+    const player = getPlayer();
+    player.pause();
+    player.stopPreview(false);
     setIsPlaying(false);
     setLoadError(null);
     setWarningMessage(null);
     setStatusMessage(copy.recording.starting);
     setRecordingDuration(0);
-    setRecordingPeaks([]);
     setIsRecordingPaused(false);
     recordingPausedRef.current = false;
-    recordingAccumulatedDurationRef.current = 0;
-
-    let targetTrackId = activeTrack?.id ?? null;
-    let insertTime = projectTime;
-    let createdTrackId: string | null = null;
-
-    if (!targetTrackId) {
-      const nextTrack = createEmptyTrack(projectTracks.length + 1, locale);
-      targetTrackId = nextTrack.id;
-      createdTrackId = nextTrack.id;
-      insertTime = nextTrack.startTime;
-      setProjectTracks((currentTracks) => [...currentTracks, nextTrack]);
-      setActiveTrackId(nextTrack.id);
-    }
-
-    recordingTargetTrackIdRef.current = targetTrackId;
-    recordingInsertTimeRef.current = Math.max(0, insertTime);
-    setProjectTime(Math.max(0, insertTime));
+    recordingAccumulatedRef.current = 0;
+    recordingInsertTimeRef.current = Math.max(0, playheadRef.current);
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       const recordingSession = await createWavRecordingSession(stream, {
         outputName: `audio-recording-${Date.now()}.wav`,
-        onPeak: (peak) => {
-          setRecordingPeaks((currentPeaks) => [...currentPeaks.slice(-479), Number(peak.toFixed(4))]);
-        },
       });
 
       recordingStreamRef.current = stream;
@@ -1144,13 +1029,6 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       startRecordingTimer();
     } catch (error) {
       stopRecordingStream();
-      recordingTargetTrackIdRef.current = null;
-      recordingInsertTimeRef.current = 0;
-
-      if (createdTrackId) {
-        setProjectTracks((currentTracks) => currentTracks.filter((track) => track.id !== createdTrackId));
-        setActiveTrackId((currentId) => (currentId === createdTrackId ? null : currentId));
-      }
 
       if (error instanceof DOMException && error.name === 'NotAllowedError') {
         setLoadError(copy.recording.permissionError);
@@ -1169,12 +1047,12 @@ export function AudioEditor({ mode }: AudioEditorProps) {
 
     try {
       await recordingSession.pause();
-      recordingAccumulatedDurationRef.current = getRecordingElapsed();
+      recordingAccumulatedRef.current = getRecordingElapsed();
       recordingStartRef.current = null;
       recordingPausedRef.current = true;
       setIsRecordingPaused(true);
-      setRecordingDuration(recordingAccumulatedDurationRef.current);
-      setStatusMessage(copy.recording.pausedStatus(recordingAccumulatedDurationRef.current));
+      setRecordingDuration(recordingAccumulatedRef.current);
+      setStatusMessage(copy.recording.pausedStatus(recordingAccumulatedRef.current));
       clearRecordingTimer();
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : copy.recording.startError);
@@ -1192,7 +1070,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       recordingPausedRef.current = false;
       recordingStartRef.current = Date.now();
       setIsRecordingPaused(false);
-      setStatusMessage(copy.recording.liveStatus(recordingAccumulatedDurationRef.current));
+      setStatusMessage(copy.recording.liveStatus(recordingAccumulatedRef.current));
       startRecordingTimer();
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : copy.recording.startError);
@@ -1201,70 +1079,40 @@ export function AudioEditor({ mode }: AudioEditorProps) {
 
   const handleStopRecording = async () => {
     const recordingSession = recordingSessionRef.current;
+    setIsRecording(false);
+    setIsRecordingPaused(false);
+    clearRecordingTimer();
+
     if (!recordingSession) {
-      setIsRecording(false);
-      setIsRecordingPaused(false);
       recordingPausedRef.current = false;
-      recordingAccumulatedDurationRef.current = 0;
+      recordingAccumulatedRef.current = 0;
       recordingStartRef.current = null;
       setStatusMessage(copy.recording.abandoned);
-      clearRecordingTimer();
       stopRecordingStream();
       return;
     }
 
     setStatusMessage(copy.recording.finishing);
-    setIsRecording(false);
-    setIsRecordingPaused(false);
-    clearRecordingTimer();
 
     try {
       const recording = await recordingSession.stop();
-      const nextBuffer = await audioEngine.decodeFile(recording.file);
-      const targetTrackId = recordingTargetTrackIdRef.current;
+      const nextBuffer = await decodeAudioBlobToBuffer(recording.file);
       const insertTime = recordingInsertTimeRef.current;
+      const nextTrack = createProjectTrack(recording.file.name, nextBuffer, 'recording', insertTime);
 
       setRecordingDuration(recording.duration);
-      setProjectTracks((currentTracks) => {
-        if (!targetTrackId) {
-          const nextTrack = createProjectTrack(recording.file.name, nextBuffer, 'recording');
-          return [...currentTracks, nextTrack];
-        }
-
-        if (!currentTracks.some((track) => track.id === targetTrackId)) {
-          const nextTrack = createProjectTrack(recording.file.name, nextBuffer, 'recording');
-          nextTrack.startTime = insertTime;
-          return [...currentTracks, nextTrack];
-        }
-
-        return currentTracks.map((track) => {
-          if (track.id !== targetTrackId) {
-            return track;
-          }
-
-          const nextTrackState = overwriteTrackBuffer(track, nextBuffer, insertTime);
-          return {
-            ...track,
-            name: recording.file.name,
-            buffer: nextTrackState.buffer,
-            startTime: nextTrackState.startTime,
-            source: 'recording',
-          };
-        });
+      commitTracks(copy.commands.recordTake, [...tracksRef.current, nextTrack], {
+        activeTrackId: nextTrack.id,
+        playhead: insertTime + recording.duration,
+        status: copy.recording.ready(recording.file.name),
       });
-      if (targetTrackId) {
-        setActiveTrackId(targetTrackId);
-      }
-      setProjectTime(insertTime + recording.duration);
-      setStatusMessage(copy.recording.ready(recording.file.name));
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : copy.recording.startError);
     } finally {
       recordingSessionRef.current = null;
       recordingStartRef.current = null;
       recordingPausedRef.current = false;
-      recordingAccumulatedDurationRef.current = 0;
-      recordingTargetTrackIdRef.current = null;
+      recordingAccumulatedRef.current = 0;
       recordingInsertTimeRef.current = 0;
       stopRecordingStream();
     }
@@ -1293,7 +1141,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   };
 
   const handleResetProject = () => {
-    audioEngine.stop();
+    getPlayer().stop();
     clearRecordingTimer();
     stopRecordingStream();
 
@@ -1305,37 +1153,149 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     recordingSessionRef.current = null;
     recordingStartRef.current = null;
     recordingPausedRef.current = false;
-    recordingAccumulatedDurationRef.current = 0;
-    recordingTargetTrackIdRef.current = null;
+    recordingAccumulatedRef.current = 0;
     recordingInsertTimeRef.current = 0;
 
     historyRef.current.clear();
-    setHistoryVersion((value) => value + 1);
-    setProjectTracks([]);
+    bumpHistory();
+    setTracks([]);
     setActiveTrackId(null);
-    setMixdownBuffer(null);
-    setCurrentTime(0);
-    setProjectTime(0);
+    setPlayhead(0);
     setIsPlaying(false);
-    setIsLoading(false);
     setStatusMessage(null);
     setWarningMessage(null);
     setLoadError(null);
     setZoom(1);
-    setSelection(DEFAULT_SELECTION);
+    setSelection(null);
+    setClipboard(null);
     setEffects(DEFAULT_EFFECTS);
     setActiveTab('fade');
     setLoopEnabled(false);
-    setIsSilent(false);
     setIsRecording(false);
     setIsRecordingPaused(false);
     setRecordingDuration(0);
-    setRecordingPeaks([]);
 
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
+
+  const keyHandlerRef = useRef<(event: KeyboardEvent) => void>(() => undefined);
+
+  keyHandlerRef.current = (event: KeyboardEvent) => {
+    if (isTypingTarget(event.target)) {
+      return;
+    }
+
+    const primaryModifier = event.metaKey || event.ctrlKey;
+    const key = event.key.toLowerCase();
+
+    if (primaryModifier && key === 'z') {
+      event.preventDefault();
+      if (event.shiftKey) {
+        handleRedo();
+      } else {
+        handleUndo();
+      }
+      return;
+    }
+
+    if (primaryModifier && key === 'y') {
+      event.preventDefault();
+      handleRedo();
+      return;
+    }
+
+    if (primaryModifier && key === 'a') {
+      event.preventDefault();
+      handleSelectAll();
+      return;
+    }
+
+    if (primaryModifier && key === 'c') {
+      if (selectionRef.current) {
+        event.preventDefault();
+        handleCopySelection();
+      }
+      return;
+    }
+
+    if (primaryModifier && key === 'x') {
+      if (selectionRef.current) {
+        event.preventDefault();
+        handleCutSelection();
+      }
+      return;
+    }
+
+    if (primaryModifier && key === 'v') {
+      if (clipboardRef.current) {
+        event.preventDefault();
+        handlePaste();
+      }
+      return;
+    }
+
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      if (selectionRef.current) {
+        event.preventDefault();
+        handleRemoveSelection();
+      }
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      handleClearSelection();
+      return;
+    }
+
+    if (event.code === 'Space') {
+      event.preventDefault();
+      handlePlayPause();
+      return;
+    }
+
+    if (!primaryModifier && key === 's') {
+      event.preventDefault();
+      handleSplit();
+      return;
+    }
+
+    if (!primaryModifier && key === 'l') {
+      event.preventDefault();
+      setLoopEnabled((value) => !value);
+      return;
+    }
+
+    if (event.key === 'Home') {
+      event.preventDefault();
+      seekTo(0);
+      return;
+    }
+
+    if (event.key === 'End') {
+      event.preventDefault();
+      seekTo(projectDuration);
+      return;
+    }
+
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      seekBy(event.shiftKey ? -1 : -0.1);
+    }
+
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      seekBy(event.shiftKey ? 1 : 0.1);
+    }
+  };
+
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => keyHandlerRef.current(event);
+    window.addEventListener('keydown', listener);
+    return () => window.removeEventListener('keydown', listener);
+  }, []);
 
   const statusLines = (
     <div className="space-y-2">
@@ -1350,24 +1310,19 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       {warningMessage ? (
         <div className="audio-status-line is-warning rounded-[10px] px-3 py-2 text-sm">{warningMessage}</div>
       ) : null}
-      {loadError ? (
-        <div className="audio-status-line is-error rounded-[10px] px-3 py-2 text-sm">{loadError}</div>
-      ) : null}
+      {loadError ? <div className="audio-status-line is-error rounded-[10px] px-3 py-2 text-sm">{loadError}</div> : null}
     </div>
   );
 
   const emptyStatePromptText =
-    locale === 'ko' ? '\uC624\uB514\uC624\uB97C \uBD88\uB7EC\uC624\uAC70\uB098 \uB179\uC74C \uBC84\uD2BC\uC744 \uB20C\uB7EC \uC2DC\uC791\uD558\uC138\uC694.' : 'Open audio or press the record button to get started.';
+    locale === 'ko' ? '오디오를 불러오거나 녹음 버튼을 눌러 시작하세요.' : 'Open audio or press the record button to get started.';
   const emptyStateFeatureList =
     locale === 'ko'
-      ? ['\uC790\uB974\uAE30', '\uC624\uB514\uC624 \uBCC0\uD658', '\uB179\uC74C', '\uBA40\uD2F0\uD2B8\uB799', '\uB9AC\uBC84\uBE0C', '\uC570\uD50C\uB9AC\uD30C\uC774', 'EQ']
+      ? ['자르기', '오디오 변환', '녹음', '멀티트랙', '리버브', '앰플리파이', 'EQ']
       : ['Trim', 'Audio convert', 'Record', 'Multitrack', 'Reverb', 'Amplify', 'EQ'];
 
   return (
-    <div
-      data-mode={mode}
-      className="audio-studio audio-studio-shell flex min-h-[calc(100dvh-5.5rem)] flex-col"
-    >
+    <div data-mode={mode} className="audio-studio audio-studio-shell flex min-h-[calc(100dvh-5.5rem)] flex-col">
       <input
         ref={fileInputRef}
         type="file"
@@ -1395,29 +1350,29 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       <div className="border-b border-[var(--border)] bg-[var(--topbar-bg)] px-3 py-3 sm:px-4">
         <TransportBar
           currentTime={projectCurrentTime}
-          duration={Math.max(projectDuration, duration)}
-          zoom={zoom}
+          duration={displayDuration}
           isPlaying={isPlaying}
           isRecording={isRecording}
           isRecordingPaused={isRecordingPaused}
+          loopEnabled={loopEnabled}
           canUndo={canUndo}
           canRedo={canRedo}
           undoLabel={undoLabel}
           redoLabel={redoLabel}
-          onPlayPause={() => void handlePlayPause()}
+          onPlayPause={handlePlayPause}
           onSeekBy={seekBy}
-          onSeekToStart={() => seekToBoundary('start')}
-          onSeekToEnd={() => seekToBoundary('end')}
+          onSeekToStart={() => seekTo(0)}
+          onSeekToEnd={() => seekTo(projectDuration)}
           onUndo={handleUndo}
           onRedo={handleRedo}
-          onZoomChange={(nextZoom) => setZoom(clamp(nextZoom, 0.75, 6))}
+          onToggleLoop={() => setLoopEnabled((currentValue) => !currentValue)}
           onRecordToggle={handleRecordToggle}
           onRecordPauseResume={handleRecordPauseResume}
         />
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 sm:p-4">
-        {projectTracks.length === 0 && !isRecording ? (
+        {tracks.length === 0 && !isRecording ? (
           <div className="audio-panel rounded-[20px] p-6 sm:p-8">
             <div className="mx-auto flex min-h-[180px] max-w-3xl flex-col justify-center gap-4">
               <p className="text-sm text-[var(--text-secondary)]">{emptyStatePromptText}</p>
@@ -1435,9 +1390,9 @@ export function AudioEditor({ mode }: AudioEditorProps) {
           </div>
         ) : null}
 
-        {projectTracks.length > 0 ? (
-          <MultiTrackTimeline
-            tracks={projectTracks.map((track) => ({
+        {tracks.length > 0 || isRecording ? (
+          <TrackTimelineStack
+            tracks={tracks.map((track) => ({
               id: track.id,
               name: track.name,
               source: track.source,
@@ -1448,68 +1403,69 @@ export function AudioEditor({ mode }: AudioEditorProps) {
               isActive: track.id === activeTrack?.id,
               buffer: track.buffer,
             }))}
-            duration={projectDuration || duration}
+            projectDuration={projectDuration}
             currentTime={projectCurrentTime}
+            isPlaying={isPlaying}
             zoom={zoom}
-            selectionStart={selection.start}
-            selectionEnd={selection.end}
+            selection={selection}
+            recording={
+              isRecording
+                ? {
+                    active: true,
+                    paused: isRecordingPaused,
+                    insertTime: recordingInsertTimeRef.current,
+                    elapsed: recordingDuration,
+                  }
+                : null
+            }
+            canPaste={canPaste}
+            canSplit={canSplit}
+            onZoomChange={(nextZoom) => setZoom(clamp(nextZoom, 1, MAX_ZOOM))}
             onSelectTrack={setActiveTrackId}
-            onSeek={handleTimelineSeek}
-            onSelectionChange={(trackId, nextSelection) => {
-              const targetTrack = getTrackById(trackId);
-
-              if (trackId !== activeTrack?.id) {
-                setActiveTrackId(trackId);
-              }
-              commitSelection(nextSelection, targetTrack);
-            }}
+            onSeek={seekTo}
+            onSelectionChange={handleSelectionChange}
+            onMoveTrackStart={handleMoveTrackStart}
             onMoveTrack={handleMoveTrack}
             onAddTrack={handleAddEmptyTrack}
-            onPreviewMix={projectTracks.length > 1 ? () => void handlePreviewMix() : undefined}
-            onMuteToggle={toggleTrackMute}
-            onRemoveTrack={removeTrack}
+            onPaste={handlePaste}
+            onSplit={handleSplit}
+            onMuteToggle={(trackId) => updateTrackLive(trackId, (track) => ({ ...track, muted: !track.muted }))}
+            onSoloToggle={(trackId) => updateTrackLive(trackId, (track) => ({ ...track, solo: !track.solo }))}
+            onGainChange={(trackId, nextGain) =>
+              updateTrackLive(trackId, (track) => ({ ...track, gain: clamp(nextGain, 0, 2) }))
+            }
+            onRemoveTrack={handleRemoveTrack}
           />
         ) : null}
 
-        {buffer && hasActiveSelection ? (
+        {selection ? (
           <SelectionBar
             start={selection.start}
             end={selection.end}
-            duration={duration}
-            onStartChange={(nextStart) => commitSelection({ start: nextStart, end: selection.end })}
-            onEndChange={(nextEnd) => commitSelection({ start: selection.start, end: nextEnd })}
-            onPlaySelection={() => void playSelection()}
-            onTrimSelection={() =>
-              applyBufferCommand(copy.commands.keepSelection, (currentBuffer) =>
-                extractAudioRange(currentBuffer, selection.start, selection.end),
-              )
-            }
-            onRemoveSelection={() =>
-              applyBufferCommand(copy.commands.removeSelection, (currentBuffer) =>
-                removeAudioRange(currentBuffer, selection.start, selection.end),
-              )
-            }
-            onClearSelection={() => {
-              setSelection(buffer ? normalizeSelection(0, buffer.duration, buffer.duration, selection.trimMode) : DEFAULT_SELECTION);
-              setStatusMessage(copy.status.selectionReset);
-            }}
+            onStartChange={(nextStart) => adjustSelectionBound('start', nextStart)}
+            onEndChange={(nextEnd) => adjustSelectionBound('end', nextEnd)}
+            onPlaySelection={playSelection}
+            onTrimSelection={handleTrimSelection}
+            onRemoveSelection={handleRemoveSelection}
+            onCutSelection={handleCutSelection}
+            onCopySelection={handleCopySelection}
+            onClearSelection={handleClearSelection}
           />
         ) : null}
 
         {statusLines}
 
-        {buffer || projectTracks.length > 0 ? (
+        {tracks.length > 0 ? (
           <EffectsPanel
             activeTab={activeTab}
             effects={effects}
             onTabChange={setActiveTab}
             onChange={(nextEffects) => setEffects((currentEffects) => ({ ...currentEffects, ...nextEffects }))}
-            onPreview={handlePreview}
-            onApply={handleApplyEffect}
+            onPreview={(tab) => void previewEffect(tab)}
+            onApply={applyEffect}
           />
         ) : null}
       </div>
     </div>
   );
 }
-

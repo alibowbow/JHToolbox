@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 
 const CACHE_PREFIX = 'jhtoolbox-';
+const PRESERVED_CACHES = new Set(['jhtoolbox-ffmpeg-core-v1']);
 
 export function PwaRegister() {
   useEffect(() => {
@@ -27,7 +28,7 @@ export function PwaRegister() {
           const cacheKeys = await caches.keys();
           await Promise.all(
             cacheKeys
-              .filter((cacheKey) => cacheKey.startsWith(CACHE_PREFIX))
+              .filter((cacheKey) => cacheKey.startsWith(CACHE_PREFIX) && !PRESERVED_CACHES.has(cacheKey))
               .map((cacheKey) => caches.delete(cacheKey)),
           );
         }

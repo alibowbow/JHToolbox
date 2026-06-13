@@ -1,6 +1,6 @@
 'use client';
 
-import { Play, Scissors, Trash2, X } from 'lucide-react';
+import { Copy, Play, Scissors, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { getAudioEditorCopy } from '../audio-editor-copy';
@@ -9,24 +9,26 @@ import { formatTime, parseTimeInput } from '../audio-editor-utils';
 interface SelectionBarProps {
   start: number;
   end: number;
-  duration: number;
   onStartChange: (nextValue: number) => void;
   onEndChange: (nextValue: number) => void;
   onPlaySelection: () => void;
   onTrimSelection: () => void;
   onRemoveSelection: () => void;
+  onCutSelection: () => void;
+  onCopySelection: () => void;
   onClearSelection: () => void;
 }
 
 export function SelectionBar({
   start,
   end,
-  duration,
   onStartChange,
   onEndChange,
   onPlaySelection,
   onTrimSelection,
   onRemoveSelection,
+  onCutSelection,
+  onCopySelection,
   onClearSelection,
 }: SelectionBarProps) {
   const { locale } = useLocale();
@@ -34,7 +36,6 @@ export function SelectionBar({
   const [startInput, setStartInput] = useState(formatTime(start));
   const [endInput, setEndInput] = useState(formatTime(end));
   const selectionLength = Math.max(0, end - start);
-  const hasSelection = duration > 0 && (start > 0.001 || end < duration - 0.001);
 
   useEffect(() => {
     setStartInput(formatTime(start));
@@ -57,17 +58,13 @@ export function SelectionBar({
   return (
     <section
       data-testid="audio-selection-bar"
-      className={`audio-panel rounded-[18px] px-4 py-3 transition-opacity ${
-        hasSelection ? 'border-[var(--selection-border)]' : 'opacity-70'
-      }`}
+      className="audio-panel rounded-[18px] border-[var(--selection-border)] px-4 py-3"
     >
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <div className="min-w-0">
             <p className="audio-section-kicker">{copy.selection.kicker}</p>
-            <p className="mt-1 text-[13px] text-[var(--text-secondary)]">
-              {hasSelection ? copy.selection.activeDescription : copy.selection.inactiveDescription}
-            </p>
+            <p className="mt-1 text-[13px] text-[var(--text-secondary)]">{copy.selection.activeDescription}</p>
           </div>
 
           <div className="ml-auto flex flex-wrap items-center gap-3">
@@ -111,30 +108,23 @@ export function SelectionBar({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={onPlaySelection}
-            disabled={!hasSelection}
-            className="audio-button-secondary audio-focus-ring h-9 px-3"
-          >
+          <button type="button" onClick={onPlaySelection} className="audio-button-secondary audio-focus-ring h-9 px-3">
             <Play size={14} strokeWidth={1.5} />
             {copy.selection.playSelection}
           </button>
-          <button
-            type="button"
-            onClick={onTrimSelection}
-            disabled={!hasSelection}
-            className="audio-button-secondary audio-focus-ring h-9 px-3"
-          >
+          <button type="button" onClick={onTrimSelection} className="audio-button-secondary audio-focus-ring h-9 px-3">
             <Scissors size={14} strokeWidth={1.5} />
             {copy.selection.keepSelection}
           </button>
-          <button
-            type="button"
-            onClick={onRemoveSelection}
-            disabled={!hasSelection}
-            className="audio-button-danger audio-focus-ring h-9 px-3"
-          >
+          <button type="button" onClick={onCutSelection} className="audio-button-secondary audio-focus-ring h-9 px-3">
+            <Scissors size={14} strokeWidth={1.5} className="rotate-90" />
+            {copy.selection.cutSelection}
+          </button>
+          <button type="button" onClick={onCopySelection} className="audio-button-secondary audio-focus-ring h-9 px-3">
+            <Copy size={14} strokeWidth={1.5} />
+            {copy.selection.copySelection}
+          </button>
+          <button type="button" onClick={onRemoveSelection} className="audio-button-danger audio-focus-ring h-9 px-3">
             <Trash2 size={14} strokeWidth={1.5} />
             {copy.selection.removeSelection}
           </button>

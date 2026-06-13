@@ -1,8 +1,7 @@
+import { getFfmpeg } from '@/lib/processors/ffmpeg-client';
 import type { AudioExportOptions, AudioExportFormat } from './types';
 import { createWavBlob, encodeWav } from './WavEncoder';
 
-type FFmpegModule = typeof import('@ffmpeg/ffmpeg');
-type FFmpegInstance = InstanceType<FFmpegModule['FFmpeg']>;
 export type FilePickerAcceptType = {
   description?: string;
   accept: Record<string, string[]>;
@@ -22,8 +21,6 @@ type FileSystemFileHandleLike = {
 type WindowWithSaveFilePicker = Window & {
   showSaveFilePicker?: (options?: SaveFilePickerOptions) => Promise<FileSystemFileHandleLike>;
 };
-
-let sharedFFmpegPromise: Promise<FFmpegInstance> | null = null;
 
 function clampQuality(quality: number | undefined) {
   if (!Number.isFinite(quality ?? Number.NaN)) {
@@ -127,24 +124,10 @@ export async function saveBlobFile(options: {
   return true;
 }
 
-async function getFFmpegInstance() {
-  if (!sharedFFmpegPromise) {
-    sharedFFmpegPromise = (async () => {
-      const { FFmpeg } = (await import('@ffmpeg/ffmpeg')) as FFmpegModule;
-      const ffmpeg = new FFmpeg();
-      await ffmpeg.load();
-      return ffmpeg;
-    })().catch((error) => {
-      sharedFFmpegPromise = null;
-      throw error;
-    });
-  }
-
-  return await sharedFFmpegPromise;
-}
-
 async function encodeMp3Blob(buffer: AudioBuffer, quality: number | undefined) {
-  const ffmpeg = await getFFmpegInstance();
+  // Reuse the shared ffmpeg.wasm client (blob-URL core loading + Cache Storage)
+  // instead of a second instance that failed to load cross-origin.
+  const { ffmpeg } = await getFfmpeg();
   const inputName = `input-${Date.now()}-${Math.random().toString(36).slice(2)}.wav`;
   const outputName = inputName.replace(/\.wav$/, '.mp3');
   const wavBytes = encodeWav(buffer);

@@ -374,6 +374,8 @@ Object.assign(koToolNames, {
   'pdf-repair': 'PDF 복구',
   'pdf-compare': 'PDF 비교',
   'pdf-to-pdfa': 'PDF를 PDF/A로',
+  'pdf-to-hwpx': 'PDF를 한글(HWPX)로',
+  'hwpx-to-pdf': '한글(HWPX)을 PDF로',
 });
 
 Object.assign(koToolDescriptions, {
@@ -388,6 +390,8 @@ Object.assign(koToolDescriptions, {
   'pdf-repair': '브라우저에서 열 수 있는 PDF를 다시 저장해 더 깔끔한 사본으로 만듭니다.',
   'pdf-compare': '두 PDF의 추출 텍스트를 비교해 차이 보고서를 만듭니다.',
   'pdf-to-pdfa': '메타데이터를 보강해 보관용 PDF/A 스타일 사본을 만듭니다. 정식 준수 검증은 포함하지 않습니다.',
+  'pdf-to-hwpx': 'PDF에서 읽을 수 있는 텍스트를 추출해 한글(HWPX) 문서로 변환합니다. 레이아웃·이미지·표는 유지되지 않습니다.',
+  'hwpx-to-pdf': '한글(HWPX) 문서의 텍스트를 추출해 브라우저에서 PDF 페이지로 변환합니다.',
 });
 
 Object.assign(koOptionLabelsByLabel, {
