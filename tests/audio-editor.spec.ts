@@ -33,6 +33,8 @@ function createDemoAudioBuffer(durationSeconds: number, frequency = 220) {
 test('audio mixer exposes live gain, mute, and solo controls per track', async ({ page }) => {
   await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
+  // Wait for the editor shell to hydrate so the file input handler is attached.
+  await expect(page.getByTestId('audio-transport-bar')).toBeVisible({ timeout: 60_000 });
 
   await page.locator('input[type="file"]').setInputFiles([
     { name: 'alpha.wav', mimeType: 'audio/wav', buffer: createDemoAudioBuffer(1.2, 220) },
@@ -54,6 +56,8 @@ test('audio mixer exposes live gain, mute, and solo controls per track', async (
 test('undo history survives switching the active track', async ({ page }) => {
   await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
+  // Wait for the editor shell to hydrate so the file input handler is attached.
+  await expect(page.getByTestId('audio-transport-bar')).toBeVisible({ timeout: 60_000 });
 
   await page.locator('input[type="file"]').setInputFiles([
     { name: 'first.wav', mimeType: 'audio/wav', buffer: createDemoAudioBuffer(1.4, 220) },
@@ -90,6 +94,7 @@ test('undo history survives switching the active track', async ({ page }) => {
 test('split at playhead creates a second clip and cut/paste works through the clipboard', async ({ page }) => {
   await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId('audio-transport-bar')).toBeVisible({ timeout: 60_000 });
 
   await page.locator('input[type="file"]').setInputFiles({
     name: 'clip.wav',
