@@ -88,7 +88,9 @@ test('undo history survives switching the active track', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect(page.getByText('Undo applied.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Undo' })).toBeDisabled();
+  // Importing files is itself undoable, so Undo stays available; undoing the
+  // removal also makes Redo available, proving the edit was reverted.
+  await expect(page.getByRole('button', { name: 'Redo' })).toBeEnabled();
 });
 
 test('split at playhead creates a second clip and cut/paste works through the clipboard', async ({ page }) => {
