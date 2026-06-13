@@ -24,6 +24,9 @@ const HWPX_PAGE = {
   footer: 4252,
 };
 
+// Printable text width in HWPUNIT: page width minus the left/right margins.
+const TEXT_AREA_WIDTH = HWPX_PAGE.width - HWPX_PAGE.marginLeft - HWPX_PAGE.marginRight;
+
 // A4 width in CSS px at 96 dpi, used for the HWPX -> HTML -> PDF render width.
 const A4_PX_WIDTH = 794;
 
@@ -201,7 +204,7 @@ function buildSectionProperties() {
 
 function buildParagraphXml(
   text: string,
-  options: { id: number; paraPrId: number; charPrId: number; first?: boolean; pageBreak?: boolean },
+  options: { id: number; paraPrId: number; charPrId: number; fontSizePt: number; first?: boolean; pageBreak?: boolean },
 ) {
   // Hangul keeps the section definition in its own control run, separate from
   // the text run; mixing <hp:secPr> with <hp:t> can leave the body blank.
@@ -209,8 +212,17 @@ function buildParagraphXml(
     ? `<hp:run charPrIDRef="${options.charPrId}">${buildSectionProperties()}</hp:run>\n    `
     : '';
 
+  // A <hp:linesegarray> with at least one segment is required for Hangul to
+  // position the text; without it the body renders blank even when the text
+  // is present. Hangul recomputes exact metrics on open, so approximate them.
+  const vertSize = Math.max(600, Math.round(options.fontSizePt * 100));
+  const baseline = Math.round(vertSize * 0.85);
+  const spacing = Math.round(vertSize * 0.6);
+  const lineSeg = `<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="${vertSize}" textheight="${vertSize}" baseline="${baseline}" spacing="${spacing}" horzpos="0" horzsize="${TEXT_AREA_WIDTH}" flags="393216"/></hp:linesegarray>`;
+
   return `  <hp:p id="${options.id}" paraPrIDRef="${options.paraPrId}" styleIDRef="0" pageBreak="${options.pageBreak ? '1' : '0'}" columnBreak="0" merged="0">
     ${secPrRun}<hp:run charPrIDRef="${options.charPrId}"><hp:t>${escapeXml(text)}</hp:t></hp:run>
+    ${lineSeg}
   </hp:p>`;
 }
 
@@ -285,6 +297,7 @@ function buildSectionXml(pages: PdfStyledPage[], styles: StyleTables) {
           id: paragraphId,
           paraPrId: styles.paraIdFor(line.align),
           charPrId: styles.charIdFor(line.fontSize, line.isHeading),
+          fontSizePt: line.fontSize,
           first: isFirst,
           pageBreak: pageIndex > 0 && lineIndex === 0,
         }),
@@ -295,7 +308,7 @@ function buildSectionXml(pages: PdfStyledPage[], styles: StyleTables) {
   });
 
   if (paragraphs.length === 0) {
-    paragraphs.push(buildParagraphXml('', { id: 1, paraPrId: 0, charPrId: 0, first: true }));
+    paragraphs.push(buildParagraphXml('', { id: 1, paraPrId: 0, charPrId: 0, fontSizePt: 10, first: true }));
   }
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
