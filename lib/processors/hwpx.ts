@@ -155,6 +155,11 @@ ${charStyles.map(buildCharPr).join('\n')}
   <hh:tabProperties itemCnt="1">
     <hh:tabPr id="0" autoTabLeft="0" autoTabRight="0"/>
   </hh:tabProperties>
+  <hh:numberings itemCnt="1">
+    <hh:numbering id="1" start="0">
+      <hh:paraHead start="1" level="1" align="LEFT" useInstWidth="1" autoIndent="1" widthAdjust="0" textOffsetType="PERCENT" textOffset="50" numFormat="DIGIT" charPrIDRef="4294967295" checkable="0">^1.</hh:paraHead>
+    </hh:numbering>
+  </hh:numberings>
   <hh:paraProperties itemCnt="${paraStyles.length}">
 ${paraStyles.map(buildParaPr).join('\n')}
   </hh:paraProperties>
@@ -198,10 +203,14 @@ function buildParagraphXml(
   text: string,
   options: { id: number; paraPrId: number; charPrId: number; first?: boolean; pageBreak?: boolean },
 ) {
-  const secPr = options.first ? buildSectionProperties() : '';
+  // Hangul keeps the section definition in its own control run, separate from
+  // the text run; mixing <hp:secPr> with <hp:t> can leave the body blank.
+  const secPrRun = options.first
+    ? `<hp:run charPrIDRef="${options.charPrId}">${buildSectionProperties()}</hp:run>\n    `
+    : '';
 
   return `  <hp:p id="${options.id}" paraPrIDRef="${options.paraPrId}" styleIDRef="0" pageBreak="${options.pageBreak ? '1' : '0'}" columnBreak="0" merged="0">
-    <hp:run charPrIDRef="${options.charPrId}">${secPr}<hp:t>${escapeXml(text)}</hp:t></hp:run>
+    ${secPrRun}<hp:run charPrIDRef="${options.charPrId}"><hp:t>${escapeXml(text)}</hp:t></hp:run>
   </hp:p>`;
 }
 
@@ -581,6 +590,45 @@ function paraStyleToCss(style: HwpxParaStyle | undefined): string {
   return `text-align:${align}`;
 }
 
+/**
+ * Group every <hp:t> by its nearest <hp:p> ancestor so each paragraph yields
+ * one text line regardless of nesting depth. Used as a robustness fallback
+ * when the structured walk fails to capture an unfamiliar real-world layout.
+ */
+function collectParagraphTexts(doc: Document): string[] {
+  const textNodes = descendantsByName(doc.documentElement, 't');
+  const groups = new Map<Element, string[]>();
+  const order: Element[] = [];
+
+  for (const node of textNodes) {
+    let paragraph: Element | null = node.parentElement;
+    while (paragraph && localName(paragraph) !== 'p') {
+      paragraph = paragraph.parentElement;
+    }
+    if (!paragraph) {
+      continue;
+    }
+
+    const bucket = groups.get(paragraph);
+    if (bucket) {
+      bucket.push(node.textContent ?? '');
+    } else {
+      groups.set(paragraph, [node.textContent ?? '']);
+      order.push(paragraph);
+    }
+  }
+
+  return order.map((paragraph) => (groups.get(paragraph) ?? []).join('')).filter((text) => text.trim().length > 0);
+}
+
+function stripHtmlToText(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&[a-z]+;/gi, ' ')
+    .trim();
+}
+
 function getSectionFileNames(zip: JSZip): string[] {
   return Object.keys(zip.files)
     .filter((name) => /^Contents\/section\d+\.xml$/i.test(name) && !zip.files[name].dir)
@@ -604,8 +652,8 @@ async function convertHwpxToHtml(zip: JSZip, title: string): Promise<string> {
   const binData = await buildBinDataMap(zip);
 
   const parser = new DOMParser();
-  const bodyParts: string[] = [];
-  let renderedAny = false;
+  const sectionDocs: Document[] = [];
+  let bodyParts: string[] = [];
 
   for (let index = 0; index < sectionNames.length; index += 1) {
     const xml = await zip.file(sectionNames[index])?.async('string');
@@ -618,10 +666,11 @@ async function convertHwpxToHtml(zip: JSZip, title: string): Promise<string> {
       continue;
     }
 
+    sectionDocs.push(doc);
     const sectionRoot = doc.documentElement;
     const paragraphs = directChildrenByName(sectionRoot, 'p');
 
-    if (index > 0) {
+    if (sectionDocs.length > 1) {
       bodyParts.push('<div class="hwpx-section-break"></div>');
     }
 
@@ -629,13 +678,33 @@ async function convertHwpxToHtml(zip: JSZip, title: string): Promise<string> {
       const rendered = renderParagraph(paragraph, charStyles, paraStyles, binData);
       if (rendered) {
         bodyParts.push(rendered);
-        renderedAny = true;
       }
     }
   }
 
-  if (!renderedAny) {
-    bodyParts.push('<p>No extractable content was found in this HWPX document.</p>');
+  // Defensive fallback: the structured walk above only follows the standard
+  // <hs:sec> > <hp:p> > <hp:run> shape and fills empty paragraphs with
+  // placeholders. If a real document nests text differently, the visible
+  // result can be blank even though text exists, so re-render every <hp:t>
+  // grouped by paragraph whenever the structured pass captured little text.
+  const structuredText = stripHtmlToText(bodyParts.join(''));
+  const fallbackByDoc = sectionDocs.map((doc) => collectParagraphTexts(doc));
+  const fallbackText = fallbackByDoc.flat().join('').trim();
+
+  if (fallbackText.length > 0 && structuredText.length < fallbackText.length * 0.5) {
+    bodyParts = [];
+    fallbackByDoc.forEach((paragraphTexts, index) => {
+      if (index > 0) {
+        bodyParts.push('<div class="hwpx-section-break"></div>');
+      }
+      for (const text of paragraphTexts) {
+        bodyParts.push(`<p>${escapeHtml(text)}</p>`);
+      }
+    });
+  }
+
+  if (bodyParts.length === 0 || stripHtmlToText(bodyParts.join('')).length === 0) {
+    bodyParts = ['<p>No extractable text was found in this HWPX document.</p>'];
   }
 
   const styleSheet = `
