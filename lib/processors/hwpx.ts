@@ -203,10 +203,14 @@ function buildParagraphXml(
   text: string,
   options: { id: number; paraPrId: number; charPrId: number; first?: boolean; pageBreak?: boolean },
 ) {
-  const secPr = options.first ? buildSectionProperties() : '';
+  // Hangul keeps the section definition in its own control run, separate from
+  // the text run; mixing <hp:secPr> with <hp:t> can leave the body blank.
+  const secPrRun = options.first
+    ? `<hp:run charPrIDRef="${options.charPrId}">${buildSectionProperties()}</hp:run>\n    `
+    : '';
 
   return `  <hp:p id="${options.id}" paraPrIDRef="${options.paraPrId}" styleIDRef="0" pageBreak="${options.pageBreak ? '1' : '0'}" columnBreak="0" merged="0">
-    <hp:run charPrIDRef="${options.charPrId}">${secPr}<hp:t>${escapeXml(text)}</hp:t></hp:run>
+    ${secPrRun}<hp:run charPrIDRef="${options.charPrId}"><hp:t>${escapeXml(text)}</hp:t></hp:run>
   </hp:p>`;
 }
 
