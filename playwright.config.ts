@@ -5,6 +5,9 @@ const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 export default defineConfig({
   testDir: './tests',
   timeout: 60_000,
+  // Audio tests rely on the Web Audio API, which is occasionally flaky under
+  // headless Chromium; retry in CI to absorb transient decode/context hiccups.
+  retries: process.env.CI ? 2 : 0,
   use: {
     baseURL: 'http://127.0.0.1:3100',
     headless: true,

@@ -162,7 +162,28 @@ test('drops audio files onto the editor shell to import them', async ({ page }) 
   await expect(page.getByRole('button', { name: 'dropped.wav' })).toBeVisible();
 });
 
-test('timeline conveniences: double-click select, zoom to selection, rename, reorder', async ({ page }) => {
+test('double-clicking a clip selects the whole clip', async ({ page }) => {
+  await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('audio-transport-bar')).toBeVisible({ timeout: 60_000 });
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'clip.wav',
+    mimeType: 'audio/wav',
+    buffer: createDemoAudioBuffer(1.2, 220),
+  });
+  await expect(page.getByTestId('audio-track-waveform-surface')).toHaveCount(1, { timeout: 60_000 });
+
+  const clip = page.getByTestId('audio-track-waveform-surface').first();
+  const clipBox = await clip.boundingBox();
+  if (!clipBox) {
+    throw new Error('Clip surface was not available.');
+  }
+  await page.mouse.dblclick(clipBox.x + clipBox.width * 0.5, clipBox.y + clipBox.height * 0.7);
+  await expect(page.getByTestId('audio-selection-bar')).toHaveCount(1);
+  await expect(page.getByTestId('audio-selection-overlay')).toHaveCount(1);
+});
+
+test('timeline conveniences: zoom to selection, inline rename, and reorder', async ({ page }) => {
   await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('audio-transport-bar')).toBeVisible({ timeout: 60_000 });
 
@@ -172,13 +193,16 @@ test('timeline conveniences: double-click select, zoom to selection, rename, reo
   ]);
   await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(2, { timeout: 60_000 });
 
-  // Double-clicking a clip selects the whole clip.
+  // Build a selection by dragging across the first clip (reliable in headless).
   const firstClip = page.getByTestId('audio-track-waveform-surface').first();
   const clipBox = await firstClip.boundingBox();
   if (!clipBox) {
     throw new Error('First clip surface was not available.');
   }
-  await page.mouse.dblclick(clipBox.x + clipBox.width * 0.5, clipBox.y + clipBox.height * 0.7);
+  await page.mouse.move(clipBox.x + clipBox.width * 0.2, clipBox.y + clipBox.height * 0.7);
+  await page.mouse.down();
+  await page.mouse.move(clipBox.x + clipBox.width * 0.7, clipBox.y + clipBox.height * 0.7, { steps: 12 });
+  await page.mouse.up();
   await expect(page.getByTestId('audio-selection-bar')).toHaveCount(1);
 
   // Zoom-to-selection expands the timeline beyond the viewport.
@@ -198,7 +222,7 @@ test('timeline conveniences: double-click select, zoom to selection, rename, reo
   await renameInput.press('Enter');
   await expect(page.getByRole('button', { name: 'renamed-a.wav' })).toBeVisible();
 
-  // Reorder: move the second track to the top.
+  // Reorder: move the second track (b.wav) above the first.
   await page.getByRole('button', { name: 'Move track up' }).nth(1).click();
   await expect(
     page.getByTestId('audio-track-stack-row').first().getByRole('button', { name: 'b.wav' }),

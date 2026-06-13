@@ -287,7 +287,6 @@ export function TrackTimelineStack({
   const hoverFrameRef = useRef<number | null>(null);
   const hoverClientXRef = useRef(0);
   const [editingTrack, setEditingTrack] = useState<{ id: string; value: string } | null>(null);
-  const lastClipPointerRef = useRef<{ trackId: string; time: number; clientX: number; clientY: number } | null>(null);
 
   const recordingActive = Boolean(recording?.active);
   const recordingEnd = recordingActive ? (recording?.insertTime ?? 0) + (recording?.elapsed ?? 0) : 0;
@@ -998,45 +997,33 @@ export function TrackTimelineStack({
                       <div
                         data-track-clip
                         data-testid="audio-track-waveform-surface"
-                        className={`absolute inset-y-1 overflow-hidden rounded-[10px] ${
+                        className={`absolute inset-y-1 select-none overflow-hidden rounded-[10px] ${
                           track.isActive
                             ? 'bg-[rgba(0,212,200,0.10)] ring-1 ring-[var(--accent)]'
                             : 'bg-[rgba(0,212,200,0.05)] ring-1 ring-[rgba(127,127,127,0.25)]'
                         }`}
                         style={{ left: `${clipLeft}px`, width: `${clipWidth}px` }}
+                        onDoubleClick={(event) => {
+                          const target = event.target as HTMLElement;
+                          if (target.closest('[data-selection-handle]') || target.closest('[data-track-grip]')) {
+                            return;
+                          }
+
+                          event.stopPropagation();
+                          onSelectTrack(track.id);
+                          onSelectionChange(track.id, { start: clipStart, end: clipEnd });
+                        }}
                         onPointerDown={(event) => {
                           const target = event.target as HTMLElement;
                           if (target.closest('[data-selection-handle]') || target.closest('[data-track-grip]')) {
                             return;
                           }
 
-                          event.preventDefault();
+                          // Avoid preventDefault here: it would suppress the
+                          // native dblclick used to select the whole clip.
+                          // `select-none` keeps drags from selecting text.
                           event.stopPropagation();
                           onSelectTrack(track.id);
-
-                          // preventDefault on pointerdown suppresses native
-                          // dblclick, so detect double-press manually:
-                          // two quick presses on the same spot select the clip.
-                          const lastPress = lastClipPointerRef.current;
-                          const now = Date.now();
-                          if (
-                            lastPress &&
-                            lastPress.trackId === track.id &&
-                            now - lastPress.time < 400 &&
-                            Math.abs(event.clientX - lastPress.clientX) < 6 &&
-                            Math.abs(event.clientY - lastPress.clientY) < 6
-                          ) {
-                            lastClipPointerRef.current = null;
-                            onSelectionChange(track.id, { start: clipStart, end: clipEnd });
-                            return;
-                          }
-
-                          lastClipPointerRef.current = {
-                            trackId: track.id,
-                            time: now,
-                            clientX: event.clientX,
-                            clientY: event.clientY,
-                          };
 
                           const node = viewportRef.current;
                           const rect = node?.getBoundingClientRect();
