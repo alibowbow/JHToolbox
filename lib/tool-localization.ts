@@ -190,6 +190,9 @@ const koOptionLabelsByLabel: Record<string, string> = {
   'Target URL': '대상 URL',
   'Canvas width': '캔버스 너비',
   'Capture full page scroll': '전체 페이지 스크롤 포함',
+  'Wait before capture (s)': '캡처 전 대기 시간(초)',
+  'Max height (px, 0 = unlimited)': '최대 높이(px, 0=제한 없음)',
+  'Split into printable pages': '인쇄용 페이지로 나누기',
 };
 
 const koOptionLabelsByKey: Record<string, string> = {
