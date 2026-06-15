@@ -16,7 +16,6 @@ import { ImageCropEditor, type CropRect } from '@/components/ui/ImageCropEditor'
 import { ResultCard } from '@/components/ui/ResultCard';
 import { UrlImageCropper } from '@/components/ui/UrlImageCropper';
 import { VideoTimelineEditor } from '@/components/ui/VideoTimelineEditor';
-import { Tabs } from '@/components/ui/Tabs';
 import { toast } from '@/components/ui/Toast';
 import { formatMegaBytes, getCategoryCopy } from '@/lib/i18n';
 import {
@@ -554,10 +553,6 @@ function StandardToolWorkbench({
   );
   const showProgress = running || results.length > 0 || error !== null;
   const showResults = results.length > 0 || error !== null;
-  const resultTabs = [
-    { id: 'results', label: messages.workbench.results },
-    ...(results.length > 0 ? [{ id: 'inspector', label: messages.workbench.inspector }] : []),
-  ];
   const dropLabel = fileOptional ? messages.workbench.dropzoneOptional : messages.workbench.dropzone;
   const trimMode = String(options.trimMode ?? 'keep');
   const imageCropRect: CropRect = {
@@ -922,8 +917,7 @@ function StandardToolWorkbench({
             <section className="workspace-panel p-5 sm:p-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="workspace-kicker">Direct input</p>
-                  <p className="mt-2 text-sm font-semibold text-ink">{messages.workbench.directInputTitle}</p>
+                  <p className="text-sm font-semibold text-ink">{messages.workbench.directInputTitle}</p>
                   <p className="mt-1 text-sm text-ink-muted">{messages.workbench.directInputDescription}</p>
                 </div>
                 <span className={`badge border ${style.badge}`}>{category.nav}</span>
@@ -946,8 +940,7 @@ function StandardToolWorkbench({
               <section className={cx('workspace-panel space-y-5 p-5 sm:p-6', showOptionsPanel && !showWideEditorLayout && 'xl:col-span-3')}>
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="workspace-kicker">Input intake</p>
-                    <p className="mt-2 text-sm font-semibold text-ink">{messages.workbench.files}</p>
+                    <p className="text-sm font-semibold text-ink">{messages.workbench.files}</p>
                     <p className="mt-1 text-sm text-ink-muted">
                       {messages.workbench.acceptedInput}: {acceptLabel}
                     </p>
@@ -996,8 +989,7 @@ function StandardToolWorkbench({
                   <section className="editor-stage">
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <div>
-                        <p className="workspace-kicker">Workbench preview</p>
-                        <p className="mt-2 text-sm font-semibold text-ink">{messages.workbench.editorPreviewTitle}</p>
+                        <p className="text-sm font-semibold text-ink">{messages.workbench.editorPreviewTitle}</p>
                         <p className="mt-1 text-sm text-ink-muted">
                           {usesPdfEditor ? messages.workbench.mergePreviewDescription : messages.workbench.inputPreviewDescription}
                         </p>
@@ -1112,8 +1104,7 @@ function StandardToolWorkbench({
 
               {showOptionsPanel ? (
                 <section className={cx('workspace-panel p-5 sm:p-6', !showWideEditorLayout && 'xl:col-span-2')}>
-                  <p className="workspace-kicker">Configuration</p>
-                  <p className="mt-2 text-sm font-semibold text-ink">{messages.workbench.options}</p>
+                  <p className="text-sm font-semibold text-ink">{messages.workbench.options}</p>
                   {optionMemoryPanel ? <div className="mt-4">{optionMemoryPanel}</div> : null}
                   <div className="mt-4 space-y-4">
                     {visibleToolOptions.map((option, optionIndex, allOptions) =>
@@ -1135,8 +1126,7 @@ function StandardToolWorkbench({
           <section className="workspace-panel p-5 sm:p-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="workspace-kicker">Execution</p>
-                <p className="mt-2 text-sm font-semibold text-ink">{messages.workbench.progress}</p>
+                <p className="text-sm font-semibold text-ink">{messages.workbench.progress}</p>
                 <p className="mt-1 text-sm text-ink-muted">{progress.stage}</p>
               </div>
               <span className={`badge border ${style.badge}`}>{category.nav}</span>
@@ -1146,136 +1136,98 @@ function StandardToolWorkbench({
         ) : null}
 
         {showResults ? (
-          <Tabs tabs={resultTabs}>
-            {(activeTab) => {
-              if (activeTab === 'inspector') {
-                return (
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <div className="workspace-panel p-4">
-                      <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.toolId}</p>
-                      <p className="mt-2 text-sm font-semibold text-ink">{tool.id}</p>
-                    </div>
-                    <div className="workspace-panel p-4">
-                      <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.acceptedInput}</p>
-                      <p className="mt-2 text-sm font-semibold text-ink">{acceptLabel}</p>
-                    </div>
-                    <div className="workspace-panel p-4">
-                      <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.outputFiles}</p>
-                      <p className="mt-2 text-sm font-semibold text-ink">{results.length}</p>
-                    </div>
-                    <div className="workspace-panel p-4">
-                      <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.tags}</p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {tool.tags.map((tag) => (
-                          <span key={tag} className="badge border border-border bg-base-subtle text-ink-muted">
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                );
-              }
+          <section className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-ink">{messages.workbench.results}</p>
+              {results.length > 1 ? (
+                <button type="button" onClick={onDownloadAll} disabled={!results.length} className="btn-ghost disabled:opacity-60">
+                  <Download size={16} />
+                  {messages.workbench.downloadAll}
+                </button>
+              ) : null}
+            </div>
 
-              return (
-                <section className="space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="workspace-kicker">Delivery</p>
-                      <p className="mt-2 text-sm font-semibold text-ink">{messages.workbench.results}</p>
-                    </div>
-                    {results.length > 1 ? (
-                      <button type="button" onClick={onDownloadAll} disabled={!results.length} className="btn-ghost disabled:opacity-60">
-                        <Download size={16} />
-                        {messages.workbench.downloadAll}
-                      </button>
-                    ) : null}
-                  </div>
+            {error ? <div className="workspace-panel border-danger/30 bg-danger/10 p-4 text-sm text-danger">{error}</div> : null}
 
-                  {error ? <div className="workspace-panel border-danger/30 bg-danger/10 p-4 text-sm text-danger">{error}</div> : null}
+            {results.length > 0 ? (
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                {results.map((result, index) => {
+                  const showImageCompare =
+                    index === 0 &&
+                    Boolean(inputPreviewUrl) &&
+                    files.length === 1 &&
+                    results.length === 1 &&
+                    Boolean(files[0]?.type.startsWith('image/')) &&
+                    Boolean(result.previewUrl) &&
+                    result.mimeType.startsWith('image/') &&
+                    !IMAGE_COMPARE_EXCLUDED_TOOL_IDS.has(tool.id);
 
-                  {results.length > 0 ? (
-                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                      {results.map((result, index) => {
-                        const showImageCompare =
-                          index === 0 &&
-                          Boolean(inputPreviewUrl) &&
-                          files.length === 1 &&
-                          results.length === 1 &&
-                          Boolean(files[0]?.type.startsWith('image/')) &&
-                          Boolean(result.previewUrl) &&
-                          result.mimeType.startsWith('image/') &&
-                          !IMAGE_COMPARE_EXCLUDED_TOOL_IDS.has(tool.id);
-
-                        return (
-                          <ResultCard
-                            key={result.name}
-                            fileName={result.name}
-                            fileSize={formatMegaBytes(result.blob.size)}
-                            title={messages.workbench.success}
-                            actionLabel={
-                              tool.id === 'url-image' && result.previewUrl && result.mimeType.startsWith('image/')
-                                ? messages.workbench.downloadOriginal
-                                : messages.workbench.download
-                            }
-                            onDownload={() => downloadBlob(result.blob, result.name)}
-                          >
-                            {tool.id === 'url-image' && result.previewUrl && result.mimeType.startsWith('image/') ? (
-                              <UrlImageCropper fileName={result.name} outputMimeType={result.mimeType} previewUrl={result.previewUrl} />
-                            ) : null}
-                            {showImageCompare && inputPreviewUrl && result.previewUrl ? (
-                              <BeforeAfterImageCompare
-                                beforeUrl={inputPreviewUrl}
-                                afterUrl={result.previewUrl}
-                                title={messages.workbench.comparePreviewTitle}
-                                description={messages.workbench.comparePreviewDescription}
-                                beforeLabel={messages.workbench.compareBefore}
-                                afterLabel={messages.workbench.compareAfter}
-                                sliderLabel={messages.workbench.compareSliderLabel}
-                              />
-                            ) : null}
-                            {!showImageCompare && tool.id !== 'url-image' && result.previewUrl && result.mimeType.startsWith('image/') ? (
-                              <img src={result.previewUrl} alt={result.name} className="max-h-80 w-full rounded-xl object-contain" />
-                            ) : null}
-                            {result.previewUrl && result.mimeType.startsWith('video/') ? (
-                              <video src={result.previewUrl} controls className="max-h-80 w-full rounded-xl" />
-                            ) : null}
-                            {result.previewUrl && result.mimeType.startsWith('audio/') ? (
-                              <audio src={result.previewUrl} controls className="w-full" />
-                            ) : null}
-                            {result.textContent ? (
-                              <div className="space-y-3">
-                                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-base-subtle/70 px-3 py-2">
-                                  <p className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.extractedText}</p>
-                                  <button
-                                    type="button"
-                                    data-testid="result-copy-text"
-                                    onClick={() => void onCopyResultText(result.textContent ?? '')}
-                                    className="btn-ghost px-3 py-2 text-xs"
-                                  >
-                                    <Copy size={14} />
-                                    {messages.workbench.copyText}
-                                  </button>
-                                </div>
-                                <pre className="max-h-64 overflow-auto rounded-xl border border-border bg-base-subtle p-3 text-xs text-ink">
-                                  {result.textContent}
-                                </pre>
-                              </div>
-                            ) : null}
-                            {result.metadata ? (
-                              <pre className="max-h-64 overflow-auto rounded-xl border border-border bg-base-subtle p-3 text-xs text-ink">
-                                {JSON.stringify(result.metadata, null, 2)}
-                              </pre>
-                            ) : null}
-                          </ResultCard>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-                </section>
-              );
-            }}
-          </Tabs>
+                  return (
+                    <ResultCard
+                      key={result.name}
+                      fileName={result.name}
+                      fileSize={formatMegaBytes(result.blob.size)}
+                      title={messages.workbench.success}
+                      actionLabel={
+                        tool.id === 'url-image' && result.previewUrl && result.mimeType.startsWith('image/')
+                          ? messages.workbench.downloadOriginal
+                          : messages.workbench.download
+                      }
+                      onDownload={() => downloadBlob(result.blob, result.name)}
+                    >
+                      {tool.id === 'url-image' && result.previewUrl && result.mimeType.startsWith('image/') ? (
+                        <UrlImageCropper fileName={result.name} outputMimeType={result.mimeType} previewUrl={result.previewUrl} />
+                      ) : null}
+                      {showImageCompare && inputPreviewUrl && result.previewUrl ? (
+                        <BeforeAfterImageCompare
+                          beforeUrl={inputPreviewUrl}
+                          afterUrl={result.previewUrl}
+                          title={messages.workbench.comparePreviewTitle}
+                          description={messages.workbench.comparePreviewDescription}
+                          beforeLabel={messages.workbench.compareBefore}
+                          afterLabel={messages.workbench.compareAfter}
+                          sliderLabel={messages.workbench.compareSliderLabel}
+                        />
+                      ) : null}
+                      {!showImageCompare && tool.id !== 'url-image' && result.previewUrl && result.mimeType.startsWith('image/') ? (
+                        <img src={result.previewUrl} alt={result.name} className="max-h-80 w-full rounded-xl object-contain" />
+                      ) : null}
+                      {result.previewUrl && result.mimeType.startsWith('video/') ? (
+                        <video src={result.previewUrl} controls className="max-h-80 w-full rounded-xl" />
+                      ) : null}
+                      {result.previewUrl && result.mimeType.startsWith('audio/') ? (
+                        <audio src={result.previewUrl} controls className="w-full" />
+                      ) : null}
+                      {result.textContent ? (
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-base-subtle/70 px-3 py-2">
+                            <p className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.extractedText}</p>
+                            <button
+                              type="button"
+                              data-testid="result-copy-text"
+                              onClick={() => void onCopyResultText(result.textContent ?? '')}
+                              className="btn-ghost px-3 py-2 text-xs"
+                            >
+                              <Copy size={14} />
+                              {messages.workbench.copyText}
+                            </button>
+                          </div>
+                          <pre className="max-h-64 overflow-auto rounded-xl border border-border bg-base-subtle p-3 text-xs text-ink">
+                            {result.textContent}
+                          </pre>
+                        </div>
+                      ) : null}
+                      {result.metadata ? (
+                        <pre className="max-h-64 overflow-auto rounded-xl border border-border bg-base-subtle p-3 text-xs text-ink">
+                          {JSON.stringify(result.metadata, null, 2)}
+                        </pre>
+                      ) : null}
+                    </ResultCard>
+                  );
+                })}
+              </div>
+            ) : null}
+          </section>
         ) : null}
       </div>
     </ToolPageLayout>

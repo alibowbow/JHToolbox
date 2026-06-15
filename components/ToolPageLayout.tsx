@@ -26,28 +26,15 @@ export function ToolPageLayout({
         transition={{ duration: 0.45 }}
         className="workspace-panel overflow-hidden p-6 sm:p-7"
       >
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex items-start gap-4">
-            <div
-              className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.25rem] border border-border/70 bg-base-elevated shadow-card ${iconColor}`}
-            >
-              <Icon size={26} />
-            </div>
-            <div className="min-w-0">
-              <p className="workspace-kicker">Tool workspace</p>
-              <h2 className="mt-2 text-3xl font-semibold tracking-tight text-ink sm:text-4xl">{title}</h2>
-              <p className="mt-2 max-w-3xl text-sm leading-relaxed text-ink sm:text-base">{description}</p>
-            </div>
+        <div className="flex items-start gap-4">
+          <div
+            className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.25rem] border border-border/70 bg-base-elevated shadow-card ${iconColor}`}
+          >
+            <Icon size={26} />
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:w-auto">
-            <div className="workspace-metric min-w-[150px]">
-              <p className="workspace-kicker">Mode</p>
-              <p className="workspace-metric-value">Editor</p>
-            </div>
-            <div className="workspace-metric min-w-[150px]">
-              <p className="workspace-kicker">Privacy</p>
-              <p className="workspace-metric-value">Local-first</p>
-            </div>
+          <div className="min-w-0">
+            <h2 className="text-3xl font-semibold tracking-tight text-ink sm:text-4xl">{title}</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-ink-muted sm:text-base">{description}</p>
           </div>
         </div>
       </motion.div>
