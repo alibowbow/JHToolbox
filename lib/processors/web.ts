@@ -41,25 +41,53 @@ function normalizeUrl(url: string) {
   return new URL(withProtocol).toString();
 }
 
-function buildScreenshotUrl(url: string, width: number, captureFullPage: boolean) {
-  const normalizedUrl = normalizeUrl(url);
-  const fullPageSegment = captureFullPage ? 'fullpage/' : '';
-  return `https://image.thum.io/get/png/noanimate/${fullPageSegment}width/${width}/${encodeURIComponent(normalizedUrl)}`;
+interface ScreenshotOptions {
+  width: number;
+  fullPage: boolean;
+  waitSeconds?: number;
+  maxHeight?: number;
 }
 
-async function fetchWebsiteScreenshot(url: string, width: number, captureFullPage: boolean): Promise<Blob> {
-  const screenshotUrl = buildScreenshotUrl(url, width, captureFullPage);
+function buildScreenshotUrl(url: string, opts: ScreenshotOptions, baseline = false): string {
+  const normalizedUrl = normalizeUrl(url);
+  const segments: string[] = ['png', 'noanimate'];
+
+  // Giving the page a moment to settle lets lazy-loaded content below the fold
+  // render before the full-page capture is taken. Skipped in the baseline retry.
+  if (!baseline) {
+    const wait = Math.min(10, Math.max(0, Math.round(opts.waitSeconds ?? 0)));
+    if (wait > 0) {
+      segments.push(`wait/${wait}`);
+    }
+  }
+
+  if (opts.fullPage) {
+    segments.push('fullpage');
+  }
+
+  if (!baseline) {
+    const crop = Math.max(0, Math.round(opts.maxHeight ?? 0));
+    if (crop > 0) {
+      segments.push(`crop/${crop}`);
+    }
+  }
+
+  segments.push(`width/${opts.width}`);
+
+  return `https://image.thum.io/get/${segments.join('/')}/${encodeURIComponent(normalizedUrl)}`;
+}
+
+async function fetchScreenshotBlob(screenshotUrl: string): Promise<Blob> {
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const response = await fetch(screenshotUrl, {
-      method: 'GET',
-      mode: 'cors',
-      cache: 'no-store',
-    }).catch((cause) => {
+    let response: Response | null = null;
+    try {
+      response = await fetch(screenshotUrl, { method: 'GET', mode: 'cors', cache: 'no-store' });
+    } catch (cause) {
       lastError = cause instanceof Error ? cause : new Error('Screenshot fetch failed.');
-      return null;
-    });
+      response = null;
+    }
 
     if (response?.ok) {
       const blob = await response.blob();
@@ -70,11 +98,37 @@ async function fetchWebsiteScreenshot(url: string, width: number, captureFullPag
       return blob;
     }
 
-    lastError = new Error(`Screenshot fetch failed with status ${response?.status ?? 'unknown'}.`);
-    await new Promise((resolve) => setTimeout(resolve, 1200 * (attempt + 1)));
+    const status = response?.status;
+    // Client errors (other than rate limiting / request timeout) will not recover
+    // on retry, so fail fast instead of waiting through the backoff schedule.
+    if (typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+      throw new Error(`The screenshot service rejected the request (status ${status}).`);
+    }
+
+    lastError = new Error(`Screenshot fetch failed with status ${status ?? 'unknown'}.`);
+    if (attempt < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 1200 * (attempt + 1)));
+    }
   }
 
   throw lastError ?? new Error('Unable to capture a rendered webpage screenshot for this URL.');
+}
+
+async function fetchWebsiteScreenshot(url: string, opts: ScreenshotOptions): Promise<Blob> {
+  const primaryUrl = buildScreenshotUrl(url, opts, false);
+
+  try {
+    return await fetchScreenshotBlob(primaryUrl);
+  } catch (primaryError) {
+    const baselineUrl = buildScreenshotUrl(url, opts, true);
+    if (baselineUrl === primaryUrl) {
+      throw primaryError;
+    }
+
+    // The extra capture options (wait/crop) may be unsupported for this page, or the
+    // longer render timed out — fall back to a known-good baseline request once.
+    return await fetchScreenshotBlob(baselineUrl);
+  }
 }
 
 function detectCmsFromHtml(html: string): string[] {
@@ -130,9 +184,19 @@ export async function processWebTool(ctx: ProcessContext): Promise<ProcessedFile
     const url = String(options.url ?? '').trim() || 'https://example.com';
     const width = Math.max(320, parseNumber(options.width, 1200));
     const captureFullPage = parseBoolean(options.captureFullPage, true);
+    const waitSeconds = Math.min(10, Math.max(0, parseNumber(options.waitSeconds, 2)));
+    const maxHeight = Math.max(0, parseNumber(options.maxHeight, 0));
 
-    onProgress({ percent: 10, stage: 'Capturing webpage screenshot' });
-    const screenshotBlob = await fetchWebsiteScreenshot(url, width, captureFullPage);
+    onProgress({
+      percent: 10,
+      stage: waitSeconds > 0 ? `Loading page (waiting ${waitSeconds}s)` : 'Capturing webpage screenshot',
+    });
+    const screenshotBlob = await fetchWebsiteScreenshot(url, {
+      width,
+      fullPage: captureFullPage,
+      waitSeconds,
+      maxHeight,
+    });
     onProgress({ percent: 85, stage: 'Preparing image download' });
 
     return [
@@ -147,16 +211,38 @@ export async function processWebTool(ctx: ProcessContext): Promise<ProcessedFile
   if (toolId === 'url-pdf') {
     const url = String(options.url ?? '').trim() || 'https://example.com';
     const width = Math.max(320, parseNumber(options.width, 1200));
+    const waitSeconds = Math.min(10, Math.max(0, parseNumber(options.waitSeconds, 2)));
+    const splitPages = parseBoolean(options.splitPages, true);
 
-    onProgress({ percent: 10, stage: 'Capturing webpage screenshot' });
-    const pngBlob = await fetchWebsiteScreenshot(url, width, true);
+    onProgress({
+      percent: 10,
+      stage: waitSeconds > 0 ? `Loading page (waiting ${waitSeconds}s)` : 'Capturing webpage screenshot',
+    });
+    const pngBlob = await fetchWebsiteScreenshot(url, { width, fullPage: true, waitSeconds });
     const pngBytes = new Uint8Array(await pngBlob.arrayBuffer());
 
     onProgress({ percent: 75, stage: 'Creating PDF capture' });
     const pdf = await PDFDocument.create();
     const image = await pdf.embedPng(pngBytes);
-    const page = pdf.addPage([image.width, image.height]);
-    page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+
+    // A tall full-page capture as one giant page is hard to read or print, so slice
+    // it into A4-proportioned pages that flow from the top of the scroll downward.
+    if (splitPages && image.height > image.width * 1.5) {
+      const pageHeight = image.width * (297 / 210);
+      const pageCount = Math.max(1, Math.ceil(image.height / pageHeight));
+      for (let index = 0; index < pageCount; index += 1) {
+        const page = pdf.addPage([image.width, pageHeight]);
+        page.drawImage(image, {
+          x: 0,
+          y: (index + 1) * pageHeight - image.height,
+          width: image.width,
+          height: image.height,
+        });
+      }
+    } else {
+      const page = pdf.addPage([image.width, image.height]);
+      page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+    }
 
     const bytes = await pdf.save({ useObjectStreams: true });
     return [

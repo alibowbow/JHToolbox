@@ -1725,8 +1725,10 @@ export const tools: ToolDefinition[] = [
     browseGroups: ['capture'],
     options: [
       { key: 'url', label: 'Target URL', type: 'text', defaultValue: '', placeholder: 'https://example.com' },
-      { key: 'width', label: 'Canvas width', type: 'number', defaultValue: 1200, min: 320, max: 4096 },
       { key: 'captureFullPage', label: 'Capture full page scroll', type: 'checkbox', defaultValue: true },
+      { key: 'width', label: 'Canvas width', type: 'number', defaultValue: 1200, min: 320, max: 4096 },
+      { key: 'waitSeconds', label: 'Wait before capture (s)', type: 'number', defaultValue: 2, min: 0, max: 10, step: 1 },
+      { key: 'maxHeight', label: 'Max height (px, 0 = unlimited)', type: 'number', defaultValue: 0, min: 0, max: 30000, step: 200 },
     ],
   },
   {
@@ -1741,6 +1743,8 @@ export const tools: ToolDefinition[] = [
     options: [
       { key: 'url', label: 'Target URL', type: 'text', defaultValue: '', placeholder: 'https://example.com' },
       { key: 'width', label: 'Canvas width', type: 'number', defaultValue: 1200, min: 320, max: 4096 },
+      { key: 'waitSeconds', label: 'Wait before capture (s)', type: 'number', defaultValue: 2, min: 0, max: 10, step: 1 },
+      { key: 'splitPages', label: 'Split into printable pages', type: 'checkbox', defaultValue: true },
     ],
   },
   {
