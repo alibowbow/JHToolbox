@@ -4,6 +4,7 @@ import { useId, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { File, Upload, X } from 'lucide-react';
 import { formatMegaBytes } from '@/lib/i18n';
+import { useLocale } from '@/components/providers/locale-provider';
 
 interface DropZoneProps {
   onFiles: (files: File[]) => void;
@@ -14,6 +15,7 @@ interface DropZoneProps {
 }
 
 export function DropZone({ onFiles, accept, multiple = false, label, files }: DropZoneProps) {
+  const { messages } = useLocale();
   const inputId = useId();
   const [isDragging, setIsDragging] = useState(false);
   const [internalFiles, setInternalFiles] = useState<File[]>([]);
@@ -57,7 +59,7 @@ export function DropZone({ onFiles, accept, multiple = false, label, files }: Dr
         <div className="space-y-1">
           <p className="text-base font-semibold text-ink">{label}</p>
           <p className="text-xs uppercase tracking-[0.18em] text-ink-faint">
-            {multiple ? 'Batch-ready' : 'Single file'}
+            {multiple ? messages.workbench.batchReady : messages.workbench.singleFile}
           </p>
           {accept ? <p className="text-sm text-ink-muted">{accept}</p> : null}
         </div>
@@ -95,7 +97,7 @@ export function DropZone({ onFiles, accept, multiple = false, label, files }: Dr
               type="button"
               onClick={() => pushFiles(currentFiles.filter((_, fileIndex) => fileIndex !== index))}
               className="rounded-lg p-2 text-ink-faint transition-colors hover:bg-danger/10 hover:text-danger"
-              aria-label="Remove file"
+              aria-label={messages.workbench.removeFile}
             >
               <X size={14} />
             </button>

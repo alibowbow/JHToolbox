@@ -31,7 +31,7 @@ export function NavigationList({
   const { locale, messages } = useLocale();
 
   return (
-    <nav className="space-y-1.5">
+    <nav aria-label={messages.shell.navigate} className="space-y-1.5">
       {navItems.map(({ href, key, icon: Icon, iconClass, dotClass }) => {
         const active = pathname === href || (href !== '/' && pathname.startsWith(href));
         const label =
@@ -64,7 +64,7 @@ export function NavigationList({
               <div className="min-w-0 flex-1">
                 <span className="block truncate">{label}</span>
                 <span className="mt-0.5 block text-[11px] uppercase tracking-[0.18em] text-ink-faint">
-                  {active ? 'Current' : 'Open'}
+                  {active ? messages.common.current : messages.common.open}
                 </span>
               </div>
               {active ? <span className={`ml-auto h-1.5 w-1.5 rounded-full ${dotClass}`} /> : null}

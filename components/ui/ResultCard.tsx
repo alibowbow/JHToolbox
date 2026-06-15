@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion';
 import { CheckCircle2, Download, File } from 'lucide-react';
+import { useLocale } from '@/components/providers/locale-provider';
 
 interface ResultCardProps {
   fileName: string;
@@ -16,10 +17,14 @@ export function ResultCard({
   fileName,
   fileSize,
   onDownload,
-  title = 'Ready',
-  actionLabel = 'Download',
+  title,
+  actionLabel,
   children,
 }: ResultCardProps) {
+  const { messages } = useLocale();
+  const resolvedTitle = title ?? messages.workbench.resultReady;
+  const resolvedActionLabel = actionLabel ?? messages.workbench.download;
+
   return (
     <motion.article
       initial={{ opacity: 0, scale: 0.97, y: 8 }}
@@ -32,11 +37,11 @@ export function ResultCard({
             <CheckCircle2 size={18} className="text-ok" />
           </div>
           <div>
-            <p className="workspace-kicker">Output ready</p>
-            <p className="mt-1 text-sm font-semibold text-ink">{title}</p>
+            <p className="workspace-kicker">{messages.workbench.outputReady}</p>
+            <p className="mt-1 text-sm font-semibold text-ink">{resolvedTitle}</p>
           </div>
         </div>
-        <span className="editor-chip border-ok/25 bg-ok/10 text-ok">Ready</span>
+        <span className="editor-chip border-ok/25 bg-ok/10 text-ok">{messages.workbench.resultReady}</span>
       </div>
 
       <div className="workspace-section flex items-center gap-3">
@@ -49,7 +54,7 @@ export function ResultCard({
         </div>
         <button type="button" onClick={onDownload} className="btn-primary px-4 py-2 text-xs">
           <Download size={14} />
-          {actionLabel}
+          {resolvedActionLabel}
         </button>
       </div>
 
