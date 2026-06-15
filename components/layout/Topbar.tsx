@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Menu, Search, Sparkles, X } from 'lucide-react';
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import type { ToolDefinition } from '@/types/tool';
 import { NavigationList } from '@/components/layout/navigation-list';
 import { useLocale } from '@/components/providers/locale-provider';
 import { getCategoryCopy } from '@/lib/i18n';
@@ -19,7 +21,10 @@ export function Topbar() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [activeIndex, setActiveIndex] = useState(0);
   const deferredQuery = useDeferredValue(query);
+  const router = useRouter();
+  const itemRefs = useRef<Array<HTMLAnchorElement | null>>([]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -80,6 +85,42 @@ export function Topbar() {
       .slice(0, 12);
   }, [browseTools, deferredQuery, locale]);
 
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [deferredQuery, searchOpen]);
+
+  useEffect(() => {
+    itemRefs.current[activeIndex]?.scrollIntoView({ block: 'nearest' });
+  }, [activeIndex]);
+
+  const openTool = useCallback(
+    (tool: ToolDefinition) => {
+      setSearchOpen(false);
+      router.push(`/tools/${tool.category}/${tool.id}`);
+    },
+    [router],
+  );
+
+  const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (searchResults.length === 0) {
+      return;
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setActiveIndex((index) => (index + 1) % searchResults.length);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActiveIndex((index) => (index - 1 + searchResults.length) % searchResults.length);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      const tool = searchResults[Math.min(activeIndex, searchResults.length - 1)];
+      if (tool) {
+        openTool(tool);
+      }
+    }
+  };
+
   return (
     <>
       <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between border-b border-border bg-base-subtle/80 px-4 backdrop-blur-md sm:px-6 lg:px-8">
@@ -97,8 +138,8 @@ export function Topbar() {
             <Menu size={18} />
           </button>
           <div className="hidden lg:block">
-            <p className="workspace-kicker">Command center</p>
-            <p className="mt-1 text-sm font-semibold text-ink">Premium local toolbox</p>
+            <p className="workspace-kicker">{messages.shell.commandCenter}</p>
+            <p className="mt-1 text-sm font-semibold text-ink">{messages.shell.commandCenterSub}</p>
           </div>
         </div>
 
@@ -125,7 +166,7 @@ export function Topbar() {
             <Search size={14} className="shrink-0 text-ink-faint transition-colors group-hover:text-prime" />
             <div className="min-w-0 text-left">
               <span className="block truncate font-medium text-ink">{messages.topbar.searchLabel}</span>
-              <span className="block truncate text-[11px] uppercase tracking-[0.18em] text-ink-faint">Tools and workflows</span>
+              <span className="block truncate text-[11px] uppercase tracking-[0.18em] text-ink-faint">{messages.shell.searchScope}</span>
             </div>
             <kbd className="ml-auto rounded-lg border border-border bg-base px-1.5 py-0.5 font-mono text-[10px] text-ink-faint">
               {messages.topbar.shortcut}
@@ -150,13 +191,16 @@ export function Topbar() {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -24, opacity: 0 }}
               data-testid="mobile-menu-drawer"
+              role="dialog"
+              aria-modal="true"
+              aria-label={messages.shell.menuTitle}
               className="pointer-events-auto h-full w-80 border-r border-border bg-base-subtle px-4 py-4 shadow-card"
               onClick={(event) => event.stopPropagation()}
             >
               <div className="workspace-panel mb-6 p-5">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="workspace-kicker">Navigation</p>
+                    <p className="workspace-kicker">{messages.shell.menuTitle}</p>
                     <p className="mt-1 font-display text-xl font-semibold text-ink">
                       JH<span className="text-prime">Toolbox</span>
                     </p>
@@ -170,7 +214,7 @@ export function Topbar() {
                     <X size={18} />
                   </button>
                 </div>
-                <p className="mt-3 text-sm text-ink-muted">Move between workflows without leaving the editing context.</p>
+                <p className="mt-3 text-sm text-ink-muted">{messages.shell.menuDescription}</p>
               </div>
               <div className="workspace-section p-3">
                 <NavigationList onNavigate={() => setMenuOpen(false)} activeIndicatorId="sidebar-mobile-active" />
@@ -193,6 +237,9 @@ export function Topbar() {
               initial={{ opacity: 0, y: 10, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 10, scale: 0.98 }}
+              role="dialog"
+              aria-modal="true"
+              aria-label={messages.topbar.searchLabel}
               className="workspace-panel mx-auto mt-16 max-w-2xl overflow-hidden"
               onClick={(event) => event.stopPropagation()}
             >
@@ -203,7 +250,15 @@ export function Topbar() {
                   type="search"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={handleSearchKeyDown}
                   placeholder={messages.topbar.searchPlaceholder}
+                  aria-controls="tool-search-results"
+                  aria-autocomplete="list"
+                  aria-activedescendant={
+                    searchResults.length > 0
+                      ? `tool-search-option-${Math.min(activeIndex, searchResults.length - 1)}`
+                      : undefined
+                  }
                   className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint"
                 />
                 <button type="button" onClick={() => setSearchOpen(false)} className="text-ink-faint transition-colors hover:text-ink">
@@ -218,23 +273,33 @@ export function Topbar() {
                     {messages.topbar.searchEmpty}
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    {searchResults.map((tool) => {
+                  <div className="space-y-2" role="listbox" id="tool-search-results" aria-label={messages.topbar.searchLabel}>
+                    {searchResults.map((tool, index) => {
                       const Icon = categoryIcons[tool.category];
                       const category = getCategoryCopy(locale, tool.category);
                       const localizedTool = getLocalizedToolCopy(tool, locale);
                       const style = categoryStyles[tool.category];
+                      const isActive = index === Math.min(activeIndex, searchResults.length - 1);
 
                       return (
                         <Link
                           key={tool.id}
+                          ref={(element) => {
+                            itemRefs.current[index] = element;
+                          }}
+                          id={`tool-search-option-${index}`}
+                          role="option"
+                          aria-selected={isActive}
                           href={`/tools/${tool.category}/${tool.id}`}
                           onClick={() => setSearchOpen(false)}
+                          onMouseEnter={() => setActiveIndex(index)}
                           className="block"
                         >
                           <motion.div
                             whileHover={{ y: -1 }}
-                            className="card flex items-start gap-3 p-4 transition-colors hover:border-border-bright"
+                            className={`card flex items-start gap-3 p-4 transition-colors ${
+                              isActive ? 'border-prime/60 ring-1 ring-prime/40' : 'hover:border-border-bright'
+                            }`}
                           >
                             <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border ${style.iconBg} ${style.icon}`}>
                               <Icon size={18} />

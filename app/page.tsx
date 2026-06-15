@@ -43,9 +43,9 @@ export default function HomePage() {
   const collectionDescription =
     recentTools.length > 0 ? messages.home.recentDescription : messages.home.popularDescription;
   const highlightMetrics = [
-    { label: 'Tool count', value: formatToolCount(locale, browseTools.length) },
-    { label: 'Editor-ready', value: formatToolCount(locale, editorEnabledCount) },
-    { label: 'Execution model', value: 'Browser-local' },
+    { label: messages.home.metricToolCount, value: formatToolCount(locale, browseTools.length) },
+    { label: messages.home.metricEditorReady, value: formatToolCount(locale, editorEnabledCount) },
+    { label: messages.home.metricExecution, value: messages.home.metricExecutionValue },
   ];
 
   return (
@@ -88,7 +88,7 @@ export default function HomePage() {
           </div>
 
           <div className="workspace-panel p-5">
-            <p className="workspace-kicker">Workspace at a glance</p>
+            <p className="workspace-kicker">{messages.home.glanceTitle}</p>
             <div className="mt-4 grid gap-3">
               {highlightMetrics.map((item) => (
                 <div key={item.label} className="workspace-metric">
@@ -182,7 +182,7 @@ export default function HomePage() {
           { title: messages.home.featureTwoTitle, body: messages.home.featureTwoBody },
         ].map((item) => (
           <div key={item.title} className="workspace-panel p-5">
-            <p className="workspace-kicker">Why it feels better</p>
+            <p className="workspace-kicker">{messages.home.whyTitle}</p>
             <p className="mt-3 text-base font-semibold text-ink">{item.title}</p>
             <p className="mt-2 text-sm leading-relaxed text-ink-muted">{item.body}</p>
           </div>

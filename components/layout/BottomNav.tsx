@@ -30,7 +30,7 @@ export function BottomNav() {
         data-testid="mobile-bottom-nav-scroll"
         className="overflow-x-auto px-3 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        <nav className="mx-auto flex min-w-max gap-2 rounded-[1.4rem] border border-border/60 bg-base-elevated/75 p-2 shadow-card">
+        <nav aria-label={messages.shell.navigate} className="mx-auto flex min-w-max gap-2 rounded-[1.4rem] border border-border/60 bg-base-elevated/75 p-2 shadow-card">
           {items.map(({ href, key, icon: Icon }) => {
             const active = pathname === href || (href !== '/' && pathname.startsWith(href));
             const label =
