@@ -77,37 +77,45 @@ function buildScreenshotUrl(url: string, opts: ScreenshotOptions, baseline = fal
   return `https://image.thum.io/get/${segments.join('/')}/${encodeURIComponent(normalizedUrl)}`;
 }
 
-async function fetchScreenshotBlob(screenshotUrl: string): Promise<Blob> {
+function buildProxiedUrl(directUrl: string): string {
+  // The bare image.thum.io endpoint is built for <img> tags and sends no CORS
+  // headers, so a browser fetch().blob() of it is blocked ("Failed to fetch").
+  // images.weserv.nl fetches the source server-side and re-serves it with
+  // permissive CORS headers, which lets us actually read the bytes.
+  const withoutScheme = directUrl.replace(/^https?:\/\//, '');
+  return `https://images.weserv.nl/?url=${encodeURIComponent(withoutScheme)}&output=png`;
+}
+
+async function fetchScreenshotCandidate(screenshotUrl: string): Promise<Blob> {
   let lastError: Error | null = null;
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    let response: Response | null = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let response: Response;
     try {
       response = await fetch(screenshotUrl, { method: 'GET', mode: 'cors', cache: 'no-store' });
     } catch (cause) {
-      lastError = cause instanceof Error ? cause : new Error('Screenshot fetch failed.');
-      response = null;
+      // A thrown fetch is a network/CORS failure that will not recover on retry;
+      // surface it so the caller can move on to the next candidate.
+      throw cause instanceof Error ? cause : new Error('The screenshot request was blocked by the browser.');
     }
 
-    if (response?.ok) {
+    if (response.ok) {
       const blob = await response.blob();
       if (!blob.type.startsWith('image/')) {
-        throw new Error('The remote screenshot service returned an unexpected response.');
+        throw new Error('The screenshot service returned a non-image response.');
       }
 
       return blob;
     }
 
-    const status = response?.status;
-    // Client errors (other than rate limiting / request timeout) will not recover
-    // on retry, so fail fast instead of waiting through the backoff schedule.
-    if (typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 429) {
-      throw new Error(`The screenshot service rejected the request (status ${status}).`);
+    const retryable = response.status === 429 || response.status === 408 || response.status >= 500;
+    lastError = new Error(`Screenshot service responded with status ${response.status}.`);
+    if (!retryable) {
+      throw lastError;
     }
 
-    lastError = new Error(`Screenshot fetch failed with status ${status ?? 'unknown'}.`);
-    if (attempt < 2) {
-      await new Promise((resolve) => setTimeout(resolve, 1200 * (attempt + 1)));
+    if (attempt < 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
     }
   }
 
@@ -115,20 +123,33 @@ async function fetchScreenshotBlob(screenshotUrl: string): Promise<Blob> {
 }
 
 async function fetchWebsiteScreenshot(url: string, opts: ScreenshotOptions): Promise<Blob> {
-  const primaryUrl = buildScreenshotUrl(url, opts, false);
+  const directPrimary = buildScreenshotUrl(url, opts, false);
+  const directBaseline = buildScreenshotUrl(url, opts, true);
 
-  try {
-    return await fetchScreenshotBlob(primaryUrl);
-  } catch (primaryError) {
-    const baselineUrl = buildScreenshotUrl(url, opts, true);
-    if (baselineUrl === primaryUrl) {
-      throw primaryError;
+  // Try the screenshot host directly first (fast, and fine when it allows
+  // cross-origin reads), then fall back to a CORS-enabling image proxy — which
+  // is what actually makes the result readable in the browser for hosts like
+  // thum.io that don't send CORS headers.
+  const candidateUrls = [
+    directPrimary,
+    buildProxiedUrl(directPrimary),
+    ...(directBaseline !== directPrimary ? [buildProxiedUrl(directBaseline)] : []),
+  ];
+
+  let lastError: Error | null = null;
+  for (const candidateUrl of candidateUrls) {
+    try {
+      return await fetchScreenshotCandidate(candidateUrl);
+    } catch (cause) {
+      lastError = cause instanceof Error ? cause : new Error('Screenshot fetch failed.');
     }
-
-    // The extra capture options (wait/crop) may be unsupported for this page, or the
-    // longer render timed out — fall back to a known-good baseline request once.
-    return await fetchScreenshotBlob(baselineUrl);
   }
+
+  throw new Error(
+    `Unable to capture a screenshot for this URL. The screenshot service may be busy or blocking the request${
+      lastError ? ` (${lastError.message})` : ''
+    }.`,
+  );
 }
 
 function detectCmsFromHtml(html: string): string[] {
