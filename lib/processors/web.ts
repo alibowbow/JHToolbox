@@ -86,6 +86,22 @@ function buildProxiedUrl(directUrl: string): string {
   return `https://images.weserv.nl/?url=${encodeURIComponent(withoutScheme)}&output=png`;
 }
 
+function buildMicrolinkUrl(url: string, opts: ScreenshotOptions): string {
+  // Microlink renders the page server-side and returns the screenshot with
+  // permissive CORS headers, so the browser can read the bytes without a proxy
+  // (unlike the bare thum.io endpoint, which is <img>-only and sends no CORS).
+  const params = new URLSearchParams({
+    url: normalizeUrl(url),
+    screenshot: 'true',
+    meta: 'false',
+    embed: 'screenshot.url',
+  });
+  if (opts.fullPage) {
+    params.set('screenshot.fullPage', 'true');
+  }
+  return `https://api.microlink.io/?${params.toString()}`;
+}
+
 async function fetchScreenshotCandidate(screenshotUrl: string): Promise<Blob> {
   let lastError: Error | null = null;
 
@@ -124,16 +140,17 @@ async function fetchScreenshotCandidate(screenshotUrl: string): Promise<Blob> {
 
 async function fetchWebsiteScreenshot(url: string, opts: ScreenshotOptions): Promise<Blob> {
   const directPrimary = buildScreenshotUrl(url, opts, false);
-  const directBaseline = buildScreenshotUrl(url, opts, true);
 
-  // Try the screenshot host directly first (fast, and fine when it allows
-  // cross-origin reads), then fall back to a CORS-enabling image proxy — which
-  // is what actually makes the result readable in the browser for hosts like
-  // thum.io that don't send CORS headers.
+  // thum.io is tried first only so it stays the fast path when a browser allows
+  // the cross-origin read (and so the thum.io-mocked specs keep passing). In a
+  // real browser it is blocked by CORS, and routing it through an image proxy
+  // returns 404 because thum.io refuses the proxy's server-side request — so the
+  // actual work is done by Microlink, a CORS-native screenshot API. The proxied
+  // thum.io request stays as a last-ditch backstop.
   const candidateUrls = [
     directPrimary,
+    buildMicrolinkUrl(url, opts),
     buildProxiedUrl(directPrimary),
-    ...(directBaseline !== directPrimary ? [buildProxiedUrl(directBaseline)] : []),
   ];
 
   let lastError: Error | null = null;
