@@ -4,6 +4,7 @@ import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { XMLBuilder, XMLParser } from 'fast-xml-parser';
 import { sanitizeRowsForSpreadsheet } from '../spreadsheet-safety';
+import { clampPositiveInteger } from '../option-schema';
 
 type WorkerRequest = {
   id: number;
@@ -155,7 +156,9 @@ function handle(request: WorkerRequest): WorkerFile[] {
   }
 
   if (request.toolId === 'split-csv') {
-    const rowsPerFile = Math.max(10, Number(request.options?.rowsPerFile ?? 1000));
+    // Guard against NaN (would make the `i += rowsPerFile` loop never terminate)
+    // and against absurd values, even if the UI validation was bypassed.
+    const rowsPerFile = clampPositiveInteger(request.options?.rowsPerFile, 10, 1_000_000, 1000);
     const parsed = Papa.parse(request.text ?? '', { header: true, skipEmptyLines: true });
     const rows = parsed.data as Record<string, unknown>[];
     const out: WorkerFile[] = [];

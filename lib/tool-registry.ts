@@ -623,9 +623,9 @@ export const tools: ToolDefinition[] = [
   },
   {
     id: 'image-background-transparent',
-    name: 'Background Remove',
+    name: 'Remove Solid-Color Background',
     category: 'image',
-    description: 'Remove a light or solid background and export a transparent PNG.',
+    description: 'Remove a solid or near-solid background by color threshold and export a transparent PNG. This is not AI subject cutout.',
     accept: 'image/*',
     tags: ['image', 'transparent', 'mask', 'background'],
     browseGroups: ['new', 'editor-enabled'],
@@ -649,11 +649,11 @@ export const tools: ToolDefinition[] = [
   },
   {
     id: 'image-upscale',
-    name: 'Image Upscale',
+    name: 'High-quality Enlarge',
     category: 'image',
-    description: 'Scale an image up with high-quality browser resizing.',
+    description: 'Enlarge an image with high-quality Lanczos resampling. This interpolates existing pixels — it is not AI super-resolution.',
     accept: 'image/*',
-    tags: ['image', 'upscale', 'resize'],
+    tags: ['image', 'upscale', 'enlarge', 'resize'],
     browseGroups: ['new', 'editor-enabled'],
     previewKind: 'image',
     options: [

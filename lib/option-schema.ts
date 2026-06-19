@@ -17,6 +17,19 @@ export interface NormalizableOption {
   options?: Array<{ label: string; value: string | number }>;
 }
 
+/**
+ * Coerce a value to an integer within [min, max], falling back when it is not a
+ * finite number. Guards loops like `i += rowsPerFile` against NaN (which would
+ * never terminate) and against absurdly large/small inputs.
+ */
+export function clampPositiveInteger(value: unknown, min: number, max: number, fallback: number): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.floor(parsed)));
+}
+
 export function normalizeOptionValue(option: NormalizableOption, rawValue: unknown): string | number | boolean {
   const fallback = option.defaultValue;
   if (rawValue === undefined || rawValue === null) {

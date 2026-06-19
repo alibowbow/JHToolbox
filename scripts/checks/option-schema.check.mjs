@@ -2,7 +2,7 @@
  * Executable check for lib/option-schema.ts (option value validation).
  *   node --experimental-strip-types scripts/checks/option-schema.check.mjs
  */
-import { normalizeOptionValue, normalizeToolOptions } from '../../lib/option-schema.ts';
+import { normalizeOptionValue, normalizeToolOptions, clampPositiveInteger } from '../../lib/option-schema.ts';
 
 let pass = 0;
 let fail = 0;
@@ -56,6 +56,17 @@ check('bag validates width', bag.width === 4096);
 check('bag validates checkbox', bag.full === false);
 check('bag preserves editor key', bag.startTime === 5);
 check('bag drops non-primitive', !('bogus' in bag));
+
+// --- clampPositiveInteger (anti-infinite-loop guard) ---
+check('clamp NaN string -> fallback', clampPositiveInteger('abc', 10, 1e6, 1000) === 1000);
+check('clamp undefined -> fallback', clampPositiveInteger(undefined, 10, 1e6, 1000) === 1000);
+check('clamp Infinity -> fallback', clampPositiveInteger(Infinity, 10, 1e6, 1000) === 1000);
+check('clamp below min', clampPositiveInteger(5, 10, 1e6, 1000) === 10);
+check('clamp above max', clampPositiveInteger(2e9, 10, 1e6, 1000) === 1e6);
+check('clamp in range', clampPositiveInteger(500, 10, 1e6, 1000) === 500);
+check('clamp numeric string', clampPositiveInteger('250', 10, 1e6, 1000) === 250);
+check('clamp floors', clampPositiveInteger(1000.9, 10, 1e6, 1000) === 1000);
+check('clamp negative -> min', clampPositiveInteger(-5, 10, 1e6, 1000) === 10);
 
 console.log(`\noption-schema: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
