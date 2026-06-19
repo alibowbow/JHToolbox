@@ -160,6 +160,21 @@ verified in the current build environment**.
 - **Regression test:** `scripts/checks/cms-detect.check.mjs` — **11 cases** (strong/weak/medium signals, inconclusive, ordering). The existing detect-cms spec only asserts the request URL, so it is unaffected.
 - **Status:** ✅ fixed & verified (11/11).
 
+### AF-016b — Honest naming for seven overstated PDF/GIF tools
+- **Severity:** P1 (misleading capability)
+- **Tools/files:** `lib/tool-registry.ts`, `lib/tool-localization.ts`
+- **Observed / renamed (en + ko), with descriptions stating what they are *not*:**
+  - `pdf-extract-images` renders pages → **“Render PDF Pages”** (not XObject extraction)
+  - `pdf-compress` re-saves object streams → **“Optimize PDF Structure”** (not image/font recompression)
+  - `pdf-to-excel` extracts text → **“PDF Text to Workbook”** (not table reconstruction)
+  - `pdf-sign` stamps an image → **“Add Visual Signature”** (not a cryptographic signature)
+  - `pdf-repair` re-saves parseable PDFs → **“Rebuild Parseable PDF”**
+  - `gif-png` / `gif-jpg` use the first frame → **“GIF First Frame to PNG/JPG”**
+  - `url-pdf` description now discloses the PDF is rasterized (text/links not selectable)
+- **Implemented:** Route ids unchanged and search tags preserved (`extract`/`compress`/`excel`/`sign`/`repair`/`gif` still match), so links and search keep working. None of these names are asserted by a spec.
+- **Regression test:** registry invariants + build; capability matrix regenerated.
+- **Status:** ✅ fixed & verified. **Remaining (AF-016):** `edit-pdf` (“Edit PDF” → “Add PDF Overlays”) and `pdf-compare` (“Compare PDF” → “PDF Text Compare”) — both are asserted by `ui-shell.spec.ts` (lines 749–750), so renaming them needs the matching spec update verified by e2e (blocked here, AF-000).
+
 ### AF-016a — Honest naming for two overstated image tools
 - **Severity:** P1 (misleading capability)
 - **Tools/files:** `image-upscale`, `image-background-transparent` (`lib/tool-registry.ts`, `lib/tool-localization.ts`)

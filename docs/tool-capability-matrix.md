@@ -23,21 +23,21 @@ Generated from `lib/tool-registry.ts` by `scripts/gen-capability-matrix.mjs`. Do
 | pdf-add-page-numbers | PDF Page Number | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
 | pdf-watermark | PDF Watermark | pdf | .pdf,.png,.jpg,.jpeg,.webp | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
 | pdf-redact | PDF Redact | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
-| pdf-extract-images | PDF Extract Images | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
-| pdf-compress | PDF Compress | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
+| pdf-extract-images | Render PDF Pages | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
+| pdf-compress | Optimize PDF Structure | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
 | pdf-to-png | PDF to PNG | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | yes (e2e) |
 | pdf-to-jpg | PDF to JPG | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
 | pdf-to-webp | PDF to WEBP | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
 | image-to-pdf | Image to PDF | pdf | .png,.jpg,.jpeg,.webp,.gif,.tif,.tiff | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
 | pdf-to-word | PDF to Word | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | yes (e2e) |
-| pdf-to-excel | PDF to Excel | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
+| pdf-to-excel | PDF Text to Workbook | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
 | word-to-pdf | Word to PDF | pdf | .docx | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | yes (e2e) |
 | powerpoint-to-pdf | PowerPoint to PDF | pdf | .pptx | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
 | excel-to-pdf | Excel to PDF | pdf | .xls,.xlsx | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
 | html-to-pdf | HTML to PDF | pdf | .html,.htm | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | yes (e2e) |
 | edit-pdf | Edit PDF | pdf | .pdf,.png,.jpg,.jpeg,.webp | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | yes (e2e) |
-| pdf-sign | Sign PDF | pdf | .pdf,.png,.jpg,.jpeg,.webp | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
-| pdf-repair | Repair PDF | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
+| pdf-sign | Add Visual Signature | pdf | .pdf,.png,.jpg,.jpeg,.webp | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
+| pdf-repair | Rebuild Parseable PDF | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
 | pdf-compare | Compare PDF | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | yes (e2e) |
 | pdf-to-pdfa | PDF to PDF/A | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
 | pdf-to-hwpx | PDF to HWPX | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | yes (e2e) |
@@ -65,8 +65,8 @@ Generated from `lib/tool-registry.ts` by `scripts/gen-capability-matrix.mjs`. Do
 | webp-png | WEBP to PNG | image | .webp | file | local | Canvas / browser-image-compression | no (tracked: P1 cancellation) | none | none |
 | webp-jpg | WEBP to JPG | image | .webp | file | local | Canvas / browser-image-compression | no (tracked: P1 cancellation) | none | none |
 | jpg-webp | JPG to WEBP | image | .jpg,.jpeg | file | local | Canvas / browser-image-compression | no (tracked: P1 cancellation) | none | none |
-| gif-jpg | GIF to JPG | image | .gif | file | local | Canvas / browser-image-compression | no (tracked: P1 cancellation) | none | none |
-| gif-png | GIF to PNG | image | .gif | file | local | Canvas / browser-image-compression | no (tracked: P1 cancellation) | none | none |
+| gif-jpg | GIF First Frame to JPG | image | .gif | file | local | Canvas / browser-image-compression | no (tracked: P1 cancellation) | none | none |
+| gif-png | GIF First Frame to PNG | image | .gif | file | local | Canvas / browser-image-compression | no (tracked: P1 cancellation) | none | none |
 | tiff-jpg | TIFF to JPG | image | .tif,.tiff | file | local | Canvas / browser-image-compression | no (tracked: P1 cancellation) | none | none |
 | tiff-png | TIFF to PNG | image | .tif,.tiff | file | local | Canvas / browser-image-compression | no (tracked: P1 cancellation) | none | none |
 | svg-png | SVG to PNG | image | .svg | file | local | Canvas / browser-image-compression | no (tracked: P1 cancellation) | none | none |
