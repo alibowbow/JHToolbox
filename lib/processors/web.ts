@@ -2,6 +2,21 @@ import QRCode from 'qrcode';
 import { PDFDocument } from 'pdf-lib';
 import { ProcessContext, ProcessedFile } from '@/types/processor';
 import { parseBoolean, parseNumber } from '@/lib/utils';
+import { describeUrlRejection, validateExternalUrl } from '@/lib/url-safety';
+
+/**
+ * Resolve and SSRF-validate a user-supplied URL before any external request.
+ * Preserves the historical empty-input default of example.com so the tool can be
+ * demoed without typing, but routes every value through the safety validator.
+ */
+function resolveExternalUrl(rawValue: unknown): string {
+  const raw = String(rawValue ?? '').trim() || 'https://example.com';
+  const result = validateExternalUrl(raw);
+  if (!result.ok || !result.url) {
+    throw new Error(describeUrlRejection(result.reason));
+  }
+  return result.url;
+}
 
 function blobFromBytes(bytes: Uint8Array, mimeType: string): Blob {
   return new Blob([Uint8Array.from(bytes).buffer], { type: mimeType });
@@ -219,7 +234,7 @@ export async function processWebTool(ctx: ProcessContext): Promise<ProcessedFile
   }
 
   if (toolId === 'url-image') {
-    const url = String(options.url ?? '').trim() || 'https://example.com';
+    const url = resolveExternalUrl(options.url);
     const width = Math.max(320, parseNumber(options.width, 1200));
     const captureFullPage = parseBoolean(options.captureFullPage, true);
     const waitSeconds = Math.min(10, Math.max(0, parseNumber(options.waitSeconds, 2)));
@@ -247,7 +262,7 @@ export async function processWebTool(ctx: ProcessContext): Promise<ProcessedFile
   }
 
   if (toolId === 'url-pdf') {
-    const url = String(options.url ?? '').trim() || 'https://example.com';
+    const url = resolveExternalUrl(options.url);
     const width = Math.max(320, parseNumber(options.width, 1200));
     const waitSeconds = Math.min(10, Math.max(0, parseNumber(options.waitSeconds, 2)));
     const splitPages = parseBoolean(options.splitPages, true);
@@ -293,7 +308,7 @@ export async function processWebTool(ctx: ProcessContext): Promise<ProcessedFile
   }
 
   if (toolId === 'detect-cms') {
-    const url = String(options.url ?? '').trim() || 'https://example.com';
+    const url = resolveExternalUrl(options.url);
     onProgress({ percent: 20, stage: 'Inspecting page HTML' });
 
     const html = await fetchHtmlForUrl(url);

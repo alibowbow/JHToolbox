@@ -5,6 +5,9 @@ import * as XLSX from 'xlsx';
 import { getPdfJs } from '@/lib/processors/pdfjs-client';
 import { ProcessContext, ProcessedFile } from '@/types/processor';
 import { baseName, parseBoolean, parseNumber } from '@/lib/utils';
+import { sanitizeRowsForSpreadsheet } from '@/lib/spreadsheet-safety';
+import { sanitizeHtml } from '@/lib/html-sanitize';
+import { normalizePdfRotation, resolveDeletablePages } from '@/lib/pdf-page-math';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -706,8 +709,10 @@ function createWorkbookFromPdfPages(pages: PdfTextPage[]) {
   const workbook = XLSX.utils.book_new();
 
   pages.forEach((page, index) => {
-    const rows = page.lines.length > 0 ? page.lines.map((line) => splitLineToCells(line)) : [[page.text]];
-    const sheet = XLSX.utils.aoa_to_sheet(rows.length > 0 ? rows : [['']]);
+    const rawRows = page.lines.length > 0 ? page.lines.map((line) => splitLineToCells(line)) : [[page.text]];
+    // Neutralize CSV/spreadsheet formula injection from extracted PDF text.
+    const rows = sanitizeRowsForSpreadsheet(rawRows.length > 0 ? rawRows : [['']]);
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
     XLSX.utils.book_append_sheet(workbook, sheet, sanitizeSheetName(`Page ${page.pageNumber}`, index));
   });
 
@@ -807,11 +812,14 @@ export async function renderHtmlStringToPdfBlob(html: string, width: number) {
   iframe.style.width = `${width}px`;
   iframe.style.height = '1200px';
   iframe.style.border = '0';
-  iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts');
+  // Scripts are intentionally NOT allowed. html2canvas only needs to read the
+  // rendered DOM (which requires same-origin), so dropping allow-scripts closes
+  // the XSS vector while keeping rasterization working.
+  iframe.setAttribute('sandbox', 'allow-same-origin');
   document.body.appendChild(iframe);
 
   try {
-    iframe.srcdoc = html;
+    iframe.srcdoc = sanitizeHtml(html);
     await waitForFrameLoad(iframe);
     await new Promise((resolve) => window.setTimeout(resolve, 250));
 
@@ -1332,7 +1340,9 @@ export async function processPdfTool(ctx: ProcessContext): Promise<ProcessedFile
     const documentHandle = await PDFDocument.load(await source.arrayBuffer());
 
     documentHandle.getPages().forEach((page) => {
-      page.setRotation(pdfDegrees(rotation));
+      // Add to the page's existing rotation (don't replace it) and keep the
+      // result a multiple of 90 in [0, 360).
+      page.setRotation(pdfDegrees(normalizePdfRotation(page.getRotation().angle, rotation)));
     });
 
     const bytes = await documentHandle.save({ useObjectStreams: true });
@@ -1350,10 +1360,11 @@ export async function processPdfTool(ctx: ProcessContext): Promise<ProcessedFile
     const pagesToDelete = parseList(String(options.pages ?? '')).map((value) => value - 1);
     const documentHandle = await PDFDocument.load(await source.arrayBuffer());
 
-    pagesToDelete
-      .filter((value) => value >= 0 && value < documentHandle.getPageCount())
-      .sort((left, right) => right - left)
-      .forEach((value) => documentHandle.removePage(value));
+    const { indices, deletesAll } = resolveDeletablePages(pagesToDelete, documentHandle.getPageCount());
+    if (deletesAll) {
+      throw new Error('At least one page must remain — you cannot delete every page.');
+    }
+    indices.forEach((value) => documentHandle.removePage(value));
 
     const bytes = await documentHandle.save({ useObjectStreams: true });
     return [

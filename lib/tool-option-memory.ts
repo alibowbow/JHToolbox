@@ -1,6 +1,7 @@
 'use client';
 
 import { ToolOption } from '@/types/tool';
+import { normalizeOptionValue } from '@/lib/option-schema';
 
 type ToolOptionValues = Record<string, string | number | boolean>;
 
@@ -40,7 +41,12 @@ function writeStore(store: ToolOptionMemoryStore) {
     return;
   }
 
-  localStorage.setItem(KEY, JSON.stringify(store));
+  try {
+    localStorage.setItem(KEY, JSON.stringify(store));
+  } catch {
+    // Storage may be full or blocked (private mode); never let a persistence
+    // failure break the tool run.
+  }
 }
 
 function sanitizeValues(toolOptions: ToolOption[], candidate: ToolOptionValues | undefined) {
@@ -52,30 +58,12 @@ function sanitizeValues(toolOptions: ToolOption[], candidate: ToolOptionValues |
 
   toolOptions.forEach((option) => {
     const rawValue = candidate[option.key];
-    if (rawValue === undefined || rawValue === null) {
+    if (rawValue === undefined || rawValue === null || rawValue === '') {
       return;
     }
-
-    if (option.type === 'number' || option.type === 'range') {
-      const numericValue = Number(rawValue);
-      if (Number.isFinite(numericValue)) {
-        nextValues[option.key] = numericValue;
-      }
-      return;
-    }
-
-    if (option.type === 'checkbox') {
-      nextValues[option.key] = Boolean(rawValue);
-      return;
-    }
-
-    if (option.type === 'select') {
-      const matchingChoice = option.options?.find((choice) => String(choice.value) === String(rawValue));
-      nextValues[option.key] = matchingChoice?.value ?? String(rawValue);
-      return;
-    }
-
-    nextValues[option.key] = String(rawValue);
+    // Schema-validate each stored value (fixes Boolean("false") === true,
+    // out-of-range numbers, and stale select choices).
+    nextValues[option.key] = normalizeOptionValue(option, rawValue);
   });
 
   return Object.keys(nextValues).length ? nextValues : null;

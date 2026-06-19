@@ -2,6 +2,7 @@ import imageCompression from 'browser-image-compression';
 import picaFactory from 'pica';
 import { ProcessContext, ProcessedFile } from '@/types/processor';
 import { baseName, parseBoolean, parseNumber } from '@/lib/utils';
+import { tileBoundaries } from '@/lib/tile-math';
 
 const pica = picaFactory();
 
@@ -479,8 +480,9 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
 
     const source = files[0];
     const bitmap = await toBitmap(source);
-    const tileW = Math.floor(bitmap.width / cols);
-    const tileH = Math.floor(bitmap.height / rows);
+    // Distribute the remainder so every source pixel lands in exactly one tile.
+    const colTiles = tileBoundaries(bitmap.width, cols);
+    const rowTiles = tileBoundaries(bitmap.height, rows);
 
     let done = 0;
     for (let r = 0; r < rows; r += 1) {
@@ -489,25 +491,22 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
           percent: (done / (rows * cols)) * 100,
           stage: '이미지 분할 중',
         });
+        done += 1;
+
+        const { start: sx, size: tileW } = colTiles[cIdx];
+        const { start: sy, size: tileH } = rowTiles[r];
+        if (tileW <= 0 || tileH <= 0) {
+          continue; // more splits than pixels along this axis
+        }
+
         const c = canvas(tileW, tileH);
-        c.getContext('2d')!.drawImage(
-          bitmap,
-          cIdx * tileW,
-          r * tileH,
-          tileW,
-          tileH,
-          0,
-          0,
-          tileW,
-          tileH,
-        );
+        c.getContext('2d')!.drawImage(bitmap, sx, sy, tileW, tileH, 0, 0, tileW, tileH);
 
         out.push({
           name: `${baseName(source.name)}-r${r + 1}-c${cIdx + 1}.png`,
           blob: await canvasBlob(c, 'image/png', 1),
           mimeType: 'image/png',
         });
-        done += 1;
       }
     }
 
