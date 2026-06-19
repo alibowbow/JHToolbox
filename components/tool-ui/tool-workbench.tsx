@@ -38,6 +38,7 @@ import { categoryIcons, categoryStyles } from '@/lib/tool-presentation';
 import { pushRecentTool } from '@/lib/recent-tools';
 import { cx, downloadBlob, safeFileName } from '@/lib/utils';
 import { dedupeFileName } from '@/lib/filename-safety';
+import { normalizeToolOptions } from '@/lib/option-schema';
 import { ProcessedFile } from '@/types/processor';
 import { ToolDefinition, ToolOption } from '@/types/tool';
 
@@ -303,31 +304,22 @@ function getInitialOptions(
   searchParams: SearchParamSource,
   restoredOptions?: Record<string, string | number | boolean> | null,
 ): Record<string, string | number | boolean> {
-  const defaults = getDefaults(tool);
+  const raw: Record<string, unknown> = { ...getDefaults(tool) };
   if (restoredOptions) {
-    Object.assign(defaults, restoredOptions);
+    Object.assign(raw, restoredOptions);
   }
 
   for (const option of tool.options ?? []) {
     const paramValue = searchParams.get(option.key);
-    if (paramValue === null) {
-      continue;
+    if (paramValue !== null) {
+      raw[option.key] = paramValue;
     }
-
-    if (option.type === 'number' || option.type === 'range') {
-      defaults[option.key] = Number(paramValue);
-      continue;
-    }
-
-    if (option.type === 'checkbox') {
-      defaults[option.key] = paramValue === 'true';
-      continue;
-    }
-
-    defaults[option.key] = paramValue;
   }
 
-  return defaults;
+  // Coerce/validate every value (defaults, restored preset, URL params) against
+  // the option schema so out-of-range numbers, NaN, bad select choices, and
+  // string booleans can never reach the UI or a processor.
+  return normalizeToolOptions(tool.options ?? [], raw);
 }
 
 function hasSearchParamOverrides(tool: ToolDefinition, searchParams: SearchParamSource) {

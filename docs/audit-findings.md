@@ -21,7 +21,7 @@ verified in the current build environment**.
 | `npm run typecheck` | ✅ pass | |
 | `npm run lint` | ✅ pass (3 pre-existing warnings) | `react-hooks/exhaustive-deps`, two `@next/next/no-img-element` |
 | `npm run build` | ✅ pass | 127 static pages generated |
-| `npm run test:unit` (new) | ✅ pass | 42 url-safety + 28 zip-safety + 18 spreadsheet-safety + 22 filename-safety + 422 registry-invariant assertions |
+| `npm run test:unit` (new) | ✅ pass | 42 url-safety + 28 zip-safety + 18 spreadsheet-safety + 22 filename-safety + 25 option-schema + 422 registry-invariant assertions |
 | `npm run test:e2e` | ⛔ **cannot run here** | See AF-000 |
 | `npm ci` | ⛔ **not run** | Egress is blocked; `npm ci` deletes `node_modules` then reinstalls from the registry, which would destroy the working install. Ran the non-destructive gates against the existing install instead. |
 
@@ -98,6 +98,15 @@ verified in the current build environment**.
 - **Regression test:** `scripts/checks/filename-safety.check.mjs` — **22 cases** (Korean/accented preserved; unsafe chars removed; reserved names; length cap; dedupe).
 - **Status:** ✅ fixed & verified (22/22).
 
+### AF-021 — Option persistence accepted invalid values
+- **Severity:** P1 (correctness)
+- **Tools/files:** `components/tool-ui/tool-workbench.tsx` (`getInitialOptions`), `lib/tool-option-memory.ts`; **new** `lib/option-schema.ts`
+- **Reproduce:** Open a tool with `?width=abc`/`?width=999999`; or have a stored preset with a checkbox value of the string `"false"`.
+- **Observed:** URL params used `Number(paramValue)` with no finite/range check; restored presets were `Object.assign`-ed with no validation; and `sanitizeValues` used `Boolean(rawValue)` so a stored `"false"` became `true`. `writeStore` had no try/catch (a quota error could surface as a run failure).
+- **Implemented:** New `normalizeOptionValue`/`normalizeToolOptions` (finite + clamp + step for numbers; explicit `"true"`/`"false"` for checkboxes; select must be a real choice; non-primitive editor keys preserved). `getInitialOptions` now normalizes defaults + preset + URL through it; `tool-option-memory` validates with the same function and wraps `localStorage.setItem` in try/catch.
+- **Regression test:** `scripts/checks/option-schema.check.mjs` — **25 cases** (incl. `"false"` → `false`, NaN/Infinity/out-of-range → default, invalid select → default).
+- **Status:** ✅ fixed & verified (25/25).
+
 ---
 
 ## Deferred backlog (registered, not yet implemented)
@@ -120,7 +129,6 @@ faked as done. Ordered by severity.
 | AF-018 | P1 | Cancellation/cleanup — `types/processor.ts`, `components/tool-ui/tool-workbench.tsx`, all processors | No `AbortSignal`; long jobs cannot be cancelled; object URLs / bitmaps / workers / AudioContext / FFmpeg FS not always released. | Add `signal` to `ProcessContext`, a Cancel button, and resource cleanup in `finally`. (Capability matrix marks all tools `cancellable: no` until then.) |
 | AF-019 | P1 | Structured errors/progress + i18n of processor strings | Raw `Error.message` and English stage strings reach the UI. | Add `AppError` shape + translated keys; expand structured progress phases. |
 | AF-020 | P1 | File validation parity — `components/ui/DropZone.tsx`, processors | `<input accept>` doesn’t constrain drag/drop/paste; no magic-byte/size/count/0-byte/dedup validation shared by UI + processor. | Shared validator on every intake path + per-file rejection reasons. |
-| AF-021 | P1 | Option persistence hardening — workbench/localStorage | `Boolean("false")===true`, NaN/Infinity, out-of-range, stale schema, quota errors can corrupt options or break the UI. | Schema-based parse/validate/normalize + versioned storage + try/catch. |
 | AF-022b | P2 | Download residuals | Core filename safety shipped (AF-022). Still open: object-URL lifecycle on result replace/unmount, and “Download all” memory/streaming-ZIP size guards. | Names are now safe; residuals are memory hygiene. |
 | AF-023 | P1 | Image pipeline — `lib/processors/image.ts` | EXIF orientation, alpha→JPEG background, pixel/memory guards, `ImageBitmap.close()`, unbounded `Promise.all`, split remainder rounding, GIF/TIFF/SVG handling. | Shared decode/encode layer + per-tool fixes + fixtures (orientation 1–8, alpha, split remainder, animated GIF, multi-page TIFF, malicious SVG, huge dims). |
 | AF-024 | P1 | HWPX — `lib/processors/hwpx.ts` | XML/zip-bomb limits, namespace handling, multi-section, Korean-font embedding for PDF (not Helvetica), HTML sanitizer reuse, fidelity reporting. | Add limits + fidelity/loss disclosure + self-hosted licensed Korean font. |
@@ -138,7 +146,7 @@ faked as done. Ordered by severity.
 ```
 npm run typecheck   # ✅
 npm run lint        # ✅ (3 pre-existing warnings)
-npm run test:unit   # ✅ url-safety 42, zip 28, spreadsheet 18, filename 22, invariants 422
+npm run test:unit   # ✅ url-safety 42, zip 28, spreadsheet 18, filename 22, option-schema 25, invariants 422
 npm run build       # ✅ 127 pages
 npm run test:e2e    # ⛔ blocked (AF-000: Playwright browser 1208 absent)
 ```

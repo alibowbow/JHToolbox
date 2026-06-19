@@ -15,8 +15,9 @@
     "check:zip-safety": "node --experimental-strip-types scripts/checks/zip-safety.check.mjs",
     "check:spreadsheet-safety": "node --experimental-strip-types scripts/checks/spreadsheet-safety.check.mjs",
     "check:filename-safety": "node --experimental-strip-types scripts/checks/filename-safety.check.mjs",
+    "check:option-schema": "node --experimental-strip-types scripts/checks/option-schema.check.mjs",
     "check:invariants": "node --experimental-strip-types scripts/checks/registry-invariants.check.mjs",
-    "test:unit": "npm run check:url-safety && npm run check:zip-safety && npm run check:spreadsheet-safety && npm run check:filename-safety && npm run check:invariants",
+    "test:unit": "npm run check:url-safety && npm run check:zip-safety && npm run check:spreadsheet-safety && npm run check:filename-safety && npm run check:option-schema && npm run check:invariants",
     "test:e2e": "playwright test",
     "verify": "npm run typecheck && npm run lint && npm run test:unit && npm run build"
   },
