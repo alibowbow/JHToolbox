@@ -37,6 +37,7 @@ import { runTool } from '@/lib/processors';
 import { categoryIcons, categoryStyles } from '@/lib/tool-presentation';
 import { pushRecentTool } from '@/lib/recent-tools';
 import { cx, downloadBlob, safeFileName } from '@/lib/utils';
+import { dedupeFileName } from '@/lib/filename-safety';
 import { ProcessedFile } from '@/types/processor';
 import { ToolDefinition, ToolOption } from '@/types/tool';
 
@@ -813,8 +814,9 @@ function StandardToolWorkbench({
     }
 
     const zip = new JSZip();
+    const seenNames = new Set<string>();
     results.forEach((result) => {
-      zip.file(safeFileName(result.name), result.blob);
+      zip.file(dedupeFileName(safeFileName(result.name), seenNames), result.blob);
     });
 
     const blob = await zip.generateAsync({ type: 'blob' });

@@ -21,7 +21,7 @@ verified in the current build environment**.
 | `npm run typecheck` | ✅ pass | |
 | `npm run lint` | ✅ pass (3 pre-existing warnings) | `react-hooks/exhaustive-deps`, two `@next/next/no-img-element` |
 | `npm run build` | ✅ pass | 127 static pages generated |
-| `npm run test:unit` (new) | ✅ pass | 42 url-safety + 28 zip-safety + 18 spreadsheet-safety + 422 registry-invariant assertions |
+| `npm run test:unit` (new) | ✅ pass | 42 url-safety + 28 zip-safety + 18 spreadsheet-safety + 22 filename-safety + 422 registry-invariant assertions |
 | `npm run test:e2e` | ⛔ **cannot run here** | See AF-000 |
 | `npm ci` | ⛔ **not run** | Egress is blocked; `npm ci` deletes `node_modules` then reinstalls from the registry, which would destroy the working install. Ran the non-destructive gates against the existing install instead. |
 
@@ -89,6 +89,15 @@ verified in the current build environment**.
 - **Regression test:** `scripts/checks/spreadsheet-safety.check.mjs` — **18 cases** (formulas/DDE/control escaped; numbers/dates/text preserved; object & array row shapes).
 - **Status:** ✅ fixed & verified (18/18).
 
+### AF-022 — Download filenames corrupted Korean/Unicode names
+- **Severity:** P1 (data/UX; ASCII-only munging)
+- **Tools/files:** `lib/utils.ts` (`safeFileName`, `downloadBlob`); **new** `lib/filename-safety.ts`; `components/tool-ui/tool-workbench.tsx` (“Download all” ZIP)
+- **Reproduce:** Produce a result named e.g. `보고서.pdf` and use “Download all”.
+- **Observed:** `safeFileName` was `name.replace(/[^a-zA-Z0-9._-]/g, '_')`, so `보고서.pdf` became `______.pdf` inside the ZIP. `downloadBlob` also didn’t attach the anchor to the DOM.
+- **Implemented:** New Unicode-preserving `safeFileName` (NFC; strips path separators, control chars, Windows-illegal chars, reserved device names, trailing dots/spaces; length cap; fallback) and `dedupeFileName`. `downloadBlob` now sanitizes centrally and appends/removes the anchor. ZIP entries are de-duplicated.
+- **Regression test:** `scripts/checks/filename-safety.check.mjs` — **22 cases** (Korean/accented preserved; unsafe chars removed; reserved names; length cap; dedupe).
+- **Status:** ✅ fixed & verified (22/22).
+
 ---
 
 ## Deferred backlog (registered, not yet implemented)
@@ -112,7 +121,7 @@ faked as done. Ordered by severity.
 | AF-019 | P1 | Structured errors/progress + i18n of processor strings | Raw `Error.message` and English stage strings reach the UI. | Add `AppError` shape + translated keys; expand structured progress phases. |
 | AF-020 | P1 | File validation parity — `components/ui/DropZone.tsx`, processors | `<input accept>` doesn’t constrain drag/drop/paste; no magic-byte/size/count/0-byte/dedup validation shared by UI + processor. | Shared validator on every intake path + per-file rejection reasons. |
 | AF-021 | P1 | Option persistence hardening — workbench/localStorage | `Boolean("false")===true`, NaN/Infinity, out-of-range, stale schema, quota errors can corrupt options or break the UI. | Schema-based parse/validate/normalize + versioned storage + try/catch. |
-| AF-022 | P1 | Download/filename safety | ASCII-only filename munging can corrupt Korean/Unicode names; object-URL lifecycle and “Download all” memory guards needed; ZIP inner paths need the same validator. | NFC-preserving sanitizer + URL lifecycle + streaming/size-guarded ZIP. |
+| AF-022b | P2 | Download residuals | Core filename safety shipped (AF-022). Still open: object-URL lifecycle on result replace/unmount, and “Download all” memory/streaming-ZIP size guards. | Names are now safe; residuals are memory hygiene. |
 | AF-023 | P1 | Image pipeline — `lib/processors/image.ts` | EXIF orientation, alpha→JPEG background, pixel/memory guards, `ImageBitmap.close()`, unbounded `Promise.all`, split remainder rounding, GIF/TIFF/SVG handling. | Shared decode/encode layer + per-tool fixes + fixtures (orientation 1–8, alpha, split remainder, animated GIF, multi-page TIFF, malicious SVG, huge dims). |
 | AF-024 | P1 | HWPX — `lib/processors/hwpx.ts` | XML/zip-bomb limits, namespace handling, multi-section, Korean-font embedding for PDF (not Helvetica), HTML sanitizer reuse, fidelity reporting. | Add limits + fidelity/loss disclosure + self-hosted licensed Korean font. |
 | AF-025 | P1 | Capture — `components/tool-ui/browser-capture-workbench.tsx` | `isTypeSupported` MIME/extension match, permission/secure-context/no-device states, “Screen+Audio” must not silently fall back to silent video, full track cleanup. | State machine for all failure modes + real-track reporting. |
@@ -129,7 +138,7 @@ faked as done. Ordered by severity.
 ```
 npm run typecheck   # ✅
 npm run lint        # ✅ (3 pre-existing warnings)
-npm run test:unit   # ✅ url-safety 42/42, zip-safety 28/28, spreadsheet-safety 18/18, registry-invariants 422/422
+npm run test:unit   # ✅ url-safety 42, zip 28, spreadsheet 18, filename 22, invariants 422
 npm run build       # ✅ 127 pages
 npm run test:e2e    # ⛔ blocked (AF-000: Playwright browser 1208 absent)
 ```

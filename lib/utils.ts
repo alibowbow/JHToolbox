@@ -1,9 +1,9 @@
+import { safeFileName } from '@/lib/filename-safety';
+
+export { safeFileName };
+
 export function cx(...tokens: Array<string | false | null | undefined>): string {
   return tokens.filter(Boolean).join(' ');
-}
-
-export function safeFileName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
 export function extOf(name: string): string {
@@ -20,9 +20,14 @@ export function downloadBlob(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = fileName;
+  anchor.download = safeFileName(fileName);
+  anchor.rel = 'noopener';
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
   anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 500);
+  anchor.remove();
+  // Revoke after a tick so the download has started (the blob is copied on click).
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export async function readAsArrayBuffer(file: Blob): Promise<ArrayBuffer> {
