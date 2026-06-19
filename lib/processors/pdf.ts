@@ -6,6 +6,7 @@ import { getPdfJs } from '@/lib/processors/pdfjs-client';
 import { ProcessContext, ProcessedFile } from '@/types/processor';
 import { baseName, parseBoolean, parseNumber } from '@/lib/utils';
 import { sanitizeRowsForSpreadsheet } from '@/lib/spreadsheet-safety';
+import { sanitizeHtml } from '@/lib/html-sanitize';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -810,11 +811,14 @@ export async function renderHtmlStringToPdfBlob(html: string, width: number) {
   iframe.style.width = `${width}px`;
   iframe.style.height = '1200px';
   iframe.style.border = '0';
-  iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts');
+  // Scripts are intentionally NOT allowed. html2canvas only needs to read the
+  // rendered DOM (which requires same-origin), so dropping allow-scripts closes
+  // the XSS vector while keeping rasterization working.
+  iframe.setAttribute('sandbox', 'allow-same-origin');
   document.body.appendChild(iframe);
 
   try {
-    iframe.srcdoc = html;
+    iframe.srcdoc = sanitizeHtml(html);
     await waitForFrameLoad(iframe);
     await new Promise((resolve) => window.setTimeout(resolve, 250));
 

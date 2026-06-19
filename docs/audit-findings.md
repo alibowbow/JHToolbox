@@ -21,7 +21,7 @@ verified in the current build environment**.
 | `npm run typecheck` | ✅ pass | |
 | `npm run lint` | ✅ pass (3 pre-existing warnings) | `react-hooks/exhaustive-deps`, two `@next/next/no-img-element` |
 | `npm run build` | ✅ pass | 127 static pages generated |
-| `npm run test:unit` (new) | ✅ pass | 42 url-safety + 28 zip-safety + 18 spreadsheet-safety + 22 filename-safety + 25 option-schema + 422 registry-invariant assertions |
+| `npm run test:unit` (new) | ✅ pass | 42 url-safety + 28 zip-safety + 18 spreadsheet-safety + 22 filename-safety + 25 option-schema + 27 html-sanitize + 422 registry-invariant assertions |
 | `npm run test:e2e` | ⛔ **cannot run here** | See AF-000 |
 | `npm ci` | ⛔ **not run** | Egress is blocked; `npm ci` deletes `node_modules` then reinstalls from the registry, which would destroy the working install. Ran the non-destructive gates against the existing install instead. |
 
@@ -107,6 +107,15 @@ verified in the current build environment**.
 - **Regression test:** `scripts/checks/option-schema.check.mjs` — **25 cases** (incl. `"false"` → `false`, NaN/Infinity/out-of-range → default, invalid select → default).
 - **Status:** ✅ fixed & verified (25/25).
 
+### AF-012 — html-to-pdf rendered untrusted HTML with scripts enabled (XSS)
+- **Severity:** P0 (security)
+- **Tools/files:** `html-to-pdf` and HWPX→PDF (`lib/processors/pdf.ts` `renderHtmlStringToPdfBlob`); **new** `lib/html-sanitize.ts`
+- **Reproduce:** Convert an HTML file containing `<script>…</script>`, `<img onerror=…>`, `<iframe>`, or `<a href="javascript:…">`.
+- **Observed:** The iframe used `sandbox="allow-same-origin allow-scripts"` (the exact unsafe combination) and injected the **raw** HTML via `srcdoc`. Because a `srcdoc` iframe is same-origin, scripts in user HTML executed with access to the parent’s cookies/localStorage/DOM.
+- **Implemented:** (1) Dropped `allow-scripts` from the sandbox — html2canvas only needs same-origin DOM read access, so no script executes regardless of input (primary fix). (2) Added `sanitizeHtml` (string scrub everywhere + a DOMParser structural pass in the browser) that removes `<script>`/`<iframe>`/`<object>`/`<embed>`/`<base>`/`<meta>`/`<link>`/frames, strips `on*` handlers, and neutralizes `javascript:`/`vbscript:`/`data:text/html` URLs. Applied to both the html-to-pdf and HWPX→PDF paths.
+- **Regression test:** `scripts/checks/html-sanitize.check.mjs` — **27 cases** (string scrub + policy predicates; the DOM pass is browser-only).
+- **Status:** ✅ fixed & verified (27/27). Script execution is closed by the sandbox change; the scrub is defense-in-depth.
+
 ---
 
 ## Deferred backlog (registered, not yet implemented)
@@ -120,7 +129,7 @@ faked as done. Ordered by severity.
 | --- | --- | --- | --- | --- |
 | AF-010 | P0 | Privacy copy — `app/page.tsx`, `README`, `lib/i18n.ts` | Home/README claim “100% local / no upload” app-wide, but `url-image`/`url-pdf`/`detect-cms` send the URL to external providers. | Boundaries documented in `docs/privacy-network-boundaries.md`; SSRF validation (AF-002) added. **Next:** per-tool Local/Network badge + pre-run network-consent dialog; correct global copy. |
 | AF-011 | P0 | Secure redaction — PDF redaction tool, `lib/processors/pdf.ts` | If redaction only draws rectangles, original text/images remain extractable. | Verify current behavior; if not destructive, rename to reflect reality and add rasterized true-redaction + byte/extraction regression fixture before calling it “Secure”. |
-| AF-012 | P0 | HTML/SVG sanitization — `html-to-pdf`, SVG image tools, `hwpx.ts` | User/generated HTML & SVG rendered without a strict sanitizer (script/iframe/`javascript:`/external refs/`foreignObject`). | Add a single sanitizer used by every HTML/SVG render path + malicious fixtures (no script exec, no parent-DOM/localStorage access, no external requests). |
+| AF-012b | P1 | HTML/SVG residuals — `lib/html-sanitize.ts`, `svg-png` | Script execution is closed (AF-012). Still open: block external sub-resource loads (img/css `url()`/font) by default with an explicit opt-in; apply the sanitizer to SVG rasterization (`svg-png`) and review `foreignObject`; add a browser e2e proving no parent-DOM/localStorage access and no external request. | Scripts cannot run; external `<iframe>`/`<object>`/handlers/`javascript:` are stripped. Residual is external-resource egress + SVG path. |
 | AF-013b | P2 | ZIP residuals — `lib/processors/data.ts` | Core Zip-Slip + bomb guards shipped (AF-013). Still open: nested-archive depth limit, explicit encrypted-archive error, symlink-entry handling, and per-entry UI rejection reasons (needs richer return type, AF-020). | Whole-archive errors already block traversal/bombs; residuals are hardening. |
 | AF-014b | P3 | Formula-injection opt-out UI | Escaping is always-on by default (AF-014). The prompt’s optional “preserve raw values (with warning)” toggle is not yet exposed. | Safe default is escape; opt-out is a convenience addition. |
 | AF-015 | P0 | OCR — `lib/processors/ocr.ts` | “OCR PDF to Text” must actually OCR scanned pages (Auto/embedded/OCR-only), reuse a Tesseract worker, terminate on cancel, support ko+en. | Verify current behavior; implement modes + worker lifecycle + fixtures (scanned ko/en, mixed, rotated, encrypted). |
@@ -146,7 +155,7 @@ faked as done. Ordered by severity.
 ```
 npm run typecheck   # ✅
 npm run lint        # ✅ (3 pre-existing warnings)
-npm run test:unit   # ✅ url-safety 42, zip 28, spreadsheet 18, filename 22, option-schema 25, invariants 422
+npm run test:unit   # ✅ url 42, zip 28, sheet 18, filename 22, option 25, html 27, invariants 422
 npm run build       # ✅ 127 pages
 npm run test:e2e    # ⛔ blocked (AF-000: Playwright browser 1208 absent)
 ```
