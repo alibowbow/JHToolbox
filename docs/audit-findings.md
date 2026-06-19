@@ -21,7 +21,7 @@ verified in the current build environment**.
 | `npm run typecheck` | ✅ pass | |
 | `npm run lint` | ✅ pass (3 pre-existing warnings) | `react-hooks/exhaustive-deps`, two `@next/next/no-img-element` |
 | `npm run build` | ✅ pass | 127 static pages generated |
-| `npm run test:unit` (new) | ✅ pass | 42 url-safety + 28 zip-safety + 18 spreadsheet-safety + 22 filename-safety + 25 option-schema + 27 html-sanitize + 16 pdf-page-math + 422 registry-invariant assertions |
+| `npm run test:unit` (new) | ✅ pass | 42 url-safety + 28 zip-safety + 18 spreadsheet-safety + 22 filename-safety + 25 option-schema + 27 html-sanitize + 16 pdf-page-math + 12 tile-math + 422 registry-invariant assertions |
 | `npm run test:e2e` | ⛔ **cannot run here** | See AF-000 |
 | `npm ci` | ⛔ **not run** | Egress is blocked; `npm ci` deletes `node_modules` then reinstalls from the registry, which would destroy the working install. Ran the non-destructive gates against the existing install instead. |
 
@@ -125,6 +125,15 @@ verified in the current build environment**.
 - **Regression test:** `scripts/checks/pdf-page-math.check.mjs` — **16 cases** (rotation accumulation/wrap/NaN; dedupe/range/delete-all).
 - **Status:** ✅ fixed & verified (16/16).
 
+### AF-032 — image-split dropped remainder pixels
+- **Severity:** P2 (correctness/data loss)
+- **Tools/files:** `image-split` (`lib/processors/image.ts`); **new** `lib/tile-math.ts`
+- **Reproduce:** Split a 100px-wide image into 3 columns.
+- **Observed:** `tileW = floor(width / cols)` (e.g. 33) × 3 covered only 99px — the right/bottom remainder column/row was silently dropped.
+- **Implemented:** `tileBoundaries(total, count)` distributes the remainder via `floor(i·total/count)` boundaries so every source pixel lands in exactly one tile; degenerate (more splits than pixels) tiles are skipped.
+- **Regression test:** `scripts/checks/tile-math.check.mjs` — **12 cases** (exact-coverage invariant across sizes + explicit shapes + guards).
+- **Status:** ✅ fixed & verified (12/12). (Remaining image-pipeline items — EXIF orientation, alpha→JPEG background, etc. — stay tracked under AF-023.)
+
 ---
 
 ## Deferred backlog (registered, not yet implemented)
@@ -164,7 +173,7 @@ faked as done. Ordered by severity.
 ```
 npm run typecheck   # ✅
 npm run lint        # ✅ (3 pre-existing warnings)
-npm run test:unit   # ✅ url 42, zip 28, sheet 18, filename 22, option 25, html 27, pdf-page 16, invariants 422
+npm run test:unit   # ✅ url 42, zip 28, sheet 18, filename 22, option 25, html 27, pdf-page 16, tile 12, invariants 422
 npm run build       # ✅ 127 pages
 npm run test:e2e    # ⛔ blocked (AF-000: Playwright browser 1208 absent)
 ```
