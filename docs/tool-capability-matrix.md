@@ -53,9 +53,9 @@ Generated from `lib/tool-registry.ts` by `scripts/gen-capability-matrix.mjs`. Do
 | image-split | Image Split | image | image/* | file | local | Canvas / browser-image-compression | no (tracked: P1 cancellation) | none | none |
 | image-combine | Combine Images | image | image/* | file | local | Canvas / browser-image-compression | no (tracked: P1 cancellation) | none | none |
 | image-collage | Collage Maker | image | image/* | file | local | Canvas / browser-image-compression | no (tracked: P1 cancellation) | none | none |
-| image-background-transparent | Background Remove | image | image/* | file | local | Canvas / browser-image-compression | no (tracked: P1 cancellation) | none | none |
+| image-background-transparent | Remove Solid-Color Background | image | image/* | file | local | Canvas / browser-image-compression | no (tracked: P1 cancellation) | none | none |
 | image-blur-background | Blur Image | image | image/* | file | local | Canvas / browser-image-compression | no (tracked: P1 cancellation) | none | none |
-| image-upscale | Image Upscale | image | image/* | file | local | Canvas / browser-image-compression | no (tracked: P1 cancellation) | none | none |
+| image-upscale | High-quality Enlarge | image | image/* | file | local | Canvas / browser-image-compression | no (tracked: P1 cancellation) | none | none |
 | image-watermark | Image Watermark | image | image/* | file | local | Canvas / browser-image-compression | no (tracked: P1 cancellation) | none | none |
 | image-color-palette-extract | Image Color Palette Extract | image | image/* | file | local | Canvas / browser-image-compression | no (tracked: P1 cancellation) | none | none |
 | image-auto-enhance | Image Auto Enhance | image | image/* | file | local | Canvas / browser-image-compression | no (tracked: P1 cancellation) | none | none |
