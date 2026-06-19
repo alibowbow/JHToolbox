@@ -19,8 +19,9 @@
     "check:html-sanitize": "node --experimental-strip-types scripts/checks/html-sanitize.check.mjs",
     "check:pdf-page-math": "node --experimental-strip-types scripts/checks/pdf-page-math.check.mjs",
     "check:tile-math": "node --experimental-strip-types scripts/checks/tile-math.check.mjs",
+    "check:media-dimensions": "node --experimental-strip-types scripts/checks/media-dimensions.check.mjs",
     "check:invariants": "node --experimental-strip-types scripts/checks/registry-invariants.check.mjs",
-    "test:unit": "npm run check:url-safety && npm run check:zip-safety && npm run check:spreadsheet-safety && npm run check:filename-safety && npm run check:option-schema && npm run check:html-sanitize && npm run check:pdf-page-math && npm run check:tile-math && npm run check:invariants",
+    "test:unit": "npm run check:url-safety && npm run check:zip-safety && npm run check:spreadsheet-safety && npm run check:filename-safety && npm run check:option-schema && npm run check:html-sanitize && npm run check:pdf-page-math && npm run check:tile-math && npm run check:media-dimensions && npm run check:invariants",
     "test:e2e": "playwright test",
     "verify": "npm run typecheck && npm run lint && npm run test:unit && npm run build"
   },

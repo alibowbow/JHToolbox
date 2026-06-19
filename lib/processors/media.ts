@@ -1,5 +1,6 @@
 import { getFfmpeg } from '@/lib/processors/ffmpeg-client';
 import { baseName, extOf, parseNumber } from '@/lib/utils';
+import { toEvenDimension, toEvenOffset } from '@/lib/media-dimensions';
 import { ProcessContext, ProcessedFile } from '@/types/processor';
 
 type MediaPreset = {
@@ -955,10 +956,11 @@ const presets: Record<string, MediaPreset> = {
     outputName: 'output.mp4',
     mimeType: 'video/mp4',
     args: (input, _file, output, options) => {
-      const x = Math.max(0, Math.round(parseNumber(options.x, 0)));
-      const y = Math.max(0, Math.round(parseNumber(options.y, 0)));
-      const width = Math.max(16, Math.round(parseNumber(options.width, 1280)));
-      const height = Math.max(16, Math.round(parseNumber(options.height, 720)));
+      // yuv420p/libx264 require even dimensions and even crop offsets.
+      const x = toEvenOffset(parseNumber(options.x, 0));
+      const y = toEvenOffset(parseNumber(options.y, 0));
+      const width = toEvenDimension(Math.max(16, Math.round(parseNumber(options.width, 1280))));
+      const height = toEvenDimension(Math.max(16, Math.round(parseNumber(options.height, 720))));
       return [...buildVideoInputArgs(input, options), '-vf', `crop=${width}:${height}:${x}:${y}`, '-c:v', 'libx264', '-c:a', 'aac', output];
     },
   },
@@ -966,8 +968,9 @@ const presets: Record<string, MediaPreset> = {
     outputName: 'output.mp4',
     mimeType: 'video/mp4',
     args: (input, _file, output, options) => {
-      const width = Math.max(120, Math.round(parseNumber(options.width, 1280)));
-      const height = Math.max(120, Math.round(parseNumber(options.height, 720)));
+      // yuv420p/libx264 require even dimensions.
+      const width = toEvenDimension(Math.max(120, Math.round(parseNumber(options.width, 1280))));
+      const height = toEvenDimension(Math.max(120, Math.round(parseNumber(options.height, 720))));
       return [...buildVideoInputArgs(input, options), '-vf', `scale=${width}:${height}:flags=lanczos`, '-c:v', 'libx264', '-c:a', 'aac', output];
     },
   },
