@@ -21,7 +21,7 @@ verified in the current build environment**.
 | `npm run typecheck` | ✅ pass | |
 | `npm run lint` | ✅ pass (3 pre-existing warnings) | `react-hooks/exhaustive-deps`, two `@next/next/no-img-element` |
 | `npm run build` | ✅ pass | 127 static pages generated |
-| `npm run test:unit` (new) | ✅ pass | 42 url-safety + 28 zip-safety + 18 spreadsheet-safety + 22 filename-safety + 25 option-schema + 27 html-sanitize + 422 registry-invariant assertions |
+| `npm run test:unit` (new) | ✅ pass | 42 url-safety + 28 zip-safety + 18 spreadsheet-safety + 22 filename-safety + 25 option-schema + 27 html-sanitize + 16 pdf-page-math + 422 registry-invariant assertions |
 | `npm run test:e2e` | ⛔ **cannot run here** | See AF-000 |
 | `npm ci` | ⛔ **not run** | Egress is blocked; `npm ci` deletes `node_modules` then reinstalls from the registry, which would destroy the working install. Ran the non-destructive gates against the existing install instead. |
 
@@ -116,6 +116,15 @@ verified in the current build environment**.
 - **Regression test:** `scripts/checks/html-sanitize.check.mjs` — **27 cases** (string scrub + policy predicates; the DOM pass is browser-only).
 - **Status:** ✅ fixed & verified (27/27). Script execution is closed by the sandbox change; the scrub is defense-in-depth.
 
+### AF-031 — PDF rotate replaced rotation; delete-page could empty the doc
+- **Severity:** P1 (correctness/data loss)
+- **Tools/files:** `pdf-rotate`, `pdf-delete-page` (`lib/processors/pdf.ts`); **new** `lib/pdf-page-math.ts`
+- **Reproduce:** Rotate a page that already has a rotation (expect additive); delete a page list that covers every page, or that lists the same page twice.
+- **Observed:** `pdf-rotate` called `setRotation(degrees(rotation))` — absolute, ignoring the existing rotation, and would throw for non-multiples of 90. `pdf-delete-page` filtered/sorted indices but had **no dedupe** (removing the same index twice removes the wrong page) and **no guard against deleting every page** (producing an empty PDF).
+- **Implemented:** `normalizePdfRotation(existing, delta)` adds to the current angle and snaps to a multiple of 90 in [0,360); `resolveDeletablePages` dedupes, range-checks, sorts descending, and flags a delete-all request (now refused with a clear error).
+- **Regression test:** `scripts/checks/pdf-page-math.check.mjs` — **16 cases** (rotation accumulation/wrap/NaN; dedupe/range/delete-all).
+- **Status:** ✅ fixed & verified (16/16).
+
 ---
 
 ## Deferred backlog (registered, not yet implemented)
@@ -155,7 +164,7 @@ faked as done. Ordered by severity.
 ```
 npm run typecheck   # ✅
 npm run lint        # ✅ (3 pre-existing warnings)
-npm run test:unit   # ✅ url 42, zip 28, sheet 18, filename 22, option 25, html 27, invariants 422
+npm run test:unit   # ✅ url 42, zip 28, sheet 18, filename 22, option 25, html 27, pdf-page 16, invariants 422
 npm run build       # ✅ 127 pages
 npm run test:e2e    # ⛔ blocked (AF-000: Playwright browser 1208 absent)
 ```

@@ -7,6 +7,7 @@ import { ProcessContext, ProcessedFile } from '@/types/processor';
 import { baseName, parseBoolean, parseNumber } from '@/lib/utils';
 import { sanitizeRowsForSpreadsheet } from '@/lib/spreadsheet-safety';
 import { sanitizeHtml } from '@/lib/html-sanitize';
+import { normalizePdfRotation, resolveDeletablePages } from '@/lib/pdf-page-math';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -1339,7 +1340,9 @@ export async function processPdfTool(ctx: ProcessContext): Promise<ProcessedFile
     const documentHandle = await PDFDocument.load(await source.arrayBuffer());
 
     documentHandle.getPages().forEach((page) => {
-      page.setRotation(pdfDegrees(rotation));
+      // Add to the page's existing rotation (don't replace it) and keep the
+      // result a multiple of 90 in [0, 360).
+      page.setRotation(pdfDegrees(normalizePdfRotation(page.getRotation().angle, rotation)));
     });
 
     const bytes = await documentHandle.save({ useObjectStreams: true });
@@ -1357,10 +1360,11 @@ export async function processPdfTool(ctx: ProcessContext): Promise<ProcessedFile
     const pagesToDelete = parseList(String(options.pages ?? '')).map((value) => value - 1);
     const documentHandle = await PDFDocument.load(await source.arrayBuffer());
 
-    pagesToDelete
-      .filter((value) => value >= 0 && value < documentHandle.getPageCount())
-      .sort((left, right) => right - left)
-      .forEach((value) => documentHandle.removePage(value));
+    const { indices, deletesAll } = resolveDeletablePages(pagesToDelete, documentHandle.getPageCount());
+    if (deletesAll) {
+      throw new Error('At least one page must remain — you cannot delete every page.');
+    }
+    indices.forEach((value) => documentHandle.removePage(value));
 
     const bytes = await documentHandle.save({ useObjectStreams: true });
     return [
