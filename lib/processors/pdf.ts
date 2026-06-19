@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import { getPdfJs } from '@/lib/processors/pdfjs-client';
 import { ProcessContext, ProcessedFile } from '@/types/processor';
 import { baseName, parseBoolean, parseNumber } from '@/lib/utils';
+import { sanitizeRowsForSpreadsheet } from '@/lib/spreadsheet-safety';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -706,8 +707,10 @@ function createWorkbookFromPdfPages(pages: PdfTextPage[]) {
   const workbook = XLSX.utils.book_new();
 
   pages.forEach((page, index) => {
-    const rows = page.lines.length > 0 ? page.lines.map((line) => splitLineToCells(line)) : [[page.text]];
-    const sheet = XLSX.utils.aoa_to_sheet(rows.length > 0 ? rows : [['']]);
+    const rawRows = page.lines.length > 0 ? page.lines.map((line) => splitLineToCells(line)) : [[page.text]];
+    // Neutralize CSV/spreadsheet formula injection from extracted PDF text.
+    const rows = sanitizeRowsForSpreadsheet(rawRows.length > 0 ? rawRows : [['']]);
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
     XLSX.utils.book_append_sheet(workbook, sheet, sanitizeSheetName(`Page ${page.pageNumber}`, index));
   });
 

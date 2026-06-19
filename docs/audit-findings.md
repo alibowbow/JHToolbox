@@ -21,7 +21,7 @@ verified in the current build environment**.
 | `npm run typecheck` | ✅ pass | |
 | `npm run lint` | ✅ pass (3 pre-existing warnings) | `react-hooks/exhaustive-deps`, two `@next/next/no-img-element` |
 | `npm run build` | ✅ pass | 127 static pages generated |
-| `npm run test:unit` (new) | ✅ pass | 42 url-safety + 422 registry-invariant assertions |
+| `npm run test:unit` (new) | ✅ pass | 42 url-safety + 28 zip-safety + 18 spreadsheet-safety + 422 registry-invariant assertions |
 | `npm run test:e2e` | ⛔ **cannot run here** | See AF-000 |
 | `npm ci` | ⛔ **not run** | Egress is blocked; `npm ci` deletes `node_modules` then reinstalls from the registry, which would destroy the working install. Ran the non-destructive gates against the existing install instead. |
 
@@ -71,6 +71,24 @@ verified in the current build environment**.
 - **Implemented:** Added an invariant check (**422 assertions**) wired into `npm run test:unit`.
 - **Status:** ✅ fixed & verified (422/422). No existing violations found — this is a regression guard.
 
+### AF-013 — ZIP extraction: Zip-Slip path traversal + zip-bomb
+- **Severity:** P0 (security)
+- **Tools/files:** `extract-zip`; **new** `lib/zip-safety.ts`, `lib/processors/data.ts`
+- **Reproduce:** Extract an archive containing `../../evil.txt`, `/etc/passwd`, `C:\…`, or a high-ratio bomb entry.
+- **Observed:** `entry.name` was used directly as the output name with no traversal check, and there were no entry-count / per-entry / total-size / compression-ratio guards.
+- **Implemented:** `sanitizeZipEntryName` (rejects absolute/drive/`..`/control/empty, normalizes backslashes + NFC), `checkZipBomb` (per-entry, total, and ratio limits via the entry’s declared sizes, plus a running actual-bytes cap), `dedupeEntryName`, and an entry-count cap. Unsafe entries / bombs now throw a clear error instead of being written.
+- **Regression test:** `scripts/checks/zip-safety.check.mjs` — **28 cases** (traversal/absolute/drive/control blocked, safe paths normalized, dedupe, bomb thresholds).
+- **Status:** ✅ fixed & verified (28/28).
+
+### AF-014 — CSV/XLSX formula injection
+- **Severity:** P0 (security)
+- **Tools/files:** `json-csv`, `xml-csv`, `split-csv`, `csv-excel`, `excel-csv` (`lib/workers/data.worker.ts`), PDF→Excel (`lib/processors/pdf.ts`); **new** `lib/spreadsheet-safety.ts`
+- **Reproduce:** Convert data whose cells start with `=`, `+`, `-`, `@` (e.g. `=cmd|'/c calc'!A1`) to CSV/XLSX, open in a spreadsheet app.
+- **Observed:** Cell values were written unescaped → formula execution on open.
+- **Implemented:** `escapeSpreadsheetCell` prefixes a `'` for cells beginning with `=`/`@`/Tab/CR/LF, and for `+`/`-` only when the value is **not** a plain number (so numeric columns are preserved). Applied at every CSV/XLSX write site, including PDF→Excel.
+- **Regression test:** `scripts/checks/spreadsheet-safety.check.mjs` — **18 cases** (formulas/DDE/control escaped; numbers/dates/text preserved; object & array row shapes).
+- **Status:** ✅ fixed & verified (18/18).
+
 ---
 
 ## Deferred backlog (registered, not yet implemented)
@@ -85,8 +103,8 @@ faked as done. Ordered by severity.
 | AF-010 | P0 | Privacy copy — `app/page.tsx`, `README`, `lib/i18n.ts` | Home/README claim “100% local / no upload” app-wide, but `url-image`/`url-pdf`/`detect-cms` send the URL to external providers. | Boundaries documented in `docs/privacy-network-boundaries.md`; SSRF validation (AF-002) added. **Next:** per-tool Local/Network badge + pre-run network-consent dialog; correct global copy. |
 | AF-011 | P0 | Secure redaction — PDF redaction tool, `lib/processors/pdf.ts` | If redaction only draws rectangles, original text/images remain extractable. | Verify current behavior; if not destructive, rename to reflect reality and add rasterized true-redaction + byte/extraction regression fixture before calling it “Secure”. |
 | AF-012 | P0 | HTML/SVG sanitization — `html-to-pdf`, SVG image tools, `hwpx.ts` | User/generated HTML & SVG rendered without a strict sanitizer (script/iframe/`javascript:`/external refs/`foreignObject`). | Add a single sanitizer used by every HTML/SVG render path + malicious fixtures (no script exec, no parent-DOM/localStorage access, no external requests). |
-| AF-013 | P0 | ZIP safety — `lib/processors/data.ts` (jszip) | Extraction needs Zip-Slip (`../`, absolute, backslash, NUL), entry-count/size/ratio, and nesting-depth guards; encrypted-archive errors. | Add path validator + bomb guards + `../../evil` and zip-bomb fixtures. |
-| AF-014 | P0 | Spreadsheet/CSV formula injection — `lib/processors/data.ts`, `lib/processors/pdf.ts` (`xlsx`) | Cell values starting with `= + - @` are written unescaped → formula execution in Excel/Sheets. No sanitization present. | Add `escapeSpreadsheetCell()` at every CSV/XLSX write site + opt-out with warning; node test for each prefix. |
+| AF-013b | P2 | ZIP residuals — `lib/processors/data.ts` | Core Zip-Slip + bomb guards shipped (AF-013). Still open: nested-archive depth limit, explicit encrypted-archive error, symlink-entry handling, and per-entry UI rejection reasons (needs richer return type, AF-020). | Whole-archive errors already block traversal/bombs; residuals are hardening. |
+| AF-014b | P3 | Formula-injection opt-out UI | Escaping is always-on by default (AF-014). The prompt’s optional “preserve raw values (with warning)” toggle is not yet exposed. | Safe default is escape; opt-out is a convenience addition. |
 | AF-015 | P0 | OCR — `lib/processors/ocr.ts` | “OCR PDF to Text” must actually OCR scanned pages (Auto/embedded/OCR-only), reuse a Tesseract worker, terminate on cancel, support ko+en. | Verify current behavior; implement modes + worker lifecycle + fixtures (scanned ko/en, mixed, rotated, encrypted). |
 | AF-016 | P0 | Misleading tool names — `lib/tool-registry.ts`, `lib/tool-localization.ts` | Names may overstate capability (Compress/PDF-A/Extract-Images/Repair/Compare/Sign/Edit/Upscale/Background-Remove/URL-to-PDF/GIF-to-PNG). | Audit each against its processor; rename to honest names with **route + search aliases preserved**, add maturity badges. |
 | AF-017 | P0 | FFmpeg concurrency — `lib/processors/ffmpeg-client.ts`, `media.ts` | Singleton + global progress callback can interleave progress and collide on the virtual FS for concurrent jobs; `execWithFallback` may treat any error as “no audio” and silently produce silent output. | Introduce a job manager (queue/mutex, per-job FS paths + progress, probe audio before no-audio retry), surface audio removal. |
@@ -111,7 +129,7 @@ faked as done. Ordered by severity.
 ```
 npm run typecheck   # ✅
 npm run lint        # ✅ (3 pre-existing warnings)
-npm run test:unit   # ✅ url-safety 42/42, registry-invariants 422/422
+npm run test:unit   # ✅ url-safety 42/42, zip-safety 28/28, spreadsheet-safety 18/18, registry-invariants 422/422
 npm run build       # ✅ 127 pages
 npm run test:e2e    # ⛔ blocked (AF-000: Playwright browser 1208 absent)
 ```

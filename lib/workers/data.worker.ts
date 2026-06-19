@@ -3,6 +3,7 @@
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { XMLBuilder, XMLParser } from 'fast-xml-parser';
+import { sanitizeRowsForSpreadsheet } from '../spreadsheet-safety';
 
 type WorkerRequest = {
   id: number;
@@ -68,7 +69,7 @@ function handle(request: WorkerRequest): WorkerFile[] {
   if (request.toolId === 'json-csv') {
     const json = JSON.parse(request.text ?? '[]');
     const rows = Array.isArray(json) ? json : [json];
-    const csv = Papa.unparse(rows);
+    const csv = Papa.unparse(sanitizeRowsForSpreadsheet(rows));
     return [
       {
         name: request.fileName.replace(/\.[^/.]+$/, '') + '.csv',
@@ -82,7 +83,8 @@ function handle(request: WorkerRequest): WorkerFile[] {
   if (request.toolId === 'excel-csv') {
     const wb = XLSX.read(request.buffer, { type: 'array' });
     const sheetName = wb.SheetNames[0];
-    const csv = XLSX.utils.sheet_to_csv(wb.Sheets[sheetName]);
+    const aoa = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, blankrows: false }) as unknown[][];
+    const csv = Papa.unparse(sanitizeRowsForSpreadsheet(aoa) as string[][]);
     return [
       {
         name: request.fileName.replace(/\.[^/.]+$/, '') + '.csv',
@@ -95,7 +97,9 @@ function handle(request: WorkerRequest): WorkerFile[] {
 
   if (request.toolId === 'csv-excel') {
     const parsed = Papa.parse(request.text ?? '', { header: true, skipEmptyLines: true });
-    const worksheet = XLSX.utils.json_to_sheet(parsed.data as any[]);
+    const worksheet = XLSX.utils.json_to_sheet(
+      sanitizeRowsForSpreadsheet(parsed.data as Record<string, unknown>[]) as any[],
+    );
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
     const out = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' });
@@ -138,7 +142,7 @@ function handle(request: WorkerRequest): WorkerFile[] {
   if (request.toolId === 'xml-csv') {
     const parsed = parser.parse(request.text ?? '');
     const rows = rowsFromXml(parsed);
-    const csv = Papa.unparse(rows);
+    const csv = Papa.unparse(sanitizeRowsForSpreadsheet(rows));
 
     return [
       {
@@ -158,7 +162,7 @@ function handle(request: WorkerRequest): WorkerFile[] {
 
     for (let i = 0; i < rows.length; i += rowsPerFile) {
       const chunk = rows.slice(i, i + rowsPerFile);
-      const csv = Papa.unparse(chunk);
+      const csv = Papa.unparse(sanitizeRowsForSpreadsheet(chunk));
       out.push({
         name: `${request.fileName.replace(/\.[^/.]+$/, '')}-part-${Math.floor(i / rowsPerFile) + 1}.csv`,
         mimeType: 'text/csv;charset=utf-8',
