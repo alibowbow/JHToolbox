@@ -3,6 +3,7 @@ import { PDFDocument } from 'pdf-lib';
 import { ProcessContext, ProcessedFile } from '@/types/processor';
 import { parseBoolean, parseNumber } from '@/lib/utils';
 import { describeUrlRejection, validateExternalUrl } from '@/lib/url-safety';
+import { detectCms } from '@/lib/cms-detect';
 
 /**
  * Resolve and SSRF-validate a user-supplied URL before any external request.
@@ -184,31 +185,6 @@ async function fetchWebsiteScreenshot(url: string, opts: ScreenshotOptions): Pro
   );
 }
 
-function detectCmsFromHtml(html: string): string[] {
-  const lowerHtml = html.toLowerCase();
-  const matches: string[] = [];
-
-  const patterns: Array<[string, RegExp]> = [
-    ['WordPress', /wp-content|wp-json|wordpress/i],
-    ['Shopify', /cdn\.shopify|shopify-section|shopify/i],
-    ['Wix', /wix\.com|wix-static/i],
-    ['Squarespace', /squarespace|static\.squarespace/i],
-    ['Drupal', /drupal-settings-json|drupal/i],
-    ['Joomla', /joomla|com_content/i],
-    ['Ghost', /ghost\/.+\.js|ghost-content-api/i],
-    ['Next.js', /_next\/|next-head/i],
-    ['Nuxt', /__nuxt|nuxt/i],
-  ];
-
-  patterns.forEach(([name, pattern]) => {
-    if (pattern.test(lowerHtml)) {
-      matches.push(name);
-    }
-  });
-
-  return matches;
-}
-
 export async function processWebTool(ctx: ProcessContext): Promise<ProcessedFile[]> {
   const { toolId, files, options, onProgress } = ctx;
 
@@ -312,16 +288,18 @@ export async function processWebTool(ctx: ProcessContext): Promise<ProcessedFile
     onProgress({ percent: 20, stage: 'Inspecting page HTML' });
 
     const html = await fetchHtmlForUrl(url);
-    const detectedCms = detectCmsFromHtml(html);
+    const detection = detectCms(html);
     const report = {
       url,
-      detected: detectedCms,
+      status: detection.status,
+      candidates: detection.candidates,
       htmlLength: html.length,
       checkedAt: new Date().toISOString(),
-      note: 'Results may be limited when a site blocks cross-origin fetching or mirrors.',
+      note: 'Heuristic fingerprinting. Confidence reflects how many independent signals matched; a single weak signal is reported as low confidence, and no match is "inconclusive". Results may be limited when a site blocks cross-origin fetching or uses a mirror.',
     };
 
     const text = JSON.stringify(report, null, 2);
+    const topCandidate = detection.candidates[0];
     return [
       {
         name: 'cms-detection.json',
@@ -329,7 +307,11 @@ export async function processWebTool(ctx: ProcessContext): Promise<ProcessedFile
         mimeType: 'application/json',
         textContent: text,
         metadata: {
-          candidates: detectedCms.join(', ') || 'Unknown',
+          status: detection.status,
+          candidates:
+            detection.candidates.map((candidate) => `${candidate.name} (${candidate.confidence})`).join(', ') ||
+            'Inconclusive',
+          topConfidence: topCandidate ? topCandidate.confidence : 'none',
         },
       },
     ];

@@ -21,7 +21,7 @@ verified in the current build environment**.
 | `npm run typecheck` | ✅ pass | |
 | `npm run lint` | ✅ pass (3 pre-existing warnings) | `react-hooks/exhaustive-deps`, two `@next/next/no-img-element` |
 | `npm run build` | ✅ pass | 127 static pages generated |
-| `npm run test:unit` (new) | ✅ pass | 42 url-safety + 28 zip-safety + 18 spreadsheet-safety + 22 filename-safety + 34 option-schema + 27 html-sanitize + 16 pdf-page-math + 12 tile-math + 15 media-dimensions + 422 registry-invariant assertions |
+| `npm run test:unit` (new) | ✅ pass | 42 url-safety + 28 zip-safety + 18 spreadsheet-safety + 22 filename-safety + 34 option-schema + 27 html-sanitize + 16 pdf-page-math + 12 tile-math + 15 media-dimensions + 11 cms-detect + 422 registry-invariant assertions |
 | `npm run test:e2e` | ⛔ **cannot run here** | See AF-000 |
 | `npm ci` | ⛔ **not run** | Egress is blocked; `npm ci` deletes `node_modules` then reinstalls from the registry, which would destroy the working install. Ran the non-destructive gates against the existing install instead. |
 
@@ -151,6 +151,14 @@ verified in the current build environment**.
 - **Implemented:** `clampPositiveInteger(value, min, max, fallback)` coerces to a finite integer within bounds (NaN/Infinity → fallback); used for `rowsPerFile` (10 … 1,000,000, default 1000).
 - **Regression test:** `scripts/checks/option-schema.check.mjs` (+9 cases, now 34).
 - **Status:** ✅ fixed & verified.
+
+### AF-036 — CMS detection reported a flat verdict with no confidence
+- **Severity:** P2 (overstated certainty)
+- **Tools/files:** `detect-cms` (`lib/processors/web.ts`); **new** `lib/cms-detect.ts`
+- **Observed:** `detectCmsFromHtml` returned a flat `string[]` from single broad regexes (e.g. `/joomla|com_content/`), with no confidence, evidence, or “inconclusive” state — overstating certainty from one weak signal.
+- **Implemented:** `detectCms(html)` returns per-candidate `evidence[]` (which signal ids matched) and `confidence` (high ≥3 / medium 2 / low 1 distinct signals), sorted strongest-first, with `status: 'detected' | 'inconclusive'`. The report and result metadata now carry status + per-candidate confidence.
+- **Regression test:** `scripts/checks/cms-detect.check.mjs` — **11 cases** (strong/weak/medium signals, inconclusive, ordering). The existing detect-cms spec only asserts the request URL, so it is unaffected.
+- **Status:** ✅ fixed & verified (11/11).
 
 ### AF-016a — Honest naming for two overstated image tools
 - **Severity:** P1 (misleading capability)
