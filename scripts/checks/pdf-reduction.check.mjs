@@ -7,6 +7,9 @@ import {
   resolveReduceQuality,
   dpiToScale,
   summarizePdfReduction,
+  resolveReduceMode,
+  dpiToMaxImageDimension,
+  computeDownscaledSize,
 } from '../../lib/pdf-reduction.ts';
 
 let pass = 0;
@@ -46,6 +49,25 @@ check('tiny saving rounds', summarizePdfReduction(1000, 990).savedPercent === 1)
 check('zero original -> keep', summarizePdfReduction(0, 500).useReduced === false);
 check('zero reduced -> keep', summarizePdfReduction(1000, 0).useReduced === false);
 check('kept original reports 0% saved', summarizePdfReduction(1000, 1200).savedPercent === 0);
+
+// mode resolution
+check('mode flatten', resolveReduceMode('flatten') === 'flatten');
+check('mode keep-text', resolveReduceMode('keep-text') === 'keep-text');
+check('mode unknown -> keep-text', resolveReduceMode('x') === 'keep-text');
+check('mode undefined -> keep-text', resolveReduceMode(undefined) === 'keep-text');
+
+// dpi -> max image dimension (~11in long edge)
+check('150 dpi -> 1650', dpiToMaxImageDimension(150) === 1650);
+check('300 dpi -> 3300', dpiToMaxImageDimension(300) === 3300);
+check('72 dpi -> 792', dpiToMaxImageDimension(72) === 792);
+check('bad dpi -> default 1650', dpiToMaxImageDimension('abc') === 1650);
+
+// downscale: only shrink, preserve aspect
+check('no upscale', JSON.stringify(computeDownscaledSize(1000, 500, 2000)) === JSON.stringify({ width: 1000, height: 500 }));
+check('landscape shrink', JSON.stringify(computeDownscaledSize(4000, 2000, 1650)) === JSON.stringify({ width: 1650, height: 825 }));
+check('portrait shrink', JSON.stringify(computeDownscaledSize(500, 4000, 1650)) === JSON.stringify({ width: 206, height: 1650 }));
+check('no cap', JSON.stringify(computeDownscaledSize(100, 100, 0)) === JSON.stringify({ width: 100, height: 100 }));
+check('degenerate -> 1x1', JSON.stringify(computeDownscaledSize(0, 0, 1650)) === JSON.stringify({ width: 1, height: 1 }));
 
 console.log(`\npdf-reduction: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

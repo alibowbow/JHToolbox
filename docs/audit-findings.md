@@ -21,7 +21,7 @@ verified in the current build environment**.
 | `npm run typecheck` | ✅ pass | |
 | `npm run lint` | ✅ pass (3 pre-existing warnings) | `react-hooks/exhaustive-deps`, two `@next/next/no-img-element` |
 | `npm run build` | ✅ pass | 127 static pages generated |
-| `npm run test:unit` (new) | ✅ pass | 42 url-safety + 28 zip-safety + 18 spreadsheet-safety + 22 filename-safety + 34 option-schema + 27 html-sanitize + 16 pdf-page-math + 12 tile-math + 15 media-dimensions + 11 cms-detect + 20 pdf-reduction + 426 registry-invariant assertions |
+| `npm run test:unit` (new) | ✅ pass | 42 url-safety + 28 zip-safety + 18 spreadsheet-safety + 22 filename-safety + 34 option-schema + 27 html-sanitize + 16 pdf-page-math + 12 tile-math + 15 media-dimensions + 11 cms-detect + 33 pdf-reduction + 427 registry-invariant assertions |
 | `npm run test:e2e` | ⛔ **cannot run here** | See AF-000 |
 | `npm ci` | ⛔ **not run** | Egress is blocked; `npm ci` deletes `node_modules` then reinstalls from the registry, which would destroy the working install. Ran the non-destructive gates against the existing install instead. |
 
@@ -167,6 +167,15 @@ verified in the current build environment**.
 - **Implemented:** Re-renders each page (pdf.js) to a JPEG at a chosen **DPI (72–300)** and **quality (High…Minimum)**, optional **grayscale**, and rebuilds the PDF preserving each page’s point size. Honest by design: it **rasterizes** (text/vectors become non-selectable — stated in the en/ko description), and it **keeps the original unchanged if recompression would not be smaller**, reporting original/result bytes and % saved in the result metadata.
 - **Regression test:** `scripts/checks/pdf-reduction.check.mjs` — **20 cases** (DPI/quality validation, dpi→scale, “use result only when strictly smaller”). The route `/tools/pdf/pdf-reduce-size` builds (128 static pages) and the registry invariants pass (101 browsable tools).
 - **Status:** ✅ logic verified (typecheck, lint, build, 20/20). **Pending:** real-PDF size/quality confirmation in a browser (page rendering cannot run in this environment).
+
+### AF-037b — Text-preserving "Keep text" mode for Reduce PDF Size
+- **Severity:** feature (the recommended, orthodox approach)
+- **Tools/files:** `pdf-reduce-size` (`lib/processors/pdf.ts`, `lib/pdf-reduction.ts`, registry, localization)
+- **Context:** AF-037 added the flatten (rasterize) reducer, which drops selectable text. This adds the proper method as the **default**.
+- **Implemented:** A `mode` option — **“Keep text — recompress images” (default)** vs “Flatten pages”. Keep-text walks the PDF's indirect objects (pdf-lib low-level), finds **JPEG (DCTDecode) image XObjects**, decodes each via `createImageBitmap`, downsamples to a DPI-derived max edge, re-encodes JPEG at the chosen quality (optional grayscale), and replaces the stream in place (updating `/Width` `/Height` `/Length` `/ColorSpace` `/BitsPerComponent`, dropping `/Decode`). **Text, fonts, vector graphics, and structure are untouched, so text stays selectable.** Fail-safes: images with soft/stencil masks and non-JPEG filters (CCITT/JBIG2/Flate-raw) are skipped; each image is replaced only when its recompressed form is smaller; per-image `try/catch`; the whole document is returned unchanged if the result is not smaller.
+- **Known limits (stated in UI):** Only JPEG-encoded images are recompressed (the common large-photo/scan case); CMYK JPEGs that the browser cannot decode are skipped; existing fonts are not re-subset (pdf-lib cannot subset already-embedded fonts) — object-stream re-save still tidies structure.
+- **Regression test:** `scripts/checks/pdf-reduction.check.mjs` — **33 cases** (added mode resolution, dpi→max-dimension, downscale-never-upscale). Registry invariants pass (mode default ∈ choices); build generates the route.
+- **Status:** ✅ logic + types + build verified. ⚠️ **The pdf-lib image-stream replacement cannot be executed in this environment (no browser/canvas), so producing valid PDFs across real inputs must be confirmed in a browser before relying on it.** The fail-safes mean the worst expected outcome is "no reduction / original returned," not a corrupted file, but real-PDF verification is required.
 
 ### AF-016b — Honest naming for seven overstated PDF/GIF tools
 - **Severity:** P1 (misleading capability)
