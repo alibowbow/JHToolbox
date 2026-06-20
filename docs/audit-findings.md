@@ -168,6 +168,14 @@ verified in the current build environment**.
 - **Regression test:** `scripts/checks/pdf-reduction.check.mjs` — **20 cases** (DPI/quality validation, dpi→scale, “use result only when strictly smaller”). The route `/tools/pdf/pdf-reduce-size` builds (128 static pages) and the registry invariants pass (101 browsable tools).
 - **Status:** ✅ logic verified (typecheck, lint, build, 20/20). **Pending:** real-PDF size/quality confirmation in a browser (page rendering cannot run in this environment).
 
+### AF-038 — Organize the PDF category menu into sections
+- **Severity:** UX (29 scattered PDF tools in one flat grid)
+- **Tools/files:** **new** `lib/tool-sections.ts`; `components/category-page-content.tsx`; `scripts/checks/registry-invariants.check.mjs`
+- **Observed:** The PDF category page listed all ~29 tools in one undifferentiated grid.
+- **Implemented:** A generic, optional category-section model. PDF is grouped into **Organize pages / Edit & annotate / Create PDF / Convert from PDF / Compress & optimize / Utilities** (en + ko headings). Any tool not in a section falls into a trailing “More” group, so nothing is dropped. Other categories keep the flat grid until sectioned.
+- **Regression test:** registry-invariants now verifies every section tool id exists, is shown on that category page, is not duplicated, and that the sections **cover every tool on the page** (no tool left unsectioned) — **+89 assertions** (515 total). Build generates the page.
+- **Status:** ✅ verified (typecheck, lint, build, invariants). Visual layout is best confirmed in a browser.
+
 ### AF-037b — Text-preserving "Keep text" mode for Reduce PDF Size
 - **Severity:** feature (the recommended, orthodox approach)
 - **Tools/files:** `pdf-reduce-size` (`lib/processors/pdf.ts`, `lib/pdf-reduction.ts`, registry, localization)
