@@ -32,11 +32,7 @@ export function DropZone({ onFiles, accept, multiple = false, label, files }: Dr
     <div className="space-y-3">
       <motion.label
         htmlFor={inputId}
-        animate={
-          isDragging
-            ? { borderColor: '#22d3ee', backgroundColor: 'rgba(34,211,238,0.08)', scale: 1.01 }
-            : { borderColor: 'rgba(15,23,42,0.08)', backgroundColor: 'rgba(255,255,255,0.68)', scale: 1 }
-        }
+        animate={{ scale: isDragging ? 1.01 : 1 }}
         onDragOver={(event) => {
           event.preventDefault();
           setIsDragging(true);
@@ -48,7 +44,9 @@ export function DropZone({ onFiles, accept, multiple = false, label, files }: Dr
           const droppedFiles = Array.from(event.dataTransfer.files);
           pushFiles(multiple ? [...currentFiles, ...droppedFiles] : droppedFiles.slice(0, 1));
         }}
-        className="editor-stage flex cursor-pointer flex-col items-center justify-center gap-4 border-2 border-dashed p-8 text-center transition-colors sm:p-10"
+        className={`editor-stage flex cursor-pointer flex-col items-center justify-center gap-4 border-2 border-dashed p-8 text-center transition-colors sm:p-10 ${
+          isDragging ? 'border-prime bg-prime/10' : 'border-border-bright hover:border-prime/40'
+        }`}
       >
         <motion.div
           animate={isDragging ? { y: -4 } : { y: 0 }}
