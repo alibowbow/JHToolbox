@@ -206,11 +206,21 @@ export const tools: ToolDefinition[] = [
     name: 'Reduce PDF Size',
     category: 'pdf',
     description:
-      'Shrink a PDF by re-rendering each page to a compressed JPEG at a chosen resolution. Best for scans and image-heavy PDFs; text and vector graphics become non-selectable. The original is kept if recompression would not be smaller.',
+      'Reduce a PDF\'s file size. "Keep text" recompresses only the embedded JPEG images and leaves text selectable (recommended). "Flatten" re-renders whole pages to images — smaller for image-heavy files but text becomes non-selectable. The original is kept if the result would not be smaller.',
     accept: '.pdf',
     tags: ['pdf', 'compress', 'reduce', 'size', 'shrink', 'optimize'],
     browseGroups: ['compress', 'new'],
     options: [
+      {
+        key: 'mode',
+        label: 'Method',
+        type: 'select',
+        defaultValue: 'keep-text',
+        options: [
+          { label: 'Keep text — recompress images (recommended)', value: 'keep-text' },
+          { label: 'Flatten pages to images (smaller, no selectable text)', value: 'flatten' },
+        ],
+      },
       {
         key: 'dpi',
         label: 'Resolution (DPI)',

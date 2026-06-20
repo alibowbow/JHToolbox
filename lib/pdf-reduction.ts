@@ -42,3 +42,37 @@ export function summarizePdfReduction(originalBytes: number, reducedBytes: numbe
   const savedPercent = useReduced ? Math.max(0, Math.round((1 - reduced / original) * 100)) : 0;
   return { useReduced, savedPercent };
 }
+
+export type ReduceMode = 'keep-text' | 'flatten';
+
+export function resolveReduceMode(value: unknown): ReduceMode {
+  return value === 'flatten' ? 'flatten' : 'keep-text';
+}
+
+/**
+ * Cap on an embedded image's longest pixel edge for the "keep text" mode,
+ * derived from the chosen DPI (~11-inch long edge). Images bigger than this are
+ * downscaled before recompression; smaller images keep their pixel dimensions.
+ */
+export function dpiToMaxImageDimension(dpi: number): number {
+  const safe = (REDUCE_DPI_CHOICES as readonly number[]).includes(Math.round(Number(dpi)))
+    ? Math.round(Number(dpi))
+    : DEFAULT_REDUCE_DPI;
+  return Math.round(safe * 11);
+}
+
+/** Shrink (never enlarge) to fit the longest edge within maxDimension, preserving aspect. */
+export function computeDownscaledSize(
+  width: number,
+  height: number,
+  maxDimension: number,
+): { width: number; height: number } {
+  const w = Math.max(1, Math.floor(Number.isFinite(width) ? width : 1));
+  const h = Math.max(1, Math.floor(Number.isFinite(height) ? height : 1));
+  const longest = Math.max(w, h);
+  if (!Number.isFinite(maxDimension) || maxDimension <= 0 || longest <= maxDimension) {
+    return { width: w, height: h };
+  }
+  const scale = maxDimension / longest;
+  return { width: Math.max(1, Math.round(w * scale)), height: Math.max(1, Math.round(h * scale)) };
+}

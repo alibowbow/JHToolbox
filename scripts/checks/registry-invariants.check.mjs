@@ -84,6 +84,30 @@ check('i18n en/ko key parity', missingInKo.length === 0 && missingInEn.length ==
 if (missingInKo.length) console.log('   missing in ko:', missingInKo.slice(0, 15));
 if (missingInEn.length) console.log('   missing in en:', missingInEn.slice(0, 15));
 
+// 5. category sections: ids exist, match the category, are not duplicated, and
+//    cover every browsable tool in the category (no tool left unsectioned).
+const sectionsMod = await loadStripped('lib/tool-sections.ts');
+const sections = sectionsMod.categorySections || {};
+// The category page renders category.tools (a curated list that can cross-list a
+// tool whose own .category differs, e.g. url-pdf), so validate against that list.
+const categoryToolIds = Object.fromEntries(cats.map((c) => [c.id, c.tools || []]));
+const hiddenIds = new Set(tools.filter((t) => t.hiddenFromBrowse).map((t) => t.id));
+for (const [catId, secs] of Object.entries(sections)) {
+  const listed = new Set(categoryToolIds[catId] || []);
+  const seen = new Set();
+  for (const sec of secs) {
+    for (const id of sec.toolIds) {
+      check(`section ${catId}/${sec.id}: tool "${id}" exists`, ids.includes(id));
+      check(`section ${catId}/${sec.id}: tool "${id}" is shown on the ${catId} page`, listed.has(id));
+      check(`section ${catId}/${sec.id}: tool "${id}" not duplicated`, !seen.has(id));
+      seen.add(id);
+    }
+  }
+  const shown = (categoryToolIds[catId] || []).filter((id) => ids.includes(id) && !hiddenIds.has(id));
+  const missing = shown.filter((id) => !seen.has(id));
+  check(`section ${catId}: covers every tool shown on the page (missing: ${missing.join(', ') || 'none'})`, missing.length === 0);
+}
+
 console.log(
   `\nregistry-invariants: ${pass} passed, ${fail} failed (tools=${tools.length}, browsable=${browsable.length})`,
 );

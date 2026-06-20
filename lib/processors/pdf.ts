@@ -1,6 +1,6 @@
 import html2canvas from 'html2canvas';
 import JSZip from 'jszip';
-import { PDFDocument, degrees as pdfDegrees, rgb } from 'pdf-lib';
+import { PDFArray, PDFDocument, PDFName, PDFNumber, PDFRawStream, degrees as pdfDegrees, rgb } from 'pdf-lib';
 import * as XLSX from 'xlsx';
 import { getPdfJs } from '@/lib/processors/pdfjs-client';
 import { ProcessContext, ProcessedFile } from '@/types/processor';
@@ -8,7 +8,15 @@ import { baseName, parseBoolean, parseNumber } from '@/lib/utils';
 import { sanitizeRowsForSpreadsheet } from '@/lib/spreadsheet-safety';
 import { sanitizeHtml } from '@/lib/html-sanitize';
 import { normalizePdfRotation, resolveDeletablePages } from '@/lib/pdf-page-math';
-import { dpiToScale, resolveReduceDpi, resolveReduceQuality, summarizePdfReduction } from '@/lib/pdf-reduction';
+import {
+  computeDownscaledSize,
+  dpiToMaxImageDimension,
+  dpiToScale,
+  resolveReduceDpi,
+  resolveReduceMode,
+  resolveReduceQuality,
+  summarizePdfReduction,
+} from '@/lib/pdf-reduction';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -152,6 +160,164 @@ async function anyImageToPngBlob(file: File): Promise<Blob> {
   canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
   bitmap.close();
   return await canvasBlob(canvas, 'image/png', 1);
+}
+
+function isDctImageStream(stream: PDFRawStream): boolean {
+  const dict = stream.dict;
+  const subtype = dict.lookup(PDFName.of('Subtype'));
+  if (!(subtype instanceof PDFName) || subtype.asString() !== '/Image') {
+    return false;
+  }
+  // JPEG cannot represent soft masks / stencil masks — skip those images.
+  if (dict.has(PDFName.of('SMask')) || dict.has(PDFName.of('Mask'))) {
+    return false;
+  }
+  const filter = dict.lookup(PDFName.of('Filter'));
+  if (filter instanceof PDFName) {
+    return filter.asString() === '/DCTDecode';
+  }
+  if (filter instanceof PDFArray) {
+    if (filter.size() !== 1) {
+      return false;
+    }
+    const only = filter.get(0);
+    return only instanceof PDFName && only.asString() === '/DCTDecode';
+  }
+  return false;
+}
+
+async function recompressJpegBytes(
+  jpegBytes: Uint8Array,
+  maxDimension: number,
+  quality: number,
+  grayscale: boolean,
+): Promise<{ bytes: Uint8Array; width: number; height: number } | null> {
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(new Blob([Uint8Array.from(jpegBytes).buffer], { type: 'image/jpeg' }));
+  } catch {
+    return null;
+  }
+  try {
+    const { width, height } = computeDownscaledSize(bitmap.width, bitmap.height, maxDimension);
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      return null;
+    }
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, width, height);
+    context.drawImage(bitmap, 0, 0, width, height);
+    if (grayscale) {
+      const imageData = context.getImageData(0, 0, width, height);
+      const data = imageData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const gray = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
+        data[i] = gray;
+        data[i + 1] = gray;
+        data[i + 2] = gray;
+      }
+      context.putImageData(imageData, 0, 0);
+    }
+    const blob = await canvasBlob(canvas, 'image/jpeg', quality);
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    canvas.width = 0;
+    canvas.height = 0;
+    return { bytes, width, height };
+  } catch {
+    return null;
+  } finally {
+    bitmap.close();
+  }
+}
+
+/**
+ * Reduce a PDF's size while KEEPING TEXT SELECTABLE: recompress only the JPEG
+ * (DCTDecode) image XObjects in place, leaving text, fonts, vector graphics and
+ * structure untouched. Images whose filters the browser cannot safely decode
+ * (CCITT/JBIG2/Flate-raw), and images with soft/stencil masks, are skipped. Each
+ * image is replaced only when its recompressed form is smaller, and the original
+ * document is returned untouched if the overall result is not smaller.
+ */
+async function optimizePdfImages(
+  file: File,
+  options: Record<string, string | number | boolean>,
+  onProgress: (percent: number, stage: string) => void,
+): Promise<ProcessedFile> {
+  const quality = resolveReduceQuality(options.quality);
+  const grayscale = parseBoolean(options.grayscale, false);
+  const maxDimension = dpiToMaxImageDimension(resolveReduceDpi(options.dpi));
+
+  const doc = await PDFDocument.load(await file.arrayBuffer());
+  const imageEntries = doc.context
+    .enumerateIndirectObjects()
+    .filter(([, obj]) => obj instanceof PDFRawStream && isDctImageStream(obj));
+
+  let recompressed = 0;
+  for (let index = 0; index < imageEntries.length; index += 1) {
+    onProgress((index / Math.max(imageEntries.length, 1)) * 90, `Recompressing image ${index + 1} of ${imageEntries.length}`);
+    const [ref, obj] = imageEntries[index];
+    if (!(obj instanceof PDFRawStream)) {
+      continue;
+    }
+    try {
+      const original = obj.getContents();
+      const result = await recompressJpegBytes(original, maxDimension, quality, grayscale);
+      if (!result || result.bytes.length >= original.length) {
+        continue;
+      }
+      const dict = obj.dict;
+      dict.set(PDFName.of('Width'), PDFNumber.of(result.width));
+      dict.set(PDFName.of('Height'), PDFNumber.of(result.height));
+      dict.set(PDFName.of('BitsPerComponent'), PDFNumber.of(8));
+      dict.set(PDFName.of('ColorSpace'), PDFName.of('DeviceRGB'));
+      dict.set(PDFName.of('Length'), PDFNumber.of(result.bytes.length));
+      dict.delete(PDFName.of('Decode'));
+      dict.delete(PDFName.of('DecodeParms'));
+      doc.context.assign(ref, PDFRawStream.of(dict, result.bytes));
+      recompressed += 1;
+    } catch {
+      // Leave this image untouched on any failure.
+    }
+  }
+
+  onProgress(95, 'Saving optimized PDF');
+  const bytes = await doc.save({ useObjectStreams: true, objectsPerTick: 60 });
+  const reducedBlob = blobFromBytes(bytes, 'application/pdf');
+  const { useReduced, savedPercent } = summarizePdfReduction(file.size, reducedBlob.size);
+
+  if (!useReduced) {
+    return {
+      name: `${baseName(file.name)}.pdf`,
+      blob: file,
+      mimeType: 'application/pdf',
+      metadata: {
+        result: 'original-kept',
+        reason:
+          recompressed === 0
+            ? 'No recompressible JPEG images were found (text-only or non-JPEG images), so the original is returned unchanged.'
+            : 'Recompression did not reduce the file size, so the original is returned unchanged.',
+        originalBytes: file.size,
+        imagesRecompressed: recompressed,
+      },
+    };
+  }
+
+  return {
+    name: `${baseName(file.name)}-reduced.pdf`,
+    blob: reducedBlob,
+    mimeType: 'application/pdf',
+    metadata: {
+      result: 'reduced',
+      originalBytes: file.size,
+      reducedBytes: reducedBlob.size,
+      savedPercent,
+      imagesRecompressed: recompressed,
+      note: 'Text stays selectable; only JPEG-encoded images were recompressed.',
+    },
+  };
 }
 
 /**
@@ -1645,7 +1811,11 @@ export async function processPdfTool(ctx: ProcessContext): Promise<ProcessedFile
   }
 
   if (toolId === 'pdf-reduce-size') {
-    const result = await reducePdfSize(files[0], options, (percent, stage) => onProgress({ percent, stage }));
+    const progress = (percent: number, stage: string) => onProgress({ percent, stage });
+    const result =
+      resolveReduceMode(options.mode) === 'flatten'
+        ? await reducePdfSize(files[0], options, progress)
+        : await optimizePdfImages(files[0], options, progress);
     return [result];
   }
 
