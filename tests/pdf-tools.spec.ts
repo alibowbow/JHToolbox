@@ -19,6 +19,32 @@ test('pdf-to-png processes a PDF without worker errors', async ({ page }) => {
   expect(pageErrors).not.toContainEqual(expect.stringContaining('GlobalWorkerOptions.workerSrc'));
 });
 
+test('pdf-compress rasterizes pages without ever growing the file', async ({ page }) => {
+  const pageErrors: string[] = [];
+
+  page.on('pageerror', (error) => {
+    pageErrors.push(error.message);
+  });
+
+  await page.goto('/tools/pdf/pdf-compress');
+  await page.locator('input[type="file"]').setInputFiles(samplePdfPath);
+  await page.getByRole('button', { name: 'Run tool' }).click();
+
+  await expect(page.getByText('sample-compressed.pdf')).toBeVisible({ timeout: 30_000 });
+
+  const metadataText = await page
+    .locator('pre', { hasText: 'compressedBytes' })
+    .first()
+    .textContent();
+  const metadata = JSON.parse(metadataText ?? '{}');
+
+  // Core guarantee: compression must never hand back a larger file than the input.
+  expect(metadata.compressedBytes).toBeLessThanOrEqual(metadata.originalBytes);
+  expect(metadata.reductionPercent).toBeGreaterThanOrEqual(0);
+  expect(['original', 'repacked', 'rasterized']).toContain(metadata.method);
+  expect(pageErrors).not.toContainEqual(expect.stringContaining('GlobalWorkerOptions.workerSrc'));
+});
+
 test('ocr pdf-to-text extracts text from the sample PDF', async ({ page }) => {
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], {
     origin: 'http://127.0.0.1:3100',

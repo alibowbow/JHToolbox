@@ -143,6 +143,77 @@ async function renderPdfPages(
   return outputs;
 }
 
+/**
+ * Compress a PDF by rasterizing each page at a target DPI and re-encoding it as
+ * JPEG. This is the lever that actually shrinks image-heavy/scanned PDFs, which
+ * a plain pdf-lib re-save cannot: it downsamples oversized page images and drops
+ * them to a lossy JPEG at the chosen quality. Returns the rebuilt PDF bytes, or
+ * throws if the document exposes no renderable pages (caller falls back).
+ */
+async function rasterizePdfToJpegPdf(
+  file: File,
+  quality: number,
+  dpi: number,
+  onProgress: (value: number) => void,
+): Promise<Uint8Array> {
+  const pdfjsLib = await getPdfJs();
+  const input = new Uint8Array(await file.arrayBuffer());
+  const documentHandle = await pdfjsLib.getDocument({
+    data: input,
+    useWorkerFetch: false,
+  }).promise;
+
+  if (documentHandle.numPages < 1) {
+    throw new Error('This PDF has no renderable pages to compress.');
+  }
+
+  const output = await PDFDocument.create();
+  const targetScale = Math.max(0.2, dpi / 72);
+  const MAX_PIXELS_PER_SIDE = 3000;
+
+  for (let pageNo = 1; pageNo <= documentHandle.numPages; pageNo += 1) {
+    onProgress((pageNo - 1) / documentHandle.numPages);
+    const page = await documentHandle.getPage(pageNo);
+    const baseViewport = page.getViewport({ scale: 1 });
+
+    // Clamp the render scale so an unusually large page cannot blow up memory.
+    const longestSide = Math.max(baseViewport.width, baseViewport.height) || 1;
+    const scale = Math.min(targetScale, MAX_PIXELS_PER_SIDE / longestSide);
+    const viewport = page.getViewport({ scale });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.ceil(viewport.width));
+    canvas.height = Math.max(1, Math.ceil(viewport.height));
+
+    const context = canvas.getContext('2d');
+    if (!context) {
+      throw new Error('Canvas rendering is not available in this browser.');
+    }
+
+    // JPEG has no alpha channel, so paint white first or transparent regions
+    // would render as black blocks.
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: context, viewport }).promise;
+
+    const jpegBlob = await canvasBlob(canvas, 'image/jpeg', quality);
+    const jpegBytes = new Uint8Array(await jpegBlob.arrayBuffer());
+    const image = await output.embedJpg(jpegBytes);
+
+    // Keep the original page dimensions (in points) so the document prints at
+    // the same physical size; only the embedded raster resolution changes.
+    const pdfPage = output.addPage([baseViewport.width, baseViewport.height]);
+    pdfPage.drawImage(image, {
+      x: 0,
+      y: 0,
+      width: baseViewport.width,
+      height: baseViewport.height,
+    });
+  }
+
+  return await output.save({ useObjectStreams: true });
+}
+
 async function anyImageToPngBlob(file: File): Promise<Blob> {
   const bitmap = await createImageBitmap(file);
   const canvas = document.createElement('canvas');
@@ -1526,18 +1597,63 @@ export async function processPdfTool(ctx: ProcessContext): Promise<ProcessedFile
 
   if (toolId === 'pdf-compress') {
     const source = files[0];
-    const documentHandle = await PDFDocument.load(await source.arrayBuffer());
-    const bytes = await documentHandle.save({
-      useObjectStreams: true,
-      objectsPerTick: 60,
-      addDefaultPage: false,
-    });
+    const inputBytes = new Uint8Array(await source.arrayBuffer());
+    const quality = clamp(parseNumber(options.quality, 0.7), 0.1, 1);
+    const dpi = clamp(parseNumber(options.resolution, 150), 36, 300);
+
+    // Track the smallest candidate so compression can never return a file that
+    // is larger than the original. Start from the original itself.
+    let smallestBytes: Uint8Array = inputBytes;
+    let method: 'original' | 'repacked' | 'rasterized' = 'original';
+
+    // Lossless re-pack: helps PDFs that were saved without object streams, and
+    // is the safe choice for vector/text PDFs where rasterizing would only add
+    // weight (and blur).
+    try {
+      const repacked = await PDFDocument.load(inputBytes, { ignoreEncryption: true });
+      const repackedBytes = await repacked.save({
+        useObjectStreams: true,
+        objectsPerTick: 60,
+        addDefaultPage: false,
+      });
+      if (repackedBytes.length < smallestBytes.length) {
+        smallestBytes = repackedBytes;
+        method = 'repacked';
+      }
+    } catch {
+      // Ignore — fall through to rasterization / original.
+    }
+
+    // Lossy rasterization: the lever that meaningfully shrinks scanned or
+    // image-heavy PDFs. Only adopted when it genuinely beats the alternatives.
+    try {
+      const rasterBytes = await rasterizePdfToJpegPdf(source, quality, dpi, (value) =>
+        onProgress({ percent: value * 100, stage: 'Compressing PDF pages' }),
+      );
+      if (rasterBytes.length < smallestBytes.length) {
+        smallestBytes = rasterBytes;
+        method = 'rasterized';
+      }
+    } catch {
+      // Rasterization can fail on unusual PDFs; keep the best lossless result.
+    }
+
+    const reductionPercent =
+      inputBytes.length > 0
+        ? Math.round((1 - smallestBytes.length / inputBytes.length) * 1000) / 10
+        : 0;
 
     return [
       {
         name: `${baseName(source.name)}-compressed.pdf`,
-        blob: blobFromBytes(bytes, 'application/pdf'),
+        blob: blobFromBytes(smallestBytes, 'application/pdf'),
         mimeType: 'application/pdf',
+        metadata: {
+          method,
+          originalBytes: inputBytes.length,
+          compressedBytes: smallestBytes.length,
+          reductionPercent,
+        },
       },
     ];
   }
