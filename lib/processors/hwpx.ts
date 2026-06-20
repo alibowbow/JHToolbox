@@ -8,6 +8,9 @@ import {
   extractPdfStyledPages,
   renderHtmlStringToPdfBlob,
 } from '@/lib/processors/pdf';
+import { convertPdfToFidelityHwpx, resolveFidelityDpi } from '@/lib/hwpx/pdf-raster-converter';
+import { resolveReduceQuality } from '@/lib/pdf-reduction';
+import { ZIP_LIMITS, checkZipBomb, sanitizeZipEntryName } from '@/lib/zip-safety';
 
 const HWPX_MIME = 'application/hwp+zip';
 const HP_NS = 'http://www.hancom.co.kr/hwpml/2011/paragraph';
@@ -754,9 +757,28 @@ async function convertHwpxToHtml(zip: JSZip, title: string): Promise<string> {
 // Tool entry
 // ---------------------------------------------------------------------------
 
+/** HWPX is an untrusted ZIP — reject traversal paths, too many entries, and bombs. */
+function assertSafeHwpxZip(zip: JSZip): void {
+  const entries = Object.values(zip.files).filter((entry) => !entry.dir);
+  if (entries.length > ZIP_LIMITS.maxEntries) {
+    throw new Error('This HWPX file has too many internal entries and was rejected.');
+  }
+  let totalBytes = 0;
+  for (const entry of entries) {
+    if (!sanitizeZipEntryName(entry.name)) {
+      throw new Error(`This HWPX file contains an unsafe internal path and was rejected: "${entry.name}".`);
+    }
+    const sizes = (entry as unknown as { _data?: { uncompressedSize?: number; compressedSize?: number } })._data;
+    const uncompressed = Number(sizes?.uncompressedSize ?? 0);
+    if (checkZipBomb(uncompressed, Number(sizes?.compressedSize ?? 0), totalBytes)) {
+      throw new Error('This HWPX file looks like a decompression bomb and was rejected.');
+    }
+    totalBytes += uncompressed;
+  }
+}
+
 export async function processHwpxTool(ctx: ProcessContext): Promise<ProcessedFile[]> {
   const { toolId, files, options, onProgress } = ctx;
-  void options;
 
   if (toolId === 'pdf-to-hwpx') {
     if (!files.length) {
@@ -764,6 +786,36 @@ export async function processHwpxTool(ctx: ProcessContext): Promise<ProcessedFil
     }
 
     const source = files[0];
+    const mode = String(options.mode ?? 'fidelity');
+
+    if (mode === 'fidelity') {
+      const imageFormat = options.imageFormat === 'jpeg' ? 'jpeg' : 'png';
+      const { blob, pageCount } = await convertPdfToFidelityHwpx(
+        source,
+        {
+          dpi: resolveFidelityDpi(options.dpi),
+          imageFormat,
+          jpegQuality: resolveReduceQuality(options.jpegQuality),
+          maxPages: 300,
+        },
+        (percent, stage) => onProgress({ percent, stage }),
+      );
+
+      return [
+        {
+          name: `${baseName(source.name)}.hwpx`,
+          blob,
+          mimeType: HWPX_MIME,
+          metadata: {
+            mode: 'fidelity',
+            pages: pageCount,
+            note: 'Each page is placed as a full-page image at its original size. Visual fidelity is high, but text inside the page is not selectable or editable.',
+          },
+        },
+      ];
+    }
+
+    // editable (experimental): text-extraction path.
     const pages = await extractPdfStyledPages(source, (value) =>
       onProgress({ percent: 10 + value * 70, stage: 'Extracting PDF text' }),
     );
@@ -777,8 +829,9 @@ export async function processHwpxTool(ctx: ProcessContext): Promise<ProcessedFil
         blob,
         mimeType: HWPX_MIME,
         metadata: {
+          mode: 'editable',
           pages: pages.length,
-          note: 'Text and heading sizes are preserved. Exact layout, columns, and images are not.',
+          note: 'Text and heading sizes are preserved. Exact layout, columns, tables, and images are not — low-confidence pages may need the fidelity mode.',
         },
       },
     ];
@@ -792,6 +845,7 @@ export async function processHwpxTool(ctx: ProcessContext): Promise<ProcessedFil
     const source = files[0];
     onProgress({ percent: 15, stage: 'Reading HWPX content' });
     const zip = await JSZip.loadAsync(await source.arrayBuffer());
+    assertSafeHwpxZip(zip);
     const html = await convertHwpxToHtml(zip, baseName(source.name));
 
     onProgress({ percent: 60, stage: 'Rendering PDF pages' });

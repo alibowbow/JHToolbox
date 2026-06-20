@@ -195,6 +195,10 @@ const koOptionLabelsByLabel: Record<string, string> = {
   'Resolution (DPI)': '해상도 (DPI)',
   'Method': '방식',
   'Image quality': '이미지 품질',
+  'Conversion mode': '변환 방식',
+  'Page image resolution (DPI)': '페이지 이미지 해상도 (DPI)',
+  'Page image format': '페이지 이미지 형식',
+  'JPEG quality': 'JPEG 품질',
   'Grayscale': '흑백',
   'Wait before capture (s)': '캡처 전 대기 시간(초)',
   'Max height (px, 0 = unlimited)': '최대 높이(px, 0=제한 없음)',
@@ -399,7 +403,7 @@ Object.assign(koToolDescriptions, {
   'pdf-repair': '브라우저에서 열 수 있는 PDF를 다시 저장해 더 깔끔한 사본으로 만듭니다.',
   'pdf-compare': '두 PDF의 추출 텍스트를 비교해 차이 보고서를 만듭니다.',
   'pdf-to-pdfa': '메타데이터를 보강해 보관용 PDF/A 스타일 사본을 만듭니다. 정식 준수 검증은 포함하지 않습니다.',
-  'pdf-to-hwpx': 'PDF에서 읽을 수 있는 텍스트를 추출해 한글(HWPX) 문서로 변환합니다. 레이아웃·이미지·표는 유지되지 않습니다.',
+  'pdf-to-hwpx': 'PDF를 한글(HWPX) 문서로 변환합니다. "원본 모양 보존"은 각 페이지를 전체 이미지로 배치해 레이아웃이 가장 정확하지만 텍스트 편집은 불가능합니다. "편집 가능한 텍스트"는 텍스트를 문단으로 추출해 편집 가능하지만 레이아웃·표·이미지가 달라질 수 있습니다.',
   'hwpx-to-pdf': '한글(HWPX) 문서의 텍스트를 추출해 브라우저에서 PDF 페이지로 변환합니다.',
 });
 

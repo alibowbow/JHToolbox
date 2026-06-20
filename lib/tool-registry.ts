@@ -473,10 +473,55 @@ export const tools: ToolDefinition[] = [
     id: 'pdf-to-hwpx',
     name: 'PDF to HWPX',
     category: 'pdf',
-    description: 'Extract readable PDF text into a Hangul (HWPX) document. Layout and images are not preserved.',
+    description:
+      'Convert a PDF to a Hangul (HWPX) document. "Keep original look" places each page as a full-page image (most accurate layout; text not editable). "Editable text" extracts text into HWPX paragraphs (text editable, but layout/tables/images may differ).',
     accept: '.pdf',
     tags: ['pdf', 'hwpx', 'hwp', 'hangul', 'convert'],
     browseGroups: ['new', 'convert'],
+    options: [
+      {
+        key: 'mode',
+        label: 'Conversion mode',
+        type: 'select',
+        defaultValue: 'fidelity',
+        options: [
+          { label: 'Keep original look (page images)', value: 'fidelity' },
+          { label: 'Editable text (experimental)', value: 'editable' },
+        ],
+      },
+      {
+        key: 'dpi',
+        label: 'Page image resolution (DPI)',
+        type: 'select',
+        defaultValue: 200,
+        options: [
+          { label: '144 DPI (smaller)', value: 144 },
+          { label: '200 DPI (recommended)', value: 200 },
+          { label: '300 DPI (sharpest)', value: 300 },
+        ],
+      },
+      {
+        key: 'imageFormat',
+        label: 'Page image format',
+        type: 'select',
+        defaultValue: 'png',
+        options: [
+          { label: 'PNG (sharp text/lines)', value: 'png' },
+          { label: 'JPEG (smaller, photos)', value: 'jpeg' },
+        ],
+      },
+      {
+        key: 'jpegQuality',
+        label: 'JPEG quality',
+        type: 'select',
+        defaultValue: 0.85,
+        options: [
+          { label: 'High', value: 0.85 },
+          { label: 'Medium', value: 0.7 },
+          { label: 'Low', value: 0.55 },
+        ],
+      },
+    ],
   },
   {
     id: 'hwpx-to-pdf',
