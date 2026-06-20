@@ -10,11 +10,6 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        base: {
-          DEFAULT: 'rgb(var(--color-base) / <alpha-value>)',
-          subtle: 'rgb(var(--color-base-subtle) / <alpha-value>)',
-          elevated: 'rgb(var(--color-base-elevated) / <alpha-value>)',
-        },
         border: {
           DEFAULT: 'rgb(var(--color-border) / 0.055)',
           bright: 'rgb(var(--color-border) / 0.11)',
@@ -37,6 +32,19 @@ const config: Config = {
         ok: 'rgb(var(--color-ok) / 1)',
         warn: 'rgb(var(--color-warn) / 1)',
         danger: 'rgb(var(--color-danger) / 1)',
+      },
+      // `base` lives under backgroundColor (not colors) on purpose: a color
+      // named `base` would make Tailwind emit a `text-base` *color* utility
+      // that collides with the built-in `text-base` font-size utility, so any
+      // element sized with `text-base` would also get `color: var(--color-base)`
+      // (near-black in dark mode). Scoping it to backgroundColor keeps every
+      // `bg-base*` working while leaving `text-base` as pure font-size.
+      backgroundColor: {
+        base: {
+          DEFAULT: 'rgb(var(--color-base) / <alpha-value>)',
+          subtle: 'rgb(var(--color-base-subtle) / <alpha-value>)',
+          elevated: 'rgb(var(--color-base-elevated) / <alpha-value>)',
+        },
       },
       fontFamily: {
         sans: ['var(--font-geist-sans)', 'system-ui', 'sans-serif'],
