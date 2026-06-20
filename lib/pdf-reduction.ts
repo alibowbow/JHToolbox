@@ -46,7 +46,7 @@ export function summarizePdfReduction(originalBytes: number, reducedBytes: numbe
 export type ReduceMode = 'keep-text' | 'flatten';
 
 export function resolveReduceMode(value: unknown): ReduceMode {
-  return value === 'flatten' ? 'flatten' : 'keep-text';
+  return value === 'keep-text' ? 'keep-text' : 'flatten';
 }
 
 /**
