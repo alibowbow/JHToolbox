@@ -8,6 +8,7 @@ import { baseName, parseBoolean, parseNumber } from '@/lib/utils';
 import { sanitizeRowsForSpreadsheet } from '@/lib/spreadsheet-safety';
 import { sanitizeHtml } from '@/lib/html-sanitize';
 import { normalizePdfRotation, resolveDeletablePages } from '@/lib/pdf-page-math';
+import { dpiToScale, resolveReduceDpi, resolveReduceQuality, summarizePdfReduction } from '@/lib/pdf-reduction';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -151,6 +152,107 @@ async function anyImageToPngBlob(file: File): Promise<Blob> {
   canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
   bitmap.close();
   return await canvasBlob(canvas, 'image/png', 1);
+}
+
+/**
+ * Reduce a PDF's size by re-rendering each page (pdf.js) to a JPEG at a chosen
+ * DPI/quality and rebuilding the document. This rasterizes the pages (text and
+ * vectors become non-selectable). The original page point-size is preserved so
+ * the PDF still prints at the right physical dimensions. If recompression does
+ * not actually shrink the file, the original is returned untouched.
+ */
+async function reducePdfSize(
+  file: File,
+  options: Record<string, string | number | boolean>,
+  onProgress: (percent: number, stage: string) => void,
+): Promise<ProcessedFile> {
+  const dpi = resolveReduceDpi(options.dpi);
+  const quality = resolveReduceQuality(options.quality);
+  const grayscale = parseBoolean(options.grayscale, false);
+  const scale = dpiToScale(dpi);
+
+  const pdfjsLib = await getPdfJs();
+  const input = new Uint8Array(await file.arrayBuffer());
+  const srcDoc = await pdfjsLib.getDocument({ data: input, useWorkerFetch: false }).promise;
+  const outDoc = await PDFDocument.create();
+
+  try {
+    for (let pageNo = 1; pageNo <= srcDoc.numPages; pageNo += 1) {
+      onProgress(((pageNo - 1) / srcDoc.numPages) * 90, `Re-rendering page ${pageNo} of ${srcDoc.numPages}`);
+      const page = await srcDoc.getPage(pageNo);
+      const baseViewport = page.getViewport({ scale: 1 });
+      const renderViewport = page.getViewport({ scale });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.ceil(renderViewport.width));
+      canvas.height = Math.max(1, Math.ceil(renderViewport.height));
+      const context = canvas.getContext('2d');
+      if (!context) {
+        continue;
+      }
+
+      // JPEG has no alpha; paint a white page background first.
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: context, viewport: renderViewport }).promise;
+
+      if (grayscale) {
+        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          const gray = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
+          data[i] = gray;
+          data[i + 1] = gray;
+          data[i + 2] = gray;
+        }
+        context.putImageData(imageData, 0, 0);
+      }
+
+      const jpgBlob = await canvasBlob(canvas, 'image/jpeg', quality);
+      const jpgBytes = new Uint8Array(await jpgBlob.arrayBuffer());
+      const image = await outDoc.embedJpg(jpgBytes);
+      const pdfPage = outDoc.addPage([baseViewport.width, baseViewport.height]);
+      pdfPage.drawImage(image, { x: 0, y: 0, width: baseViewport.width, height: baseViewport.height });
+
+      // Release the canvas backing store between pages.
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+  } finally {
+    await srcDoc.destroy();
+  }
+
+  onProgress(95, 'Saving reduced PDF');
+  const bytes = await outDoc.save({ useObjectStreams: true });
+  const reducedBlob = blobFromBytes(bytes, 'application/pdf');
+  const { useReduced, savedPercent } = summarizePdfReduction(file.size, reducedBlob.size);
+
+  if (!useReduced) {
+    return {
+      name: `${baseName(file.name)}.pdf`,
+      blob: file,
+      mimeType: 'application/pdf',
+      metadata: {
+        result: 'original-kept',
+        reason: 'Recompression did not reduce the file size, so the original is returned unchanged.',
+        originalBytes: file.size,
+        recompressedBytes: reducedBlob.size,
+      },
+    };
+  }
+
+  return {
+    name: `${baseName(file.name)}-reduced.pdf`,
+    blob: reducedBlob,
+    mimeType: 'application/pdf',
+    metadata: {
+      result: 'reduced',
+      originalBytes: file.size,
+      reducedBytes: reducedBlob.size,
+      savedPercent,
+      note: 'Pages were rasterized to JPEG — text and vector graphics are no longer selectable.',
+    },
+  };
 }
 
 function resolvePdfInputs(files: File[]) {
@@ -1540,6 +1642,11 @@ export async function processPdfTool(ctx: ProcessContext): Promise<ProcessedFile
         mimeType: 'application/pdf',
       },
     ];
+  }
+
+  if (toolId === 'pdf-reduce-size') {
+    const result = await reducePdfSize(files[0], options, (percent, stage) => onProgress({ percent, stage }));
+    return [result];
   }
 
   if (toolId === 'pdf-to-word') {

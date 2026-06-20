@@ -21,7 +21,7 @@ verified in the current build environment**.
 | `npm run typecheck` | ✅ pass | |
 | `npm run lint` | ✅ pass (3 pre-existing warnings) | `react-hooks/exhaustive-deps`, two `@next/next/no-img-element` |
 | `npm run build` | ✅ pass | 127 static pages generated |
-| `npm run test:unit` (new) | ✅ pass | 42 url-safety + 28 zip-safety + 18 spreadsheet-safety + 22 filename-safety + 34 option-schema + 27 html-sanitize + 16 pdf-page-math + 12 tile-math + 15 media-dimensions + 11 cms-detect + 422 registry-invariant assertions |
+| `npm run test:unit` (new) | ✅ pass | 42 url-safety + 28 zip-safety + 18 spreadsheet-safety + 22 filename-safety + 34 option-schema + 27 html-sanitize + 16 pdf-page-math + 12 tile-math + 15 media-dimensions + 11 cms-detect + 20 pdf-reduction + 426 registry-invariant assertions |
 | `npm run test:e2e` | ⛔ **cannot run here** | See AF-000 |
 | `npm ci` | ⛔ **not run** | Egress is blocked; `npm ci` deletes `node_modules` then reinstalls from the registry, which would destroy the working install. Ran the non-destructive gates against the existing install instead. |
 
@@ -159,6 +159,29 @@ verified in the current build environment**.
 - **Implemented:** `detectCms(html)` returns per-candidate `evidence[]` (which signal ids matched) and `confidence` (high ≥3 / medium 2 / low 1 distinct signals), sorted strongest-first, with `status: 'detected' | 'inconclusive'`. The report and result metadata now carry status + per-candidate confidence.
 - **Regression test:** `scripts/checks/cms-detect.check.mjs` — **11 cases** (strong/weak/medium signals, inconclusive, ordering). The existing detect-cms spec only asserts the request URL, so it is unaffected.
 - **Status:** ✅ fixed & verified (11/11).
+
+### AF-037 — Added a real "Reduce PDF Size" tool (true compression)
+- **Severity:** feature (closes audit §7.3 option A — real compression)
+- **Tools/files:** **new** `pdf-reduce-size`; **new** `lib/pdf-reduction.ts`; `lib/processors/pdf.ts`, `lib/processors/index.ts`, `lib/tool-registry.ts`, `lib/tool-localization.ts`
+- **Context:** AF-016b renamed `pdf-compress` → “Optimize PDF Structure” (lossless object-stream re-save, which does not shrink image-heavy files). This adds a tool that genuinely reduces size.
+- **Implemented:** Re-renders each page (pdf.js) to a JPEG at a chosen **DPI (72–300)** and **quality (High…Minimum)**, optional **grayscale**, and rebuilds the PDF preserving each page’s point size. Honest by design: it **rasterizes** (text/vectors become non-selectable — stated in the en/ko description), and it **keeps the original unchanged if recompression would not be smaller**, reporting original/result bytes and % saved in the result metadata.
+- **Regression test:** `scripts/checks/pdf-reduction.check.mjs` — **20 cases** (DPI/quality validation, dpi→scale, “use result only when strictly smaller”). The route `/tools/pdf/pdf-reduce-size` builds (128 static pages) and the registry invariants pass (101 browsable tools).
+- **Status:** ✅ logic verified (typecheck, lint, build, 20/20). **Pending:** real-PDF size/quality confirmation in a browser (page rendering cannot run in this environment).
+
+### AF-016b — Honest naming for seven overstated PDF/GIF tools
+- **Severity:** P1 (misleading capability)
+- **Tools/files:** `lib/tool-registry.ts`, `lib/tool-localization.ts`
+- **Observed / renamed (en + ko), with descriptions stating what they are *not*:**
+  - `pdf-extract-images` renders pages → **“Render PDF Pages”** (not XObject extraction)
+  - `pdf-compress` re-saves object streams → **“Optimize PDF Structure”** (not image/font recompression)
+  - `pdf-to-excel` extracts text → **“PDF Text to Workbook”** (not table reconstruction)
+  - `pdf-sign` stamps an image → **“Add Visual Signature”** (not a cryptographic signature)
+  - `pdf-repair` re-saves parseable PDFs → **“Rebuild Parseable PDF”**
+  - `gif-png` / `gif-jpg` use the first frame → **“GIF First Frame to PNG/JPG”**
+  - `url-pdf` description now discloses the PDF is rasterized (text/links not selectable)
+- **Implemented:** Route ids unchanged and search tags preserved (`extract`/`compress`/`excel`/`sign`/`repair`/`gif` still match), so links and search keep working. None of these names are asserted by a spec.
+- **Regression test:** registry invariants + build; capability matrix regenerated.
+- **Status:** ✅ fixed & verified. **Remaining (AF-016):** `edit-pdf` (“Edit PDF” → “Add PDF Overlays”) and `pdf-compare` (“Compare PDF” → “PDF Text Compare”) — both are asserted by `ui-shell.spec.ts` (lines 749–750), so renaming them needs the matching spec update verified by e2e (blocked here, AF-000).
 
 ### AF-016a — Honest naming for two overstated image tools
 - **Severity:** P1 (misleading capability)
