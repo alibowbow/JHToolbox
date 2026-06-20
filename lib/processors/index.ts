@@ -18,6 +18,7 @@ const PDF_TOOLS = new Set([
   'pdf-redact',
   'pdf-extract-images',
   'pdf-compress',
+  'pdf-reduce-size',
   'pdf-to-png',
   'pdf-to-jpg',
   'pdf-to-webp',

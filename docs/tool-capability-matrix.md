@@ -2,7 +2,7 @@
 
 Generated from `lib/tool-registry.ts` by `scripts/gen-capability-matrix.mjs`. Do not edit by hand.
 
-- Browsable tools: **100**
+- Browsable tools: **101**
 - Network-required tools: **3** (every other tool processes locally in the browser)
 - Tools with an automated (Playwright) spec: **27**
 
@@ -25,6 +25,7 @@ Generated from `lib/tool-registry.ts` by `scripts/gen-capability-matrix.mjs`. Do
 | pdf-redact | PDF Redact | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
 | pdf-extract-images | Render PDF Pages | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
 | pdf-compress | Optimize PDF Structure | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
+| pdf-reduce-size | Reduce PDF Size | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
 | pdf-to-png | PDF to PNG | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | yes (e2e) |
 | pdf-to-jpg | PDF to JPG | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |
 | pdf-to-webp | PDF to WEBP | pdf | .pdf | file | local | pdf-lib / pdf.js | no (tracked: P1 cancellation) | none | none |

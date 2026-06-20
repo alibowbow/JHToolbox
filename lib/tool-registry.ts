@@ -202,6 +202,44 @@ export const tools: ToolDefinition[] = [
     browseGroups: ['compress'],
   },
   {
+    id: 'pdf-reduce-size',
+    name: 'Reduce PDF Size',
+    category: 'pdf',
+    description:
+      'Shrink a PDF by re-rendering each page to a compressed JPEG at a chosen resolution. Best for scans and image-heavy PDFs; text and vector graphics become non-selectable. The original is kept if recompression would not be smaller.',
+    accept: '.pdf',
+    tags: ['pdf', 'compress', 'reduce', 'size', 'shrink', 'optimize'],
+    browseGroups: ['compress', 'new'],
+    options: [
+      {
+        key: 'dpi',
+        label: 'Resolution (DPI)',
+        type: 'select',
+        defaultValue: 150,
+        options: [
+          { label: '72 DPI (smallest)', value: 72 },
+          { label: '96 DPI', value: 96 },
+          { label: '150 DPI (recommended)', value: 150 },
+          { label: '200 DPI', value: 200 },
+          { label: '300 DPI (sharpest)', value: 300 },
+        ],
+      },
+      {
+        key: 'quality',
+        label: 'Image quality',
+        type: 'select',
+        defaultValue: 0.7,
+        options: [
+          { label: 'High', value: 0.85 },
+          { label: 'Medium', value: 0.7 },
+          { label: 'Low', value: 0.55 },
+          { label: 'Minimum', value: 0.4 },
+        ],
+      },
+      { key: 'grayscale', label: 'Grayscale', type: 'checkbox', defaultValue: false },
+    ],
+  },
+  {
     id: 'pdf-to-png',
     name: 'PDF to PNG',
     category: 'pdf',
@@ -1790,6 +1828,7 @@ export const categories: ToolCategoryDefinition[] = [
       'pdf-compare',
       'pdf-extract-images',
       'pdf-compress',
+      'pdf-reduce-size',
       'pdf-to-png',
       'pdf-to-jpg',
       'pdf-to-webp',
