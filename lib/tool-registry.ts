@@ -206,7 +206,7 @@ export const tools: ToolDefinition[] = [
     name: 'Reduce PDF Size',
     category: 'pdf',
     description:
-      'Reduce a PDF\'s file size. "Keep text" recompresses only the embedded JPEG images and leaves text selectable (recommended). "Flatten" re-renders whole pages to images — smaller for image-heavy files but text becomes non-selectable. The original is kept if the result would not be smaller.',
+      'Reduce a PDF\'s file size. By default "Flatten" re-renders whole pages to compressed images — reliably smaller, but text becomes non-selectable. "Keep text" instead recompresses only the embedded JPEG images and leaves text selectable. The original is kept if the result would not be smaller.',
     accept: '.pdf',
     tags: ['pdf', 'compress', 'reduce', 'size', 'shrink', 'optimize'],
     browseGroups: ['compress', 'new'],
@@ -215,10 +215,10 @@ export const tools: ToolDefinition[] = [
         key: 'mode',
         label: 'Method',
         type: 'select',
-        defaultValue: 'keep-text',
+        defaultValue: 'flatten',
         options: [
-          { label: 'Keep text — recompress images (recommended)', value: 'keep-text' },
-          { label: 'Flatten pages to images (smaller, no selectable text)', value: 'flatten' },
+          { label: 'Flatten pages to images (smaller — text not selectable)', value: 'flatten' },
+          { label: 'Keep text — recompress JPEG images only', value: 'keep-text' },
         ],
       },
       {

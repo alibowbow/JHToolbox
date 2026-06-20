@@ -53,8 +53,8 @@ check('kept original reports 0% saved', summarizePdfReduction(1000, 1200).savedP
 // mode resolution
 check('mode flatten', resolveReduceMode('flatten') === 'flatten');
 check('mode keep-text', resolveReduceMode('keep-text') === 'keep-text');
-check('mode unknown -> keep-text', resolveReduceMode('x') === 'keep-text');
-check('mode undefined -> keep-text', resolveReduceMode(undefined) === 'keep-text');
+check('mode unknown -> flatten (default)', resolveReduceMode('x') === 'flatten');
+check('mode undefined -> flatten (default)', resolveReduceMode(undefined) === 'flatten');
 
 // dpi -> max image dimension (~11in long edge)
 check('150 dpi -> 1650', dpiToMaxImageDimension(150) === 1650);
