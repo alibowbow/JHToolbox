@@ -1,11 +1,11 @@
 import { ProcessContext, ProcessedFile } from '@/types/processor';
-import { processPdfTool } from '@/lib/processors/pdf';
-import { processHwpxTool } from '@/lib/processors/hwpx';
-import { processImageTool } from '@/lib/processors/image';
-import { processOcrTool } from '@/lib/processors/ocr';
-import { processMediaTool } from '@/lib/processors/media';
-import { processDataTool } from '@/lib/processors/data';
-import { processWebTool } from '@/lib/processors/web';
+
+// Processor modules are imported dynamically (below) rather than statically so
+// that webpack splits each category into its own async chunk. Without this, a
+// single static graph drags every category's heavy static deps (pdf-lib, xlsx,
+// html2canvas, pica, browser-image-compression, qrcode …) into the shared
+// bundle of *every* tool page. With dynamic import(), opening an image tool no
+// longer downloads pdf-lib/xlsx, and the per-category code loads on first run.
 
 const PDF_TOOLS = new Set([
   'pdf-merge',
@@ -122,30 +122,37 @@ const WEB_TOOLS = new Set(['qr-generator', 'url-image', 'url-pdf', 'detect-cms',
 
 export async function runTool(ctx: ProcessContext): Promise<ProcessedFile[]> {
   if (PDF_TOOLS.has(ctx.toolId)) {
+    const { processPdfTool } = await import('@/lib/processors/pdf');
     return await processPdfTool(ctx);
   }
 
   if (HWPX_TOOLS.has(ctx.toolId)) {
+    const { processHwpxTool } = await import('@/lib/processors/hwpx');
     return await processHwpxTool(ctx);
   }
 
   if (IMAGE_TOOLS.has(ctx.toolId)) {
+    const { processImageTool } = await import('@/lib/processors/image');
     return await processImageTool(ctx);
   }
 
   if (OCR_TOOLS.has(ctx.toolId)) {
+    const { processOcrTool } = await import('@/lib/processors/ocr');
     return await processOcrTool(ctx);
   }
 
   if (MEDIA_TOOLS.has(ctx.toolId)) {
+    const { processMediaTool } = await import('@/lib/processors/media');
     return await processMediaTool(ctx);
   }
 
   if (DATA_TOOLS.has(ctx.toolId)) {
+    const { processDataTool } = await import('@/lib/processors/data');
     return await processDataTool(ctx);
   }
 
   if (WEB_TOOLS.has(ctx.toolId)) {
+    const { processWebTool } = await import('@/lib/processors/web');
     return await processWebTool(ctx);
   }
 

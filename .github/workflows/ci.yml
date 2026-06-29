@@ -30,6 +30,12 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Browser-free invariant/safety checks (URL/zip/spreadsheet/filename/option
+      # validation, PDF & tile math, HWPX package structure, registry invariants).
+      # Run before the build so a logic regression fails fast and cheaply.
+      - name: Unit checks
+        run: npm run test:unit
+
       - name: Build
         run: npm run build
 
