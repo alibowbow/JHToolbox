@@ -36,7 +36,9 @@ export function buildVersionXml(): string {
 
 export function buildSettingsXml(): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<ha:HWPApplicationSetting xmlns:ha="http://www.hancom.co.kr/hwpml/2011/app" xmlns:config="urn:oasis:names:tc:opendocument:xmlns:config:1.0"/>`;
+<ha:HWPApplicationSetting xmlns:ha="http://www.hancom.co.kr/hwpml/2011/app" xmlns:config="urn:oasis:names:tc:opendocument:xmlns:config:1.0">
+  <ha:CaretPosition listIDRef="0" paraIDRef="0" pos="0"/>
+</ha:HWPApplicationSetting>`;
 }
 
 export function buildContainerXml(): string {
@@ -57,7 +59,7 @@ export function buildManifestXml(sectionCount: number, binItems: BinItem[]): str
   );
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <odf:manifest xmlns:odf="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0">
-  <odf:file-entry full-path="/" media-type="application/hwpml-package+xml"/>
+  <odf:file-entry full-path="/" media-type="${HWPX_MIME}"/>
   <odf:file-entry full-path="Contents/header.xml" media-type="application/xml"/>
 ${sections.join('\n')}
 ${bins.join('\n')}
@@ -68,36 +70,48 @@ export function buildContentHpf(title: string, sectionCount: number, binItems: B
   const sectionItems = Array.from({ length: sectionCount }, (_, index) =>
     `    <opf:item id="section${index}" href="Contents/section${index}.xml" media-type="application/xml"/>`,
   );
-  const sectionRefs = Array.from({ length: sectionCount }, (_, index) =>
-    `    <opf:itemref idref="section${index}" linear="yes"/>`,
-  );
   const binItemsXml = binItems.map(
     (item) => `    <opf:item id="${escapeXml(item.id)}" href="${escapeXml(item.href)}" media-type="${escapeXml(item.mediaType)}" isEmbeded="1"/>`,
   );
+  // Hancom lists the header as the first spine item, then every section in order.
+  const spine = ['    <opf:itemref idref="header" linear="yes"/>']
+    .concat(
+      Array.from({ length: sectionCount }, (_, index) => `    <opf:itemref idref="section${index}" linear="yes"/>`),
+    )
+    .join('\n');
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<opf:package xmlns:opf="http://www.idpf.org/2007/opf/" xmlns:dc="http://purl.org/dc/elements/1.1/" version="1.0" unique-identifier="BookId">
+<opf:package xmlns:opf="http://www.idpf.org/2007/opf/" xmlns:dc="http://purl.org/dc/elements/1.1/" version="" unique-identifier="" id="">
   <opf:metadata>
-    <dc:title>${escapeXml(title)}</dc:title>
-    <dc:language>ko</dc:language>
+    <opf:title>${escapeXml(title)}</opf:title>
+    <opf:language>ko</opf:language>
+    <opf:meta name="creator" content="JH Toolbox"/>
   </opf:metadata>
   <opf:manifest>
     <opf:item id="header" href="Contents/header.xml" media-type="application/xml"/>
 ${sectionItems.join('\n')}
 ${binItemsXml.join('\n')}
+    <opf:item id="settings" href="settings.xml" media-type="application/xml"/>
   </opf:manifest>
   <opf:spine>
-${sectionRefs.join('\n')}
+${spine}
   </opf:spine>
 </opf:package>`;
 }
 
-function buildFontface(): string {
-  return `  <hh:fontfaces itemCnt="1">
-    <hh:fontface lang="HANGUL" fontCnt="1">
-      <hh:font id="0" face="함초롬바탕" type="TTF" isEmbedded="0">
-        <hh:typeInfo familyType="FCAT_GOTHIC" weight="0" proportion="0" contrast="0" strokeVariation="0" armStyle="0" letterForm="0" midline="0" xHeight="0"/>
-      </hh:font>
-    </hh:fontface>
+// A charPr's <hh:fontRef> resolves a font id per language (hangul/latin/hanja/
+// japanese/other/symbol/user). Hancom requires every one of those 7 languages
+// to have a fontface list containing the referenced id — emitting only HANGUL
+// leaves the other 6 refs dangling and Hancom refuses to open the file.
+const FONT_LANGS = ['HANGUL', 'LATIN', 'HANJA', 'JAPANESE', 'OTHER', 'SYMBOL', 'USER'] as const;
+
+function buildFontfaces(): string {
+  const faces = FONT_LANGS.map(
+    (lang) => `    <hh:fontface lang="${lang}" fontCnt="1">
+      <hh:font id="0" face="함초롬바탕" type="TTF" isEmbedded="0"/>
+    </hh:fontface>`,
+  ).join('\n');
+  return `  <hh:fontfaces itemCnt="${FONT_LANGS.length}">
+${faces}
   </hh:fontfaces>`;
 }
 
@@ -106,7 +120,7 @@ export function buildHeaderXml(sectionCount: number): string {
 <hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:hp="${HP_NS}" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core" version="1.4" secCnt="${sectionCount}">
   <hh:beginNum page="1" footnote="1" endnote="1" pic="1" tbl="1" equation="1"/>
   <hh:refList>
-${buildFontface()}
+${buildFontfaces()}
     <hh:borderFills itemCnt="1">
       <hh:borderFill id="1" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0">
         <hh:slash type="NONE" Crooked="0" isCounter="0"/>
@@ -119,7 +133,7 @@ ${buildFontface()}
       </hh:borderFill>
     </hh:borderFills>
     <hh:charProperties itemCnt="1">
-      <hh:charPr id="0" height="1000" textColor="#000000" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="2">
+      <hh:charPr id="0" height="1000" textColor="#000000" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1">
         <hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/>
         <hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/>
         <hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/>
@@ -130,6 +144,11 @@ ${buildFontface()}
     <hh:tabProperties itemCnt="1">
       <hh:tabPr id="0" autoTabLeft="0" autoTabRight="0"/>
     </hh:tabProperties>
+    <hh:numberings itemCnt="1">
+      <hh:numbering id="1" start="0">
+        <hh:paraHead start="1" level="1" align="LEFT" useInstWidth="1" autoIndent="1" widthAdjust="0" textOffsetType="PERCENT" textOffset="50" numFormat="DIGIT" charPrIDRef="4294967295" checkable="0">^1.</hh:paraHead>
+      </hh:numbering>
+    </hh:numberings>
     <hh:paraProperties itemCnt="1">
       <hh:paraPr id="0" tabPrIDRef="0" condense="0" fontLineHeight="0" snapToGrid="1" suppressLineNumbers="0" checked="0">
         <hh:align horizontal="JUSTIFY" vertical="BASELINE"/>
@@ -143,7 +162,7 @@ ${buildFontface()}
           <hc:next value="0" unit="HWPUNIT"/>
         </hh:margin>
         <hh:lineSpacing type="PERCENT" value="160" unit="HWPUNIT"/>
-        <hh:border borderFillIDRef="2" offsetLeft="0" offsetRight="0" offsetTop="0" offsetBottom="0" connect="0" ignoreMargin="0"/>
+        <hh:border borderFillIDRef="1" offsetLeft="0" offsetRight="0" offsetTop="0" offsetBottom="0" connect="0" ignoreMargin="0"/>
       </hh:paraPr>
     </hh:paraProperties>
     <hh:styles itemCnt="1">
