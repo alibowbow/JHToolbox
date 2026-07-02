@@ -10,7 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
+    "typecheck": "tsc --noEmit --incremental false -p tsconfig.typecheck.json",
     "check:url-safety": "node --experimental-strip-types scripts/checks/url-safety.check.mjs",
     "check:zip-safety": "node --experimental-strip-types scripts/checks/zip-safety.check.mjs",
     "check:spreadsheet-safety": "node --experimental-strip-types scripts/checks/spreadsheet-safety.check.mjs",

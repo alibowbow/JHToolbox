@@ -183,7 +183,9 @@ test('korean locale also localizes newly added screen tools', async ({ page }) =
   await page.getByRole('button', { name: 'ko' }).click();
 
   await expect(page.getByRole('heading', { level: 2, name: '스크린샷 캡처' })).toBeVisible();
-  await expect(page.getByRole('main').getByText('화면 녹화')).toBeVisible();
+  // The capture panel's own Korean copy (the decorative category badge that
+  // used to say "화면 녹화" was removed from the workbench).
+  await expect(page.getByRole('main').getByText('스크린샷 대상')).toBeVisible();
 });
 
 test('sidebar navigation remains stable after visiting a tool detail page', async ({ page }) => {
