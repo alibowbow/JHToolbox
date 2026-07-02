@@ -70,6 +70,21 @@ check('title XML-escaped in content.hpf', hpf.includes('Test &amp; &lt;doc&gt;')
 const header = await zip.file('Contents/header.xml').async('string');
 check('header secCnt = 2', header.includes('secCnt="2"'));
 
+// Reference integrity — the exact bug that made Hancom refuse fidelity HWPX.
+const FONT_LANGS = ['HANGUL', 'LATIN', 'HANJA', 'JAPANESE', 'OTHER', 'SYMBOL', 'USER'];
+check('header defines all 7 fontface languages', FONT_LANGS.every((l) => header.includes(`lang="${l}"`)));
+check('no dangling borderFillIDRef="2" in header', !header.includes('borderFillIDRef="2"'));
+
+// The validator must REJECT a header with dangling refs (regression guard): drop
+// every non-HANGUL fontface, leaving charPr fontRef latin/hanja/… unresolved.
+const brokenZip = await JSZip.loadAsync(bytes);
+const brokenHeader = header.replace(/<hh:fontface lang="(?!HANGUL)[^"]*"[\s\S]*?<\/hh:fontface>\s*/g, '');
+check('broke the header (removed 6 fontfaces)', FONT_LANGS.filter((l) => brokenHeader.includes(`lang="${l}"`)).length === 1);
+brokenZip.file('Contents/header.xml', brokenHeader);
+const brokenBytes = await brokenZip.generateAsync({ type: 'uint8array' });
+const brokenResult = await validateHwpxStructure(brokenBytes);
+check('validator rejects dangling fontRef', brokenResult.ok === false && brokenResult.errors.some((e) => /fontface/i.test(e)));
+
 // Empty document rejected (no silent empty PDF/HWPX).
 let threw = false;
 try {
