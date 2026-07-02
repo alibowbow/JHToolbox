@@ -92,6 +92,10 @@ check('positions are PARA-relative offsets', /<hp:pos treatAsChar="0"[^>]*vertRe
 // Dynamic charPr for the 16pt title.
 check('dynamic charPr for 16pt title', /<hh:charPr id="\d+" height="1600"/.test(header));
 
+// Fixture-parity details from adversarial verification.
+check('floating table uses textWrap="SQUARE"', /<hp:tbl [^>]*textWrap="SQUARE"/.test(section));
+check('shapes persist curSz = orgSz', !/<hp:rect (?:(?!<\/hp:rect>).)*<hp:curSz width="0" height="0"\/>/.test(section));
+
 // Empty document rejected.
 let threw = false;
 try {

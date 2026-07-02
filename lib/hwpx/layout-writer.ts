@@ -116,7 +116,8 @@ function buildTextBox(params: {
     `<hp:rect id="${id}" zOrder="${zOrder}" numberingType="NONE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" href="" groupLevel="0" instid="${id}" ratio="0">` +
     '<hp:offset x="0" y="0"/>' +
     `<hp:orgSz width="${widthHwp}" height="${heightHwp}"/>` +
-    '<hp:curSz width="0" height="0"/>' +
+    // Real Hancom saves persist the current (transformed) size; identity here.
+    `<hp:curSz width="${widthHwp}" height="${heightHwp}"/>` +
     '<hp:flip horizontal="0" vertical="0"/>' +
     `<hp:rotationInfo angle="0" centerX="${Math.round(widthHwp / 2)}" centerY="${Math.round(heightHwp / 2)}" rotateimage="1"/>` +
     `<hp:renderingInfo>${IDENTITY_MATRICES}</hp:renderingInfo>` +
@@ -145,7 +146,7 @@ function buildRuleLine(params: { id: number; zOrder: number; seg: RuleSegment })
     `<hp:line id="${id}" zOrder="${zOrder}" numberingType="NONE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" href="" groupLevel="0" instid="${id}" isReverseHV="0">` +
     '<hp:offset x="0" y="0"/>' +
     `<hp:orgSz width="${dx}" height="${dy}"/>` +
-    '<hp:curSz width="0" height="0"/>' +
+    `<hp:curSz width="${dx}" height="${dy}"/>` +
     '<hp:flip horizontal="0" vertical="0"/>' +
     `<hp:rotationInfo angle="0" centerX="${Math.round(dx / 2)}" centerY="${Math.round(dy / 2)}" rotateimage="1"/>` +
     `<hp:renderingInfo>${IDENTITY_MATRICES}</hp:renderingInfo>` +
@@ -205,7 +206,8 @@ function buildTable(params: {
 
   // hp:tbl puts the ShapeObject block FIRST (unlike rect/line where it is last).
   return (
-    `<hp:tbl id="${id}" zOrder="${zOrder}" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="1" rowCnt="${rowCnt}" colCnt="${colCnt}" cellSpacing="0" borderFillIDRef="${SOLID_BORDER_FILL_ID}" noAdjust="0">` +
+    // textWrap="SQUARE" matches the fixtures' only treatAsChar="0" float.
+    `<hp:tbl id="${id}" zOrder="${zOrder}" numberingType="TABLE" textWrap="SQUARE" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="1" rowCnt="${rowCnt}" colCnt="${colCnt}" cellSpacing="0" borderFillIDRef="${SOLID_BORDER_FILL_ID}" noAdjust="0">` +
     shapeSz(width, height) +
     tablePos(xsHwp[0], ysHwp[0]) +
     '<hp:outMargin left="0" right="0" top="0" bottom="0"/>' +
