@@ -441,7 +441,8 @@ Object.assign(koChoiceLabels, {
 
 Object.assign(koChoiceLabels, {
   'Keep original look (page images)': '원본 모양 보존 (페이지 이미지)',
-  'Editable text (layout approximated)': '편집 가능한 텍스트 (레이아웃 근사)',
+  'Keep layout + editable text (beta)': '레이아웃 유지 + 텍스트 편집 (베타)',
+  'Editable text (flowing paragraphs)': '편집 가능한 텍스트 (문단 흐름)',
   '144 DPI (smaller)': '144 DPI (용량 작게)',
   '200 DPI (recommended)': '200 DPI (권장)',
   '300 DPI (sharpest)': '300 DPI (가장 선명)',

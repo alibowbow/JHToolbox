@@ -20,10 +20,10 @@
 
 export const HWPX_MIME = 'application/hwp+zip';
 
-const XML_PROLOG = '<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>';
+export const XML_PROLOG = '<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>';
 
 /** The 15 xmlns declarations Hancom writes on hs:sec / hh:head / opf:package, in order. */
-const HWPML_NS =
+export const HWPML_NS =
   'xmlns:ha="http://www.hancom.co.kr/hwpml/2011/app" ' +
   'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" ' +
   'xmlns:hp10="http://www.hancom.co.kr/hwpml/2016/paragraph" ' +
@@ -155,17 +155,27 @@ function buildFontfaces(): string {
   return `<hh:fontfaces itemCnt="7">${faces}</hh:fontfaces>`;
 }
 
+/** borderFill id used by generated table cells (solid 0.12mm black borders). */
+export const SOLID_BORDER_FILL_ID = 3;
+
 function buildBorderFills(): string {
   const borders =
     '<hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/>' +
     '<hh:leftBorder type="NONE" width="0.1 mm" color="#000000"/><hh:rightBorder type="NONE" width="0.1 mm" color="#000000"/>' +
     '<hh:topBorder type="NONE" width="0.1 mm" color="#000000"/><hh:bottomBorder type="NONE" width="0.1 mm" color="#000000"/>' +
     '<hh:diagonal type="SOLID" width="0.1 mm" color="#000000"/>';
+  const solidBorders =
+    '<hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/>' +
+    '<hh:leftBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:rightBorder type="SOLID" width="0.12 mm" color="#000000"/>' +
+    '<hh:topBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:bottomBorder type="SOLID" width="0.12 mm" color="#000000"/>' +
+    '<hh:diagonal type="SOLID" width="0.1 mm" color="#000000"/>';
   return (
-    '<hh:borderFills itemCnt="2">' +
+    '<hh:borderFills itemCnt="3">' +
     `<hh:borderFill id="1" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0">${borders}</hh:borderFill>` +
     // borderFill 2 is what charPr/paraPr reference: no borders + a "none" fill.
     `<hh:borderFill id="2" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0">${borders}<hc:fillBrush><hc:winBrush faceColor="none" hatchColor="#FF000000" alpha="0"/></hc:fillBrush></hh:borderFill>` +
+    // borderFill 3: the solid cell border generated tables use (real id=4 shape).
+    `<hh:borderFill id="${SOLID_BORDER_FILL_ID}" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0">${solidBorders}</hh:borderFill>` +
     '</hh:borderFills>'
   );
 }
@@ -397,7 +407,7 @@ export const FULL_BLEED_MARGINS: PageMargins = { header: 0, footer: 0, left: 0, 
 /** The standard margins Hancom's blank document uses (A4-scale HWPUNIT). */
 export const STANDARD_MARGINS: PageMargins = { header: 4252, footer: 4252, left: 8504, right: 8504, top: 5668, bottom: 4252 };
 
-function buildSecPr(widthHwp: number, heightHwp: number, landscape: boolean, margins: PageMargins): string {
+export function buildSecPr(widthHwp: number, heightHwp: number, landscape: boolean, margins: PageMargins): string {
   // Ground truth from real Hancom saves: a PORTRAIT page carries
   // landscape="WIDELY"; a landscape page carries "NARROWLY".
   const orient = landscape ? 'NARROWLY' : 'WIDELY';

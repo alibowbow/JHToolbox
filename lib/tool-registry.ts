@@ -486,7 +486,8 @@ export const tools: ToolDefinition[] = [
         defaultValue: 'fidelity',
         options: [
           { label: 'Keep original look (page images)', value: 'fidelity' },
-          { label: 'Editable text (layout approximated)', value: 'editable' },
+          { label: 'Keep layout + editable text (beta)', value: 'layout' },
+          { label: 'Editable text (flowing paragraphs)', value: 'editable' },
         ],
       },
       {
