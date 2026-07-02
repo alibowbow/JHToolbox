@@ -18,7 +18,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 22+: the unit checks run TypeScript directly via
+          # --experimental-strip-types, which Node 20 does not have.
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -47,7 +49,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies

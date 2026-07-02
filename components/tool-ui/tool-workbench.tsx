@@ -1129,12 +1129,14 @@ function StandardToolWorkbench({
                       ) : null}
                       {result.metadata ? (
                         <dl className="max-h-64 space-y-2 overflow-auto rounded-xl border border-border bg-base-subtle p-3">
-                          {Object.entries(result.metadata).map(([key, value]) => (
-                            <div key={key}>
-                              <dt className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">{humanizeMetadataKey(key)}</dt>
-                              <dd className="mt-0.5 break-words text-sm text-ink">{formatMetadataValue(value, locale)}</dd>
-                            </div>
-                          ))}
+                          {Object.entries(result.metadata)
+                            .filter((entry): entry is [string, string | number | boolean] => entry[1] !== null && entry[1] !== undefined)
+                            .map(([key, value]) => (
+                              <div key={key}>
+                                <dt className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">{humanizeMetadataKey(key)}</dt>
+                                <dd className="mt-0.5 break-words text-sm text-ink">{formatMetadataValue(value, locale)}</dd>
+                              </div>
+                            ))}
                         </dl>
                       ) : null}
                     </ResultCard>
