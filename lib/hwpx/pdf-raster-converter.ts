@@ -78,7 +78,11 @@ export async function convertPdfToFidelityHwpx(
     onProgress(96, 'Building HWPX package');
     const rasterDoc: RasterDocument = {
       pages,
-      metadata: { title: file.name.replace(/\.[^/.]+$/, ''), producer: 'JH Toolbox' },
+      metadata: {
+        title: file.name.replace(/\.[^/.]+$/, ''),
+        producer: 'JH Toolbox',
+        createdAtIso: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      },
     };
     const hwpxBytes = await writeRasterHwpx(rasterDoc);
 

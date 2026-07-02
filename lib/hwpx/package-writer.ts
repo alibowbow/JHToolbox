@@ -4,6 +4,7 @@ import type { BinItem } from './xml-builders';
 import { pdfPageToHwpPageSize } from './units';
 import {
   HWPX_MIME,
+  buildContainerRdf,
   buildContainerXml,
   buildContentHpf,
   buildHeaderXml,
@@ -43,10 +44,11 @@ export async function writeRasterHwpx(doc: RasterDocument): Promise<Uint8Array> 
 
   const metaInf = zip.folder('META-INF');
   metaInf?.file('container.xml', buildContainerXml());
-  metaInf?.file('manifest.xml', buildManifestXml(sectionCount, binItems));
+  metaInf?.file('manifest.xml', buildManifestXml());
+  metaInf?.file('container.rdf', buildContainerRdf(sectionCount));
 
   const contents = zip.folder('Contents');
-  contents?.file('content.hpf', buildContentHpf(title, sectionCount, binItems));
+  contents?.file('content.hpf', buildContentHpf(title, sectionCount, binItems, doc.metadata?.createdAtIso));
   contents?.file('header.xml', buildHeaderXml(sectionCount));
 
   const previewLines: string[] = [];
