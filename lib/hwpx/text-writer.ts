@@ -35,7 +35,28 @@ export interface TextDocument {
 const CHAR_PR_BASE = 7;
 const PARA_PR_BASE = 16;
 /** Base paraPr id 0 is the LEFT-aligned body entry in the fixed table. */
-const LEFT_PARA_PR = 0;
+export const LEFT_PARA_PR = 0;
+
+/** Deduplicate (font size, bold) combos into dynamic header charPr entries. */
+export function createCharPrRegistry() {
+  const extras: HeaderCharPrExtra[] = [];
+  const byKey = new Map<string, number>();
+  return {
+    extras,
+    idFor(fontSizePt: number, bold: boolean): number {
+      const height = Math.max(400, Math.round(fontSizePt * 100));
+      const key = `${height}:${bold ? 1 : 0}`;
+      const existing = byKey.get(key);
+      if (existing !== undefined) {
+        return existing;
+      }
+      const id = CHAR_PR_BASE + extras.length;
+      extras.push({ id, height, bold });
+      byKey.set(key, id);
+      return id;
+    },
+  };
+}
 
 /**
  * Build an editable HWPX from extracted text: real page sizes, standard
@@ -48,21 +69,8 @@ export async function writeTextHwpx(doc: TextDocument): Promise<Uint8Array> {
     throw new Error('Cannot build an HWPX document with no pages.');
   }
 
-  // Deduplicate (font size, bold) combos into dynamic charPr entries.
-  const charPrExtras: HeaderCharPrExtra[] = [];
-  const charPrByKey = new Map<string, number>();
-  const charPrIdFor = (fontSizePt: number, bold: boolean): number => {
-    const height = Math.max(400, Math.round(fontSizePt * 100));
-    const key = `${height}:${bold ? 1 : 0}`;
-    const existing = charPrByKey.get(key);
-    if (existing !== undefined) {
-      return existing;
-    }
-    const id = CHAR_PR_BASE + charPrExtras.length;
-    charPrExtras.push({ id, height, bold });
-    charPrByKey.set(key, id);
-    return id;
-  };
+  const charPrRegistry = createCharPrRegistry();
+  const charPrIdFor = charPrRegistry.idFor;
 
   // Only CENTER needs a dynamic paragraph entry; LEFT maps to the base table.
   const paraPrExtras: HeaderParaPrExtra[] = [];
@@ -112,7 +120,7 @@ export async function writeTextHwpx(doc: TextDocument): Promise<Uint8Array> {
     sectionXmls,
     binItems: [],
     binData: [],
-    headerExtras: { charPrs: charPrExtras, paraPrs: paraPrExtras },
+    headerExtras: { charPrs: charPrRegistry.extras, paraPrs: paraPrExtras },
     previewText: allText.slice(0, 1000) || 'Converted document',
   });
 }

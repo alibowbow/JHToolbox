@@ -1,9 +1,10 @@
 import JSZip from 'jszip';
 import { ProcessContext, ProcessedFile } from '@/types/processor';
 import { baseName } from '@/lib/utils';
-import { extractPdfStyledPages, renderHtmlStringToPdfBlob } from '@/lib/processors/pdf';
+import { extractPdfLayoutPages, extractPdfStyledPages, renderHtmlStringToPdfBlob } from '@/lib/processors/pdf';
 import { convertPdfToFidelityHwpx, resolveFidelityDpi } from '@/lib/hwpx/pdf-raster-converter';
 import { writeTextHwpx } from '@/lib/hwpx/text-writer';
+import { writeLayoutHwpx } from '@/lib/hwpx/layout-writer';
 import { resolveReduceQuality } from '@/lib/pdf-reduction';
 import { ZIP_LIMITS, checkZipBomb, sanitizeZipEntryName } from '@/lib/zip-safety';
 
@@ -505,6 +506,45 @@ export async function processHwpxTool(ctx: ProcessContext): Promise<ProcessedFil
             mode: 'fidelity',
             pages: pageCount,
             note: 'Each page is placed as a full-page image at its original size. Visual fidelity is high, but text inside the page is not selectable or editable.',
+          },
+        },
+      ];
+    }
+
+    if (mode === 'layout') {
+      // layout: positioned text boxes + rules, with clean ruled grids emitted
+      // as real editable Hancom tables.
+      const layoutPages = await extractPdfLayoutPages(source, (value) =>
+        onProgress({ percent: 10 + value * 70, stage: 'Analyzing PDF layout' }),
+      );
+
+      onProgress({ percent: 85, stage: 'Building HWPX document' });
+      const { bytes, stats } = await writeLayoutHwpx({
+        pages: layoutPages.map((page) => ({
+          pageNumber: page.pageNumber,
+          widthPt: page.widthPt,
+          heightPt: page.heightPt,
+          textLines: page.textLines.map((line) => ({ ...line, bold: false })),
+          segments: page.segments,
+        })),
+        metadata: {
+          title: baseName(source.name),
+          createdAtIso: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+        },
+      });
+
+      return [
+        {
+          name: `${baseName(source.name)}.hwpx`,
+          blob: new Blob([Uint8Array.from(bytes).buffer], { type: HWPX_MIME }),
+          mimeType: HWPX_MIME,
+          metadata: {
+            mode: 'layout',
+            pages: layoutPages.length,
+            tables: stats.tables,
+            textBoxes: stats.textBoxes,
+            lines: stats.rules,
+            note: 'Each text line sits in an editable text box at its original position; clean ruled grids become real Hangul tables. Unruled or merged-cell tables fall back to lines + text boxes.',
           },
         },
       ];
