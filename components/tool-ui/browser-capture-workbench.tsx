@@ -11,7 +11,7 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { ResultCard } from '@/components/ui/ResultCard';
 import { Tabs } from '@/components/ui/Tabs';
 import { toast } from '@/components/ui/Toast';
-import { formatMegaBytes, getCategoryCopy } from '@/lib/i18n';
+import { formatMegaBytes } from '@/lib/i18n';
 import { createWavRecordingSession, type WavRecordingSession } from '@/lib/processors/audio-recording';
 import { convertAudioFile, trimAudioFile } from '@/lib/processors/media';
 import { getLocalizedChoiceLabel, getLocalizedOptionLabel, getLocalizedToolCopy } from '@/lib/tool-localization';
@@ -557,7 +557,6 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
   const localizedTool = getLocalizedToolCopy(tool, locale);
   const Icon = categoryIcons[tool.category];
   const style = categoryStyles[tool.category];
-  const category = getCategoryCopy(locale, tool.category);
   const copy = captureCopy[locale];
   const captureKind: BrowserCaptureKind =
     tool.id === 'webcam-recorder' || tool.id === 'audio-recorder' ? 'user-media' : 'display';
@@ -1114,15 +1113,11 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
           }`}
         >
           <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="workspace-kicker">Capture studio</p>
-                <p className="mt-2 text-sm font-semibold text-ink">{isRecorder ? copy.liveCapture : copy.screenshotSource}</p>
-                <p className="mt-1 text-sm text-ink-muted">
-                  {isRecorder ? copy.liveCaptureDescription : copy.screenshotSourceDescription}
-                </p>
-              </div>
-              <span className={`badge border ${style.badge}`}>{category.nav}</span>
+            <div>
+              <p className="text-sm font-semibold text-ink">{isRecorder ? copy.liveCapture : copy.screenshotSource}</p>
+              <p className="mt-1 text-sm text-ink-muted">
+                {isRecorder ? copy.liveCaptureDescription : copy.screenshotSourceDescription}
+              </p>
             </div>
 
             {capabilityMessage ? <div className="workspace-panel border-warn/30 bg-warn/10 px-4 py-3 text-sm text-warn">{capabilityMessage}</div> : null}
@@ -1130,13 +1125,9 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
             {isAudioRecorder ? (
               audioEditorFile && audioEditorPreviewUrl ? (
                 <section className="editor-stage space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="workspace-kicker">Audio editor</p>
-                      <p className="mt-2 text-sm font-semibold text-ink">{copy.waveformEditor}</p>
-                      <p className="mt-1 text-sm text-ink-muted">{copy.waveformEditorDescription}</p>
-                    </div>
-                    <span className="editor-chip normal-case tracking-normal text-ink-muted">WAV master</span>
+                  <div>
+                    <p className="text-sm font-semibold text-ink">{copy.waveformEditor}</p>
+                    <p className="mt-1 text-sm text-ink-muted">{copy.waveformEditorDescription}</p>
                   </div>
 
                   <AudioWaveformEditor
@@ -1241,8 +1232,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
           {!isAudioRecorder ? (
             <div className="space-y-4">
               <section className="workspace-panel p-4">
-                <p className="workspace-kicker">Configuration</p>
-                <p className="mt-2 text-sm font-semibold text-ink">{messages.workbench.options}</p>
+                <p className="text-sm font-semibold text-ink">{messages.workbench.options}</p>
                 {tool.options?.length ? (
                   <div className="mt-4 space-y-4">
                     {tool.options.map((option) => (
@@ -1260,8 +1250,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
               </section>
 
               <section className="workspace-panel p-4">
-                <p className="workspace-kicker">Notes</p>
-                <p className="mt-2 text-sm font-semibold text-ink">{copy.captureNotes}</p>
+                <p className="text-sm font-semibold text-ink">{copy.captureNotes}</p>
                 <ul className="mt-3 space-y-2 text-sm text-ink-muted">
                   {captureNotes.map((note) => (
                     <li key={note}>{note}</li>
@@ -1274,14 +1263,6 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
 
         {showProgress ? (
           <section className="workspace-panel p-5">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <p className="workspace-kicker">Execution</p>
-                <p className="mt-2 text-sm font-semibold text-ink">{messages.workbench.progress}</p>
-                <p className="mt-1 text-sm text-ink-muted">{progressLabel}</p>
-              </div>
-              <span className={`badge border ${style.badge}`}>{status}</span>
-            </div>
             <ProgressBar value={progressValue} label={progressLabel} status={status === 'error' ? 'error' : status === 'done' ? 'done' : status === 'recording' || status === 'starting' ? 'running' : 'idle'} />
           </section>
         ) : null}
