@@ -169,7 +169,16 @@ export async function validateHwpxStructure(bytes: Uint8Array): Promise<HwpxVali
     errors.push('mimetype value must be application/hwp+zip');
   }
 
-  for (const required of ['version.xml', 'Contents/content.hpf', 'Contents/header.xml', 'META-INF/container.xml']) {
+  for (const required of [
+    'version.xml',
+    'settings.xml',
+    'Contents/content.hpf',
+    'Contents/header.xml',
+    'META-INF/container.xml',
+    'META-INF/manifest.xml',
+    'META-INF/container.rdf',
+    'Preview/PrvText.txt',
+  ]) {
     if (!zip.file(required)) {
       errors.push(`missing required part: ${required}`);
     }
@@ -247,7 +256,8 @@ export async function validateHwpxStructure(bytes: Uint8Array): Promise<HwpxVali
       const PIC_REQUIRED = [
         'hp:sz', 'hp:pos', 'hp:outMargin',
         'hp:offset', 'hp:orgSz', 'hp:curSz', 'hp:flip', 'hp:rotationInfo', 'hp:renderingInfo',
-        'hp:imgRect', 'hp:imgClip', 'hp:inMargin', 'hp:imgDim', 'hp:img', 'hp:effects',
+        // The image reference is hc:img (core namespace) in real Hancom files.
+        'hp:imgRect', 'hp:imgClip', 'hp:inMargin', 'hp:imgDim', 'hc:img', 'hp:effects',
       ];
       let picMatch: RegExpExecArray | null;
       const picRe = /<hp:pic\b[^>]*>([\s\S]*?)<\/hp:pic>/g;

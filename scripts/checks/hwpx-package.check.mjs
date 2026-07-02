@@ -70,23 +70,52 @@ check('title XML-escaped in content.hpf', hpf.includes('Test &amp; &lt;doc&gt;')
 const header = await zip.file('Contents/header.xml').async('string');
 check('header secCnt = 2', header.includes('secCnt="2"'));
 
-// Reference integrity — the exact bug that made Hancom refuse fidelity HWPX.
+// Reference integrity + real-Hancom structure (ground truth: byte-untouched
+// Hangul saves + hwpxlib BlankFileMaker).
 const FONT_LANGS = ['HANGUL', 'LATIN', 'HANJA', 'JAPANESE', 'OTHER', 'SYMBOL', 'USER'];
 check('header defines all 7 fontface languages', FONT_LANGS.every((l) => header.includes(`lang="${l}"`)));
-check('no dangling borderFillIDRef="2" in header', !header.includes('borderFillIDRef="2"'));
+check('each fontface carries 2 fonts', header.includes('fontCnt="2"') && header.includes('함초롬바탕'));
+check('borderFill id=1 and id=2 both defined', header.includes('<hh:borderFill id="1"') && header.includes('<hh:borderFill id="2"'));
+check('borderFill 2 carries the none fillBrush', /<hh:borderFill id="2"[\s\S]*?<hc:winBrush faceColor="none"/.test(header));
+check('7 charPr entries', header.includes('<hh:charProperties itemCnt="7">'));
+check('16 paraPr entries', header.includes('<hh:paraProperties itemCnt="16">'));
+check('18 styles', header.includes('<hh:styles itemCnt="18">'));
+check('numbering has 7 paraHead levels', (header.match(/<hh:paraHead /g) ?? []).length === 7);
+check('head declares the full namespace block (hp10..config)', header.includes('xmlns:hp10=') && header.includes('xmlns:config='));
+check('head version 1.5', header.includes('version="1.5"'));
+check(
+  'head has compatibleDocument/docOption/trackchageConfig',
+  header.includes('<hh:compatibleDocument') && header.includes('<hh:docOption>') && header.includes('<hh:trackchageConfig flags="56"/>'),
+);
+
+// Package parts required by real Hancom containers.
+check('META-INF/manifest.xml is the empty odf:manifest', /<odf:manifest [^>]*\/>$/.test((await zip.file('META-INF/manifest.xml').async('string')).trim()));
+check('META-INF/container.rdf exists with section typing', (await zip.file('META-INF/container.rdf').async('string')).includes('SectionFile'));
+const containerXml = await zip.file('META-INF/container.xml').async('string');
+check('container.xml lists 3 rootfiles', (containerXml.match(/<ocf:rootfile /g) ?? []).length === 3);
 
 // Picture completeness — the OWPML ShapeComponent block Hancom requires
 // (offset/orgSz/curSz/flip/rotationInfo/renderingInfo with identity matrices),
 // plus the section layout: secPr+colPr in their own run, picture in its own.
 const section0 = await zip.file('Contents/section0.xml').async('string');
-for (const el of ['hp:offset', 'hp:orgSz', 'hp:curSz', 'hp:flip', 'hp:rotationInfo', 'hp:renderingInfo', 'hc:transMatrix', 'hc:scaMatrix', 'hc:rotMatrix']) {
+for (const el of ['hp:offset', 'hp:orgSz', 'hp:curSz', 'hp:flip', 'hp:rotationInfo', 'hp:renderingInfo', 'hc:transMatrix', 'hc:scaMatrix', 'hc:rotMatrix', 'hc:img']) {
   check(`section pic includes <${el}>`, section0.includes(`<${el}`));
 }
+check('image ref is hc:img, not hp:img', section0.includes('<hc:img binaryItemIDRef=') && !section0.includes('<hp:img '));
+check('ShapeObject block (sz/pos/outMargin) comes after the image elements', /<hp:effects\/><hp:sz /.test(section0));
 check('section defines a column control (hp:colPr)', section0.includes('<hp:colPr'));
+check('section root declares the full namespace block', section0.includes('xmlns:hp10=') && section0.includes('xmlns:config='));
 check(
   'secPr run is separate from the picture run',
   /<hp:run[^>]*><hp:secPr[\s\S]*?<\/hp:run><hp:run[^>]*><hp:pic/.test(section0.replace(/\n\s*/g, '')),
 );
+check('picture run ends with an empty hp:t', section0.includes('</hp:pic><hp:t/></hp:run>'));
+check('secPr includes footNotePr/endNotePr and 3 pageBorderFill', section0.includes('<hp:footNotePr>') && section0.includes('<hp:endNotePr>') && (section0.match(/<hp:pageBorderFill /g) ?? []).length === 3);
+
+// Orientation semantics from real files: portrait pages carry WIDELY.
+check('portrait page uses landscape="WIDELY"', /<hp:pagePr landscape="WIDELY" width="59528"/.test(section0));
+const section1 = await zip.file('Contents/section1.xml').async('string');
+check('landscape page uses landscape="NARROWLY"', /<hp:pagePr landscape="NARROWLY" width="79200"/.test(section1));
 
 // The validator must reject a pic stripped of its transform block.
 const brokenPicZip = await JSZip.loadAsync(bytes);

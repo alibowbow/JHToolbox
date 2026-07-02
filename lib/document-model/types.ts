@@ -26,5 +26,7 @@ export interface RasterDocument {
   metadata?: {
     title?: string;
     producer?: string;
+    /** Package creation time as "YYYY-MM-DDTHH:MM:SSZ"; omitted in tests for determinism. */
+    createdAtIso?: string;
   };
 }
