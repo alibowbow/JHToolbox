@@ -75,6 +75,27 @@ const FONT_LANGS = ['HANGUL', 'LATIN', 'HANJA', 'JAPANESE', 'OTHER', 'SYMBOL', '
 check('header defines all 7 fontface languages', FONT_LANGS.every((l) => header.includes(`lang="${l}"`)));
 check('no dangling borderFillIDRef="2" in header', !header.includes('borderFillIDRef="2"'));
 
+// Picture completeness — the OWPML ShapeComponent block Hancom requires
+// (offset/orgSz/curSz/flip/rotationInfo/renderingInfo with identity matrices),
+// plus the section layout: secPr+colPr in their own run, picture in its own.
+const section0 = await zip.file('Contents/section0.xml').async('string');
+for (const el of ['hp:offset', 'hp:orgSz', 'hp:curSz', 'hp:flip', 'hp:rotationInfo', 'hp:renderingInfo', 'hc:transMatrix', 'hc:scaMatrix', 'hc:rotMatrix']) {
+  check(`section pic includes <${el}>`, section0.includes(`<${el}`));
+}
+check('section defines a column control (hp:colPr)', section0.includes('<hp:colPr'));
+check(
+  'secPr run is separate from the picture run',
+  /<hp:run[^>]*><hp:secPr[\s\S]*?<\/hp:run><hp:run[^>]*><hp:pic/.test(section0.replace(/\n\s*/g, '')),
+);
+
+// The validator must reject a pic stripped of its transform block.
+const brokenPicZip = await JSZip.loadAsync(bytes);
+const strippedSection = section0.replace(/<hp:renderingInfo>[\s\S]*?<\/hp:renderingInfo>\s*/g, '');
+check('stripped renderingInfo from section', strippedSection !== section0);
+brokenPicZip.file('Contents/section0.xml', strippedSection);
+const brokenPicResult = await validateHwpxStructure(await brokenPicZip.generateAsync({ type: 'uint8array' }));
+check('validator rejects pic missing renderingInfo', brokenPicResult.ok === false && brokenPicResult.errors.some((e) => /renderingInfo/.test(e)));
+
 // The validator must REJECT a header with dangling refs (regression guard): drop
 // every non-HANGUL fontface, leaving charPr fontRef latin/hanja/… unresolved.
 const brokenZip = await JSZip.loadAsync(bytes);

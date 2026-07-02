@@ -331,6 +331,26 @@ function moveFileItem(files: File[], fromIndex: number, toIndex: number) {
   return nextFiles;
 }
 
+/** 'pageCount' / 'page_count' → 'Page count' — metadata keys are identifiers, not copy. */
+function humanizeMetadataKey(key: string): string {
+  const spaced = key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .toLowerCase()
+    .trim();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+function formatMetadataValue(value: string | number | boolean, locale: 'en' | 'ko'): string {
+  if (typeof value === 'boolean') {
+    if (locale === 'ko') {
+      return value ? '예' : '아니요';
+    }
+    return value ? 'Yes' : 'No';
+  }
+  return String(value);
+}
+
 async function copyTextContent(text: string) {
   if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text);
@@ -1108,9 +1128,14 @@ function StandardToolWorkbench({
                         </div>
                       ) : null}
                       {result.metadata ? (
-                        <pre className="max-h-64 overflow-auto rounded-xl border border-border bg-base-subtle p-3 text-xs text-ink">
-                          {JSON.stringify(result.metadata, null, 2)}
-                        </pre>
+                        <dl className="max-h-64 space-y-2 overflow-auto rounded-xl border border-border bg-base-subtle p-3">
+                          {Object.entries(result.metadata).map(([key, value]) => (
+                            <div key={key}>
+                              <dt className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">{humanizeMetadataKey(key)}</dt>
+                              <dd className="mt-0.5 break-words text-sm text-ink">{formatMetadataValue(value, locale)}</dd>
+                            </div>
+                          ))}
+                        </dl>
                       ) : null}
                     </ResultCard>
                   );

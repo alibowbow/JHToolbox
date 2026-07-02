@@ -4,6 +4,7 @@ import { ToolWorkbench } from '@/components/tool-ui/tool-workbench';
 import { categories, getCategoryById, getToolById, isToolInCategory } from '@/lib/tool-registry';
 
 const legacyToolRedirects: Partial<Record<string, string>> = {
+  'hwpx-to-pdf': '/tools/pdf/pdf-to-hwpx',
   'mp4-webm': '/tools/video/video-convert?outputFormat=webm',
   'mp4-mov': '/tools/video/video-convert?outputFormat=mov',
   'mov-mp4': '/tools/video/video-convert?outputFormat=mp4',
