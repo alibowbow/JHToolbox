@@ -482,10 +482,12 @@ export function buildTextSectionXml(params: {
         index === 0
           ? `<hp:run charPrIDRef="${para.charPrId}">${buildSecPr(widthHwp, heightHwp, landscape, margins)}<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="1" sameSz="1" sameGap="0"/></hp:ctrl></hp:run>`
           : '';
+      // Hancom writes empty elements self-closed.
+      const textXml = para.text ? `<hp:t>${escapeXml(para.text)}</hp:t>` : '<hp:t/>';
       return (
         `<hp:p id="${index + 1}" paraPrIDRef="${para.paraPrId}" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">` +
         secPrRun +
-        `<hp:run charPrIDRef="${para.charPrId}"><hp:t>${escapeXml(para.text)}</hp:t></hp:run>` +
+        `<hp:run charPrIDRef="${para.charPrId}">${textXml}</hp:run>` +
         lineSeg +
         '</hp:p>'
       );
