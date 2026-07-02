@@ -1,354 +1,17 @@
 import JSZip from 'jszip';
 import { ProcessContext, ProcessedFile } from '@/types/processor';
 import { baseName } from '@/lib/utils';
-import {
-  type PdfStyledLine,
-  type PdfStyledPage,
-  escapeXml,
-  extractPdfStyledPages,
-  renderHtmlStringToPdfBlob,
-} from '@/lib/processors/pdf';
+import { extractPdfStyledPages, renderHtmlStringToPdfBlob } from '@/lib/processors/pdf';
 import { convertPdfToFidelityHwpx, resolveFidelityDpi } from '@/lib/hwpx/pdf-raster-converter';
+import { writeTextHwpx } from '@/lib/hwpx/text-writer';
 import { resolveReduceQuality } from '@/lib/pdf-reduction';
 import { ZIP_LIMITS, checkZipBomb, sanitizeZipEntryName } from '@/lib/zip-safety';
 
 const HWPX_MIME = 'application/hwp+zip';
-const HP_NS = 'http://www.hancom.co.kr/hwpml/2011/paragraph';
-
-// A4 page geometry in HWPUNIT (1/7200 inch).
-const HWPX_PAGE = {
-  width: 59528,
-  height: 84188,
-  marginLeft: 8504,
-  marginRight: 8504,
-  marginTop: 5668,
-  marginBottom: 4252,
-  header: 4252,
-  footer: 4252,
-};
-
-// Printable text width in HWPUNIT: page width minus the left/right margins.
-const TEXT_AREA_WIDTH = HWPX_PAGE.width - HWPX_PAGE.marginLeft - HWPX_PAGE.marginRight;
 
 // A4 width in CSS px at 96 dpi, used for the HWPX -> HTML -> PDF render width.
 const A4_PX_WIDTH = 794;
 
-type CharStyle = { id: number; sizePt: number; bold: boolean };
-type ParaStyle = { id: number; align: 'left' | 'center' };
-
-// ---------------------------------------------------------------------------
-// PDF -> HWPX (style-aware generation)
-// ---------------------------------------------------------------------------
-
-function buildVersionXml() {
-  // Note: "tagetApplication" is the attribute name used by the OWPML spec.
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<hv:HCFVersion xmlns:hv="http://www.hancom.co.kr/hwpml/2011/version" tagetApplication="WORDPROCESSOR" major="5" minor="1" micro="1" buildNumber="0" os="10" xmlVersion="1.5" application="JH Toolbox" appVersion="1.0"/>`;
-}
-
-function buildContainerXml() {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<ocf:container xmlns:ocf="urn:oasis:names:tc:opendocument:xmlns:container" xmlns:hpf="http://www.hancom.co.kr/schema/2011/hpf">
-  <ocf:rootfiles>
-    <ocf:rootfile full-path="Contents/content.hpf" media-type="application/hwpml-package+xml"/>
-  </ocf:rootfiles>
-</ocf:container>`;
-}
-
-function buildManifestXml() {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<odf:manifest xmlns:odf="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0">
-  <odf:file-entry full-path="/" media-type="${HWPX_MIME}"/>
-  <odf:file-entry full-path="Contents/header.xml" media-type="application/xml"/>
-  <odf:file-entry full-path="Contents/section0.xml" media-type="application/xml"/>
-</odf:manifest>`;
-}
-
-function buildContentHpf(title: string) {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<opf:package xmlns:opf="http://www.idpf.org/2007/opf/" version="" unique-identifier="" id="">
-  <opf:metadata>
-    <opf:title>${escapeXml(title)}</opf:title>
-    <opf:language>ko</opf:language>
-    <opf:meta name="creator" content="JH Toolbox"/>
-  </opf:metadata>
-  <opf:manifest>
-    <opf:item id="header" href="Contents/header.xml" media-type="application/xml"/>
-    <opf:item id="section0" href="Contents/section0.xml" media-type="application/xml"/>
-    <opf:item id="settings" href="settings.xml" media-type="application/xml"/>
-  </opf:manifest>
-  <opf:spine>
-    <opf:itemref idref="header" linear="yes"/>
-    <opf:itemref idref="section0" linear="yes"/>
-  </opf:spine>
-</opf:package>`;
-}
-
-function buildSettingsXml() {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<ha:HWPApplicationSetting xmlns:ha="http://www.hancom.co.kr/hwpml/2011/app" xmlns:config="urn:oasis:names:tc:opendocument:xmlns:config:1.0">
-  <ha:CaretPosition listIDRef="0" paraIDRef="0" pos="0"/>
-</ha:HWPApplicationSetting>`;
-}
-
-function buildFontfaces() {
-  const langs = ['HANGUL', 'LATIN', 'HANJA', 'JAPANESE', 'OTHER', 'SYMBOL', 'USER'];
-  const faces = langs
-    .map(
-      (lang) => `    <hh:fontface lang="${lang}" fontCnt="1">
-      <hh:font id="0" face="함초롬바탕" type="TTF" isEmbedded="0"/>
-    </hh:fontface>`,
-    )
-    .join('\n');
-
-  return `  <hh:fontfaces itemCnt="${langs.length}">
-${faces}
-  </hh:fontfaces>`;
-}
-
-function buildCharPr(style: CharStyle) {
-  const height = Math.round(style.sizePt * 100);
-  const bold = style.bold ? '<hh:bold/>' : '';
-
-  return `    <hh:charPr id="${style.id}" height="${height}" textColor="#000000" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1">
-      <hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/>
-      <hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/>
-      <hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/>
-      <hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/>
-      <hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/>${bold}
-    </hh:charPr>`;
-}
-
-function buildParaPr(style: ParaStyle) {
-  const horizontal = style.align === 'center' ? 'CENTER' : 'JUSTIFY';
-
-  return `    <hh:paraPr id="${style.id}" tabPrIDRef="0" condense="0" fontLineHeight="0" snapToGrid="1" suppressLineNumbers="0" checked="0">
-      <hh:align horizontal="${horizontal}" vertical="BASELINE"/>
-      <hh:heading type="NONE" idRef="0" level="0"/>
-      <hh:breakSetting breakLatinWord="KEEP_WORD" breakNonLatinWord="BREAK_WORD" widowOrphan="0" keepWithNext="0" keepLines="0" pageBreakBefore="0" lineWrap="BREAK"/>
-      <hh:margin>
-        <hc:intent value="0" unit="HWPUNIT"/>
-        <hc:left value="0" unit="HWPUNIT"/>
-        <hc:right value="0" unit="HWPUNIT"/>
-        <hc:prev value="0" unit="HWPUNIT"/>
-        <hc:next value="0" unit="HWPUNIT"/>
-      </hh:margin>
-      <hh:lineSpacing type="PERCENT" value="160" unit="HWPUNIT"/>
-      <hh:border borderFillIDRef="1" offsetLeft="0" offsetRight="0" offsetTop="0" offsetBottom="0" connect="0" ignoreMargin="0"/>
-    </hh:paraPr>`;
-}
-
-function buildHeaderXml(charStyles: CharStyle[], paraStyles: ParaStyle[]) {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:hp="${HP_NS}" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core" version="1.4" secCnt="1">
-  <hh:beginNum page="1" footnote="1" endnote="1" pic="1" tbl="1" equation="1"/>
-  <hh:refList>
-${buildFontfaces()}
-  <hh:borderFills itemCnt="1">
-    <hh:borderFill id="1" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0">
-      <hh:slash type="NONE" Crooked="0" isCounter="0"/>
-      <hh:backSlash type="NONE" Crooked="0" isCounter="0"/>
-      <hh:leftBorder type="NONE" width="0.1 mm" color="#000000"/>
-      <hh:rightBorder type="NONE" width="0.1 mm" color="#000000"/>
-      <hh:topBorder type="NONE" width="0.1 mm" color="#000000"/>
-      <hh:bottomBorder type="NONE" width="0.1 mm" color="#000000"/>
-      <hh:diagonal type="SOLID" width="0.1 mm" color="#000000"/>
-    </hh:borderFill>
-  </hh:borderFills>
-  <hh:charProperties itemCnt="${charStyles.length}">
-${charStyles.map(buildCharPr).join('\n')}
-  </hh:charProperties>
-  <hh:tabProperties itemCnt="1">
-    <hh:tabPr id="0" autoTabLeft="0" autoTabRight="0"/>
-  </hh:tabProperties>
-  <hh:numberings itemCnt="1">
-    <hh:numbering id="1" start="0">
-      <hh:paraHead start="1" level="1" align="LEFT" useInstWidth="1" autoIndent="1" widthAdjust="0" textOffsetType="PERCENT" textOffset="50" numFormat="DIGIT" charPrIDRef="4294967295" checkable="0">^1.</hh:paraHead>
-    </hh:numbering>
-  </hh:numberings>
-  <hh:paraProperties itemCnt="${paraStyles.length}">
-${paraStyles.map(buildParaPr).join('\n')}
-  </hh:paraProperties>
-  <hh:styles itemCnt="1">
-    <hh:style id="0" type="PARA" name="바탕글" engName="Normal" paraPrIDRef="0" charPrIDRef="0" nextStyleIDRef="0" langID="1042" lockForm="0"/>
-  </hh:styles>
-  </hh:refList>
-</hh:head>`;
-}
-
-function buildSectionProperties() {
-  return `<hp:secPr id="" textDirection="HORIZONTAL" spaceColumns="1134" tabStop="8000" tabStopVal="4000" tabStopUnit="HWPUNIT" outlineShapeIDRef="1" memoShapeIDRef="0" textVerticalWidthHead="0" masterPageCnt="0">
-        <hp:grid lineGrid="0" charGrid="0" wonggojiFormat="0" strictVerticalAlignment="0"/>
-        <hp:startNum pageStartsOn="BOTH" page="0" pic="0" tbl="0" equation="0"/>
-        <hp:visibility hideFirstHeader="0" hideFirstFooter="0" hideFirstMasterPage="0" border="SHOW_ALL" fill="SHOW_ALL" hideFirstPageNum="0" hideFirstEmptyLine="0" showLineNumber="0"/>
-        <hp:lineNumberShape restartType="0" countBy="0" distance="0" startNumber="0"/>
-        <hp:pagePr landscape="WIDELY" width="${HWPX_PAGE.width}" height="${HWPX_PAGE.height}" gutterType="LEFT_ONLY">
-          <hp:margin header="${HWPX_PAGE.header}" footer="${HWPX_PAGE.footer}" gutter="0" left="${HWPX_PAGE.marginLeft}" right="${HWPX_PAGE.marginRight}" top="${HWPX_PAGE.marginTop}" bottom="${HWPX_PAGE.marginBottom}"/>
-        </hp:pagePr>
-        <hp:footNotePr>
-          <hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/>
-          <hp:noteLine length="-1" type="SOLID" width="0.12 mm" color="#000000"/>
-          <hp:noteSpacing betweenNotes="283" belowLine="567" aboveLine="850"/>
-          <hp:numbering type="CONTINUOUS" newNum="1"/>
-          <hp:placement place="EACH_COLUMN" beneathText="0"/>
-        </hp:footNotePr>
-        <hp:endNotePr>
-          <hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/>
-          <hp:noteLine length="14692344" type="SOLID" width="0.12 mm" color="#000000"/>
-          <hp:noteSpacing betweenNotes="0" belowLine="567" aboveLine="850"/>
-          <hp:numbering type="CONTINUOUS" newNum="1"/>
-          <hp:placement place="END_OF_DOCUMENT" beneathText="0"/>
-        </hp:endNotePr>
-        <hp:pageBorderFill type="BOTH" borderFillIDRef="1" textBorder="PAPER" headerInside="0" footerInside="0" fillArea="PAPER">
-          <hp:offset left="1417" right="1417" top="1417" bottom="1417"/>
-        </hp:pageBorderFill>
-      </hp:secPr>`;
-}
-
-function buildParagraphXml(
-  text: string,
-  options: { id: number; paraPrId: number; charPrId: number; fontSizePt: number; first?: boolean; pageBreak?: boolean },
-) {
-  // Hangul keeps the section definition in its own control run, separate from
-  // the text run; mixing <hp:secPr> with <hp:t> can leave the body blank.
-  // Real Hancom files pair the secPr with a column definition control.
-  const secPrRun = options.first
-    ? `<hp:run charPrIDRef="${options.charPrId}">${buildSectionProperties()}<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="1" sameSz="1" sameGap="0"/></hp:ctrl></hp:run>\n    `
-    : '';
-
-  // A <hp:linesegarray> with at least one segment is required for Hangul to
-  // position the text; without it the body renders blank even when the text
-  // is present. Hangul recomputes exact metrics on open, so approximate them.
-  const vertSize = Math.max(600, Math.round(options.fontSizePt * 100));
-  const baseline = Math.round(vertSize * 0.85);
-  const spacing = Math.round(vertSize * 0.6);
-  const lineSeg = `<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="${vertSize}" textheight="${vertSize}" baseline="${baseline}" spacing="${spacing}" horzpos="0" horzsize="${TEXT_AREA_WIDTH}" flags="393216"/></hp:linesegarray>`;
-
-  return `  <hp:p id="${options.id}" paraPrIDRef="${options.paraPrId}" styleIDRef="0" pageBreak="${options.pageBreak ? '1' : '0'}" columnBreak="0" merged="0">
-    ${secPrRun}<hp:run charPrIDRef="${options.charPrId}"><hp:t>${escapeXml(text)}</hp:t></hp:run>
-    ${lineSeg}
-  </hp:p>`;
-}
-
-type StyleTables = {
-  charStyles: CharStyle[];
-  paraStyles: ParaStyle[];
-  charIdFor: (sizePt: number, bold: boolean) => number;
-  paraIdFor: (align: 'left' | 'center') => number;
-};
-
-function buildStyleTables(pages: PdfStyledPage[]): StyleTables {
-  const allSizes = pages.flatMap((page) => page.lines.map((line) => line.fontSize));
-  const sizeCounts = new Map<number, number>();
-  for (const size of allSizes) {
-    sizeCounts.set(size, (sizeCounts.get(size) ?? 0) + 1);
-  }
-
-  let bodySize = 10;
-  let bestCount = -1;
-  for (const [size, count] of sizeCounts) {
-    if (count > bestCount) {
-      bestCount = count;
-      bodySize = size;
-    }
-  }
-
-  const charStyles: CharStyle[] = [{ id: 0, sizePt: bodySize, bold: false }];
-  const charLookup = new Map<string, number>([[`${bodySize}:0`, 0]]);
-  const paraStyles: ParaStyle[] = [{ id: 0, align: 'left' }];
-  const paraLookup = new Map<'left' | 'center', number>([['left', 0]]);
-
-  const charIdFor = (sizePt: number, bold: boolean) => {
-    const key = `${sizePt}:${bold ? 1 : 0}`;
-    const existing = charLookup.get(key);
-    if (existing !== undefined) {
-      return existing;
-    }
-
-    const id = charStyles.length;
-    charStyles.push({ id, sizePt, bold });
-    charLookup.set(key, id);
-    return id;
-  };
-
-  const paraIdFor = (align: 'left' | 'center') => {
-    const existing = paraLookup.get(align);
-    if (existing !== undefined) {
-      return existing;
-    }
-
-    const id = paraStyles.length;
-    paraStyles.push({ id, align });
-    paraLookup.set(align, id);
-    return id;
-  };
-
-  return { charStyles, paraStyles, charIdFor, paraIdFor };
-}
-
-function buildSectionXml(pages: PdfStyledPage[], styles: StyleTables) {
-  const paragraphs: string[] = [];
-  let paragraphId = 1;
-  let isFirst = true;
-
-  pages.forEach((page, pageIndex) => {
-    const lines: PdfStyledLine[] =
-      page.lines.length > 0 ? page.lines : [{ text: '', fontSize: styles.charStyles[0].sizePt, isHeading: false, align: 'left' }];
-
-    lines.forEach((line, lineIndex) => {
-      paragraphs.push(
-        buildParagraphXml(line.text, {
-          id: paragraphId,
-          paraPrId: styles.paraIdFor(line.align),
-          charPrId: styles.charIdFor(line.fontSize, line.isHeading),
-          fontSizePt: line.fontSize,
-          first: isFirst,
-          pageBreak: pageIndex > 0 && lineIndex === 0,
-        }),
-      );
-      paragraphId += 1;
-      isFirst = false;
-    });
-  });
-
-  if (paragraphs.length === 0) {
-    paragraphs.push(buildParagraphXml('', { id: 1, paraPrId: 0, charPrId: 0, fontSizePt: 10, first: true }));
-  }
-
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="${HP_NS}" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
-${paragraphs.join('\n')}
-</hs:sec>`;
-}
-
-function buildPreviewText(pages: PdfStyledPage[]) {
-  return pages
-    .map((page) => page.lines.map((line) => line.text).join('\n'))
-    .join('\n')
-    .trim()
-    .slice(0, 2048);
-}
-
-async function buildHwpxBlob(pages: PdfStyledPage[], title: string): Promise<Blob> {
-  const styles = buildStyleTables(pages);
-  const sectionXml = buildSectionXml(pages, styles);
-  const headerXml = buildHeaderXml(styles.charStyles, styles.paraStyles);
-
-  const zip = new JSZip();
-
-  // The OCF container expects the mimetype entry first and uncompressed.
-  zip.file('mimetype', HWPX_MIME, { compression: 'STORE' });
-  zip.file('version.xml', buildVersionXml());
-  zip.file('settings.xml', buildSettingsXml());
-  zip.folder('META-INF')?.file('container.xml', buildContainerXml());
-  zip.folder('META-INF')?.file('manifest.xml', buildManifestXml());
-  zip.folder('Contents')?.file('content.hpf', buildContentHpf(title));
-  zip.folder('Contents')?.file('header.xml', headerXml);
-  zip.folder('Contents')?.file('section0.xml', sectionXml);
-  zip.folder('Preview')?.file('PrvText.txt', buildPreviewText(pages));
-
-  return await zip.generateAsync({ type: 'blob', mimeType: HWPX_MIME, compression: 'DEFLATE' });
-}
 
 // ---------------------------------------------------------------------------
 // HWPX -> HTML -> PDF (formatting-aware rendering)
@@ -847,13 +510,31 @@ export async function processHwpxTool(ctx: ProcessContext): Promise<ProcessedFil
       ];
     }
 
-    // editable (experimental): text-extraction path.
+    // editable: extracted text as real HWPX paragraphs on the same
+    // ground-truth package skeleton the fidelity mode uses.
     const pages = await extractPdfStyledPages(source, (value) =>
       onProgress({ percent: 10 + value * 70, stage: 'Extracting PDF text' }),
     );
 
     onProgress({ percent: 85, stage: 'Building HWPX document' });
-    const blob = await buildHwpxBlob(pages, baseName(source.name));
+    const bytes = await writeTextHwpx({
+      pages: pages.map((page) => ({
+        pageNumber: page.pageNumber,
+        widthPt: page.widthPt,
+        heightPt: page.heightPt,
+        lines: page.lines.map((line) => ({
+          text: line.text,
+          fontSizePt: line.fontSize,
+          bold: line.isHeading,
+          align: line.align,
+        })),
+      })),
+      metadata: {
+        title: baseName(source.name),
+        createdAtIso: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      },
+    });
+    const blob = new Blob([Uint8Array.from(bytes).buffer], { type: HWPX_MIME });
 
     return [
       {
@@ -863,7 +544,7 @@ export async function processHwpxTool(ctx: ProcessContext): Promise<ProcessedFil
         metadata: {
           mode: 'editable',
           pages: pages.length,
-          note: 'Text and heading sizes are preserved. Exact layout, columns, tables, and images are not — low-confidence pages may need the fidelity mode.',
+          note: 'Text is fully selectable and editable, with font sizes, headings, and alignment preserved. Exact layout, columns, tables, and images are approximated — use "Keep original look" when appearance matters most.',
         },
       },
     ];

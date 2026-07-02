@@ -874,6 +874,9 @@ export type PdfStyledLine = {
 
 export type PdfStyledPage = {
   pageNumber: number;
+  /** Physical page size in PDF points (rotation applied). */
+  widthPt: number;
+  heightPt: number;
   lines: PdfStyledLine[];
 };
 
@@ -895,7 +898,7 @@ export async function extractPdfStyledPages(
   }).promise;
 
   type RawLine = { text: string; fontSize: number; minX: number; maxX: number };
-  const rawPages: Array<{ pageNumber: number; viewportWidth: number; lines: RawLine[] }> = [];
+  const rawPages: Array<{ pageNumber: number; viewportWidth: number; viewportHeight: number; lines: RawLine[] }> = [];
   const sizeCounts = new Map<number, number>();
 
   for (let pageNo = 1; pageNo <= documentHandle.numPages; pageNo += 1) {
@@ -943,7 +946,7 @@ export async function extractPdfStyledPages(
       sizeCounts.set(key, (sizeCounts.get(key) ?? 0) + 1);
     }
 
-    rawPages.push({ pageNumber: pageNo, viewportWidth: viewport.width, lines });
+    rawPages.push({ pageNumber: pageNo, viewportWidth: viewport.width, viewportHeight: viewport.height, lines });
   }
 
   let bodySize = 12;
@@ -957,6 +960,8 @@ export async function extractPdfStyledPages(
 
   return rawPages.map((raw) => ({
     pageNumber: raw.pageNumber,
+    widthPt: raw.viewportWidth,
+    heightPt: raw.viewportHeight,
     lines: raw.lines.map((line) => {
       const center =
         line.minX > raw.viewportWidth * 0.18 &&

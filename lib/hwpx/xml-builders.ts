@@ -186,17 +186,43 @@ function langAttrs(value: number): string {
   return `hangul="${value}" latin="${value}" hanja="${value}" japanese="${value}" other="${value}" symbol="${value}" user="${value}"`;
 }
 
-function buildCharProperties(): string {
-  const items = CHAR_PRS.map(
-    (row) =>
-      `<hh:charPr id="${row.id}" height="${row.height}" textColor="${row.textColor}" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="2">` +
-      `<hh:fontRef ${langAttrs(row.fontRef)}/><hh:ratio ${langAttrs(100)}/><hh:spacing ${langAttrs(row.spacing)}/>` +
-      `<hh:relSz ${langAttrs(100)}/><hh:offset ${langAttrs(0)}/>` +
-      '<hh:underline type="NONE" shape="SOLID" color="#000000"/><hh:strikeout shape="NONE" color="#000000"/>' +
-      '<hh:outline type="NONE"/><hh:shadow type="NONE" color="#B2B2B2" offsetX="10" offsetY="10"/>' +
-      '</hh:charPr>',
+/** A dynamic character style appended after the 7 base entries (ids 7+). */
+export interface HeaderCharPrExtra {
+  id: number;
+  /** Font height in HWPUNIT-ish char units (pt × 100). */
+  height: number;
+  bold: boolean;
+}
+
+/** A dynamic paragraph style appended after the 16 base entries (ids 16+). */
+export interface HeaderParaPrExtra {
+  id: number;
+  align: 'LEFT' | 'CENTER' | 'JUSTIFY' | 'RIGHT';
+}
+
+export interface HeaderExtras {
+  charPrs?: HeaderCharPrExtra[];
+  paraPrs?: HeaderParaPrExtra[];
+}
+
+function charPrXml(id: number, height: number, textColor: string, fontRef: number, spacing: number, bold: boolean): string {
+  // Child order per the OWPML writer: fontRef, ratio, spacing, relSz, offset,
+  // bold?, italic?, underline, strikeout, outline, shadow.
+  return (
+    `<hh:charPr id="${id}" height="${height}" textColor="${textColor}" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="2">` +
+    `<hh:fontRef ${langAttrs(fontRef)}/><hh:ratio ${langAttrs(100)}/><hh:spacing ${langAttrs(spacing)}/>` +
+    `<hh:relSz ${langAttrs(100)}/><hh:offset ${langAttrs(0)}/>${bold ? '<hh:bold/>' : ''}` +
+    '<hh:underline type="NONE" shape="SOLID" color="#000000"/><hh:strikeout shape="NONE" color="#000000"/>' +
+    '<hh:outline type="NONE"/><hh:shadow type="NONE" color="#B2B2B2" offsetX="10" offsetY="10"/>' +
+    '</hh:charPr>'
   );
-  return `<hh:charProperties itemCnt="${CHAR_PRS.length}">${items.join('')}</hh:charProperties>`;
+}
+
+function buildCharProperties(extras: HeaderCharPrExtra[] = []): string {
+  const items = CHAR_PRS.map((row) => charPrXml(row.id, row.height, row.textColor, row.fontRef, row.spacing, false)).concat(
+    extras.map((row) => charPrXml(row.id, row.height, '#000000', 1, 0, row.bold)),
+  );
+  return `<hh:charProperties itemCnt="${CHAR_PRS.length + extras.length}">${items.join('')}</hh:charProperties>`;
 }
 
 function buildTabProperties(): string {
@@ -229,7 +255,7 @@ type ParaPrRow = {
   id: number;
   tabPr: 0 | 1;
   condense: number;
-  align: 'LEFT' | 'JUSTIFY';
+  align: 'LEFT' | 'CENTER' | 'JUSTIFY' | 'RIGHT';
   headingLevel: number | null;
   breakNonLatin: 'KEEP_WORD' | 'BREAK_WORD';
   widowOrphan: 0 | 1;
@@ -258,30 +284,44 @@ const PARA_PRS: ParaPrRow[] = [
   { id: 15, tabPr: 0, condense: 0, align: 'LEFT', headingLevel: null, breakNonLatin: 'BREAK_WORD', widowOrphan: 1, autoSpacing: 1, margin: { left: 4400, next: 1400 }, lineSpacing: 160 },
 ];
 
-function buildParaProperties(): string {
-  const items = PARA_PRS.map((row) => {
-    const heading =
-      row.headingLevel === null
-        ? '<hh:heading type="NONE" idRef="0" level="0"/>'
-        : `<hh:heading type="OUTLINE" idRef="0" level="${row.headingLevel}"/>`;
-    const m = row.margin;
-    const margin =
-      '<hh:margin>' +
-      `<hc:intent value="${m.intent ?? 0}" unit="HWPUNIT"/>` +
-      `<hc:left value="${m.left ?? 0}" unit="HWPUNIT"/><hc:right value="0" unit="HWPUNIT"/>` +
-      `<hc:prev value="${m.prev ?? 0}" unit="HWPUNIT"/><hc:next value="${m.next ?? 0}" unit="HWPUNIT"/>` +
-      '</hh:margin>';
-    return (
-      `<hh:paraPr id="${row.id}" tabPrIDRef="${row.tabPr}" condense="${row.condense}" fontLineHeight="0" snapToGrid="1" suppressLineNumbers="0" checked="0">` +
-      `<hh:align horizontal="${row.align}" vertical="BASELINE"/>${heading}` +
-      `<hh:breakSetting breakLatinWord="KEEP_WORD" breakNonLatinWord="${row.breakNonLatin}" widowOrphan="${row.widowOrphan}" keepWithNext="0" keepLines="0" pageBreakBefore="0" lineWrap="BREAK"/>` +
-      `<hh:autoSpacing eAsianEng="${row.autoSpacing}" eAsianNum="${row.autoSpacing}"/>` +
-      `${margin}<hh:lineSpacing type="PERCENT" value="${row.lineSpacing}" unit="HWPUNIT"/>` +
-      '<hh:border borderFillIDRef="2" offsetLeft="0" offsetRight="0" offsetTop="0" offsetBottom="0" connect="0" ignoreMargin="0"/>' +
-      '</hh:paraPr>'
-    );
-  });
-  return `<hh:paraProperties itemCnt="${PARA_PRS.length}">${items.join('')}</hh:paraProperties>`;
+function paraPrXml(row: ParaPrRow): string {
+  const heading =
+    row.headingLevel === null
+      ? '<hh:heading type="NONE" idRef="0" level="0"/>'
+      : `<hh:heading type="OUTLINE" idRef="0" level="${row.headingLevel}"/>`;
+  const m = row.margin;
+  const margin =
+    '<hh:margin>' +
+    `<hc:intent value="${m.intent ?? 0}" unit="HWPUNIT"/>` +
+    `<hc:left value="${m.left ?? 0}" unit="HWPUNIT"/><hc:right value="0" unit="HWPUNIT"/>` +
+    `<hc:prev value="${m.prev ?? 0}" unit="HWPUNIT"/><hc:next value="${m.next ?? 0}" unit="HWPUNIT"/>` +
+    '</hh:margin>';
+  return (
+    `<hh:paraPr id="${row.id}" tabPrIDRef="${row.tabPr}" condense="${row.condense}" fontLineHeight="0" snapToGrid="1" suppressLineNumbers="0" checked="0">` +
+    `<hh:align horizontal="${row.align}" vertical="BASELINE"/>${heading}` +
+    `<hh:breakSetting breakLatinWord="KEEP_WORD" breakNonLatinWord="${row.breakNonLatin}" widowOrphan="${row.widowOrphan}" keepWithNext="0" keepLines="0" pageBreakBefore="0" lineWrap="BREAK"/>` +
+    `<hh:autoSpacing eAsianEng="${row.autoSpacing}" eAsianNum="${row.autoSpacing}"/>` +
+    `${margin}<hh:lineSpacing type="PERCENT" value="${row.lineSpacing}" unit="HWPUNIT"/>` +
+    '<hh:border borderFillIDRef="2" offsetLeft="0" offsetRight="0" offsetTop="0" offsetBottom="0" connect="0" ignoreMargin="0"/>' +
+    '</hh:paraPr>'
+  );
+}
+
+function buildParaProperties(extras: HeaderParaPrExtra[] = []): string {
+  const extraRows: ParaPrRow[] = extras.map((extra) => ({
+    id: extra.id,
+    tabPr: 0,
+    condense: 0,
+    align: extra.align,
+    headingLevel: null,
+    breakNonLatin: 'BREAK_WORD',
+    widowOrphan: 0,
+    autoSpacing: 0,
+    margin: {},
+    lineSpacing: 160,
+  }));
+  const items = PARA_PRS.concat(extraRows).map(paraPrXml);
+  return `<hh:paraProperties itemCnt="${PARA_PRS.length + extras.length}">${items.join('')}</hh:paraProperties>`;
 }
 
 type StyleRow = { id: number; type: 'PARA' | 'CHAR'; name: string; engName: string; paraPr: number; charPr: number; next: number };
@@ -317,17 +357,17 @@ function buildStyles(): string {
   return `<hh:styles itemCnt="${STYLES.length}">${items.join('')}</hh:styles>`;
 }
 
-export function buildHeaderXml(sectionCount: number): string {
+export function buildHeaderXml(sectionCount: number, extras: HeaderExtras = {}): string {
   return (
     `${XML_PROLOG}<hh:head ${HWPML_NS} version="1.5" secCnt="${sectionCount}">` +
     '<hh:beginNum page="1" footnote="1" endnote="1" pic="1" tbl="1" equation="1"/>' +
     '<hh:refList>' +
     buildFontfaces() +
     buildBorderFills() +
-    buildCharProperties() +
+    buildCharProperties(extras.charPrs) +
     buildTabProperties() +
     buildNumberings() +
-    buildParaProperties() +
+    buildParaProperties(extras.paraPrs) +
     buildStyles() +
     '</hh:refList>' +
     '<hh:compatibleDocument targetProgram="HWP201X"><hh:layoutCompatibility/></hh:compatibleDocument>' +
@@ -342,7 +382,22 @@ export function buildHeaderXml(sectionCount: number): string {
 // sectionN.xml
 // ---------------------------------------------------------------------------
 
-function buildSecPr(widthHwp: number, heightHwp: number, landscape: boolean): string {
+export interface PageMargins {
+  header: number;
+  footer: number;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/** Zero margins so a full-page image can bleed to the page edge. */
+export const FULL_BLEED_MARGINS: PageMargins = { header: 0, footer: 0, left: 0, right: 0, top: 0, bottom: 0 };
+
+/** The standard margins Hancom's blank document uses (A4-scale HWPUNIT). */
+export const STANDARD_MARGINS: PageMargins = { header: 4252, footer: 4252, left: 8504, right: 8504, top: 5668, bottom: 4252 };
+
+function buildSecPr(widthHwp: number, heightHwp: number, landscape: boolean, margins: PageMargins): string {
   // Ground truth from real Hancom saves: a PORTRAIT page carries
   // landscape="WIDELY"; a landscape page carries "NARROWLY".
   const orient = landscape ? 'NARROWLY' : 'WIDELY';
@@ -361,7 +416,7 @@ function buildSecPr(widthHwp: number, heightHwp: number, landscape: boolean): st
     '<hp:visibility hideFirstHeader="0" hideFirstFooter="0" hideFirstMasterPage="0" border="SHOW_ALL" fill="SHOW_ALL" hideFirstPageNum="0" hideFirstEmptyLine="0" showLineNumber="0"/>' +
     '<hp:lineNumberShape restartType="0" countBy="0" distance="0" startNumber="0"/>' +
     `<hp:pagePr landscape="${orient}" width="${widthHwp}" height="${heightHwp}" gutterType="LEFT_ONLY">` +
-    '<hp:margin header="0" footer="0" gutter="0" left="0" right="0" top="0" bottom="0"/>' +
+    `<hp:margin header="${margins.header}" footer="${margins.footer}" gutter="0" left="${margins.left}" right="${margins.right}" top="${margins.top}" bottom="${margins.bottom}"/>` +
     '</hp:pagePr>' +
     `<hp:footNotePr>${noteCommon}<hp:noteLine length="-1" type="SOLID" width="0.12 mm" color="#000000"/><hp:noteSpacing betweenNotes="283" belowLine="567" aboveLine="850"/><hp:numbering type="CONTINUOUS" newNum="1"/><hp:placement place="EACH_COLUMN" beneathText="0"/></hp:footNotePr>` +
     `<hp:endNotePr>${noteCommon}<hp:noteLine length="14692344" type="SOLID" width="0.12 mm" color="#000000"/><hp:noteSpacing betweenNotes="0" belowLine="567" aboveLine="850"/><hp:numbering type="CONTINUOUS" newNum="1"/><hp:placement place="END_OF_DOCUMENT" beneathText="0"/></hp:endNotePr>` +
@@ -396,6 +451,50 @@ function buildPicture(binItemId: string, widthHwp: number, heightHwp: number, in
   );
 }
 
+export interface TextParagraph {
+  text: string;
+  charPrId: number;
+  paraPrId: number;
+  fontSizePt: number;
+}
+
+/**
+ * A flowing-text section (the "editable" PDF→HWPX mode): one paragraph per
+ * extracted line, standard page margins, same run layout as real saves
+ * (secPr + column control in their own run on the first paragraph).
+ */
+export function buildTextSectionXml(params: {
+  widthHwp: number;
+  heightHwp: number;
+  landscape: boolean;
+  margins: PageMargins;
+  paragraphs: TextParagraph[];
+}): string {
+  const { widthHwp, heightHwp, landscape, margins, paragraphs } = params;
+  const textWidth = Math.max(1000, widthHwp - margins.left - margins.right);
+  const list = paragraphs.length > 0 ? paragraphs : [{ text: '', charPrId: 0, paraPrId: 3, fontSizePt: 10 }];
+
+  const body = list
+    .map((para, index) => {
+      const vertSize = Math.max(600, Math.round(para.fontSizePt * 100));
+      const lineSeg = `<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="${vertSize}" textheight="${vertSize}" baseline="${Math.round(vertSize * 0.85)}" spacing="${Math.round(vertSize * 0.6)}" horzpos="0" horzsize="${textWidth}" flags="393216"/></hp:linesegarray>`;
+      const secPrRun =
+        index === 0
+          ? `<hp:run charPrIDRef="${para.charPrId}">${buildSecPr(widthHwp, heightHwp, landscape, margins)}<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="1" sameSz="1" sameGap="0"/></hp:ctrl></hp:run>`
+          : '';
+      return (
+        `<hp:p id="${index + 1}" paraPrIDRef="${para.paraPrId}" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">` +
+        secPrRun +
+        `<hp:run charPrIDRef="${para.charPrId}"><hp:t>${escapeXml(para.text)}</hp:t></hp:run>` +
+        lineSeg +
+        '</hp:p>'
+      );
+    })
+    .join('');
+
+  return `${XML_PROLOG}<hs:sec ${HWPML_NS}>${body}</hs:sec>`;
+}
+
 export function buildRasterSectionXml(params: {
   widthHwp: number;
   heightHwp: number;
@@ -410,7 +509,7 @@ export function buildRasterSectionXml(params: {
   return (
     `${XML_PROLOG}<hs:sec ${HWPML_NS}>` +
     '<hp:p id="1" paraPrIDRef="3" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">' +
-    `<hp:run charPrIDRef="0">${buildSecPr(widthHwp, heightHwp, landscape)}<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="1" sameSz="1" sameGap="0"/></hp:ctrl></hp:run>` +
+    `<hp:run charPrIDRef="0">${buildSecPr(widthHwp, heightHwp, landscape, FULL_BLEED_MARGINS)}<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="1" sameSz="1" sameGap="0"/></hp:ctrl></hp:run>` +
     `<hp:run charPrIDRef="0">${buildPicture(binItemId, widthHwp, heightHwp, instId)}<hp:t/></hp:run>` +
     lineSeg +
     '</hp:p>' +

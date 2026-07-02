@@ -439,6 +439,16 @@ Object.assign(koChoiceLabels, {
   Comment: '메모',
 });
 
+Object.assign(koChoiceLabels, {
+  'Keep original look (page images)': '원본 모양 보존 (페이지 이미지)',
+  'Editable text (layout approximated)': '편집 가능한 텍스트 (레이아웃 근사)',
+  '144 DPI (smaller)': '144 DPI (용량 작게)',
+  '200 DPI (recommended)': '200 DPI (권장)',
+  '300 DPI (sharpest)': '300 DPI (가장 선명)',
+  'PNG (sharp text/lines)': 'PNG (텍스트·선 선명)',
+  'JPEG (smaller, photos)': 'JPEG (용량 작게, 사진)',
+});
+
 function getFallbackKoDescription(tool: ToolDefinition, name: string) {
   if (tool.id.includes('-to-')) {
     return `${name} 작업을 브라우저 안에서 로컬로 처리합니다.`;
