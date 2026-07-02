@@ -120,8 +120,10 @@ export function buildContentHpf(
   const spine = ['<opf:itemref idref="header" linear="yes"/>'].concat(
     Array.from({ length: sectionCount }, (_, index) => `<opf:itemref idref="section${index}" linear="yes"/>`),
   );
+  // Every real fixture carries CreatedDate/ModifiedDate plus a free-text
+  // "date" meta between ModifiedDate and keyword.
   const dates = createdAtIso
-    ? `<opf:meta name="CreatedDate" content="text">${escapeXml(createdAtIso)}</opf:meta><opf:meta name="ModifiedDate" content="text">${escapeXml(createdAtIso)}</opf:meta>`
+    ? `<opf:meta name="CreatedDate" content="text">${escapeXml(createdAtIso)}</opf:meta><opf:meta name="ModifiedDate" content="text">${escapeXml(createdAtIso)}</opf:meta><opf:meta name="date" content="text">${escapeXml(createdAtIso)}</opf:meta>`
     : '';
   return (
     `${XML_PROLOG}<opf:package ${HWPML_NS} version="" unique-identifier="" id="">` +
