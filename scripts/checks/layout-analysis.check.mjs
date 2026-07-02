@@ -3,7 +3,7 @@
  * layout-preserving PDF→HWPX mode.
  *   npm run check:layout-analysis
  */
-import { analyzePageLayout, mergeCollinear, normalizeSegments } from '../../lib/hwpx/layout-analysis.ts';
+import { analyzePageLayout, groupIntoBlocks, mergeCollinear, normalizeSegments } from '../../lib/hwpx/layout-analysis.ts';
 
 let pass = 0;
 let fail = 0;
@@ -88,6 +88,22 @@ const line = (text, xPt, yPt, widthPt = 40, fontSizePt = 10, bold = false) => ({
   ];
   const plan = analyzePageLayout([], [...grid(50, 100), ...grid(50, 400)]);
   check('two clusters: two 1x1 tables', plan.tables.length === 2);
+}
+
+// --- 6. Paragraph block grouping (prevents overlapping text boxes) -----------
+{
+  const blocks = groupIntoBlocks([
+    line('첫 줄입니다', 100, 100, 120, 10),
+    line('둘째 줄 (같은 들여쓰기, 정상 줄간격)', 100, 114, 160, 10),
+    line('셋째 줄', 100, 128, 60, 10),
+    line('들여쓰기가 다른 항목', 140, 142, 140, 10), // different x -> new block
+    line('멀리 떨어진 문단', 100, 400, 120, 10), // big gap -> new block
+  ]);
+  check('grouping: 3 blocks from 5 lines', blocks.length === 3);
+  check('grouping: first block holds 3 lines', blocks[0]?.lines.length === 3);
+  check('grouping: block keeps top-left anchor', blocks[0]?.xPt === 100 && blocks[0]?.yPt === 100);
+  check('grouping: block height spans all lines', blocks[0]?.heightPt > 40 && blocks[0]?.heightPt < 60);
+  check('grouping: width covers the widest line', blocks[0]?.widthPt >= 160);
 }
 
 console.log(`\nlayout-analysis: ${pass} passed, ${fail} failed`);
