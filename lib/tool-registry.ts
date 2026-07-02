@@ -471,11 +471,11 @@ export const tools: ToolDefinition[] = [
   },
   {
     id: 'pdf-to-hwpx',
-    name: 'PDF to HWPX',
+    name: 'PDF ↔ HWPX',
     category: 'pdf',
     description:
-      'Convert a PDF to a Hangul (HWPX) document. "Keep original look" places each page as a full-page image (most accurate layout; text not editable). "Editable text" extracts text into HWPX paragraphs (text editable, but layout/tables/images may differ).',
-    accept: '.pdf',
+      'Convert between PDF and Hangul (HWPX) in one place — the direction is chosen automatically from the file you drop. PDF → HWPX: "Keep original look" places each page as a full-page image (most accurate; text not editable), "Editable text" extracts text into paragraphs. HWPX → PDF renders the document text into PDF pages (options below apply to PDF → HWPX only).',
+    accept: '.pdf,.hwpx',
     tags: ['pdf', 'hwpx', 'hwp', 'hangul', 'convert'],
     browseGroups: ['new', 'convert'],
     options: [
@@ -527,10 +527,10 @@ export const tools: ToolDefinition[] = [
     id: 'hwpx-to-pdf',
     name: 'HWPX to PDF',
     category: 'pdf',
-    description: 'Convert Hangul (HWPX) document text into browser-generated PDF pages.',
+    description: 'Merged into "PDF ↔ HWPX"; old links redirect there.',
     accept: '.hwpx',
     tags: ['hwpx', 'hwp', 'hangul', 'pdf', 'convert'],
-    browseGroups: ['new', 'convert'],
+    hiddenFromBrowse: true,
   },
   {
     id: 'image-resize',

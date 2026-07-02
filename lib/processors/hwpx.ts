@@ -211,8 +211,9 @@ function buildParagraphXml(
 ) {
   // Hangul keeps the section definition in its own control run, separate from
   // the text run; mixing <hp:secPr> with <hp:t> can leave the body blank.
+  // Real Hancom files pair the secPr with a column definition control.
   const secPrRun = options.first
-    ? `<hp:run charPrIDRef="${options.charPrId}">${buildSectionProperties()}</hp:run>\n    `
+    ? `<hp:run charPrIDRef="${options.charPrId}">${buildSectionProperties()}<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="1" sameSz="1" sameGap="0"/></hp:ctrl></hp:run>\n    `
     : '';
 
   // A <hp:linesegarray> with at least one segment is required for Hangul to
@@ -777,15 +778,46 @@ function assertSafeHwpxZip(zip: JSZip): void {
   }
 }
 
+async function convertHwpxFileToPdf(
+  source: File,
+  onProgress: ProcessContext['onProgress'],
+): Promise<ProcessedFile[]> {
+  onProgress({ percent: 15, stage: 'Reading HWPX content' });
+  const zip = await JSZip.loadAsync(await source.arrayBuffer());
+  assertSafeHwpxZip(zip);
+  const html = await convertHwpxToHtml(zip, baseName(source.name));
+
+  onProgress({ percent: 60, stage: 'Rendering PDF pages' });
+  const blob = await renderHtmlStringToPdfBlob(html, A4_PX_WIDTH);
+
+  return [
+    {
+      name: `${baseName(source.name)}.pdf`,
+      blob,
+      mimeType: 'application/pdf',
+      metadata: {
+        note: 'Formatting, tables, and images are rendered with browser fonts; pagination may differ.',
+      },
+    },
+  ];
+}
+
 export async function processHwpxTool(ctx: ProcessContext): Promise<ProcessedFile[]> {
   const { toolId, files, options, onProgress } = ctx;
 
   if (toolId === 'pdf-to-hwpx') {
     if (!files.length) {
-      throw new Error('Select a PDF file to convert.');
+      throw new Error('Select a PDF or HWPX file to convert.');
     }
 
     const source = files[0];
+
+    // Unified converter: the direction is picked from the input file, so one
+    // menu entry covers PDF→HWPX and HWPX→PDF.
+    if (/\.hwpx$/i.test(source.name)) {
+      return await convertHwpxFileToPdf(source, onProgress);
+    }
+
     const mode = String(options.mode ?? 'fidelity');
 
     if (mode === 'fidelity') {
@@ -837,30 +869,13 @@ export async function processHwpxTool(ctx: ProcessContext): Promise<ProcessedFil
     ];
   }
 
+  // Kept for the legacy /tools/pdf/hwpx-to-pdf URL (hidden from menus).
   if (toolId === 'hwpx-to-pdf') {
     if (!files.length) {
       throw new Error('Select an HWPX file to convert.');
     }
 
-    const source = files[0];
-    onProgress({ percent: 15, stage: 'Reading HWPX content' });
-    const zip = await JSZip.loadAsync(await source.arrayBuffer());
-    assertSafeHwpxZip(zip);
-    const html = await convertHwpxToHtml(zip, baseName(source.name));
-
-    onProgress({ percent: 60, stage: 'Rendering PDF pages' });
-    const blob = await renderHtmlStringToPdfBlob(html, A4_PX_WIDTH);
-
-    return [
-      {
-        name: `${baseName(source.name)}.pdf`,
-        blob,
-        mimeType: 'application/pdf',
-        metadata: {
-          note: 'Formatting, tables, and images are rendered with browser fonts; pagination may differ.',
-        },
-      },
-    ];
+    return await convertHwpxFileToPdf(files[0], onProgress);
   }
 
   return [];

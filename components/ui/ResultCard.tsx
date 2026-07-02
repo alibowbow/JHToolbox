@@ -31,17 +31,11 @@ export function ResultCard({
       animate={{ opacity: 1, scale: 1, y: 0 }}
       className="workspace-panel overflow-hidden border-ok/20 bg-ok/5 p-5"
     >
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-ok/10 text-ok">
-            <CheckCircle2 size={18} className="text-ok" />
-          </div>
-          <div>
-            <p className="workspace-kicker">{messages.workbench.outputReady}</p>
-            <p className="mt-1 text-sm font-semibold text-ink">{resolvedTitle}</p>
-          </div>
+      <div className="mb-4 flex items-center gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-ok/10 text-ok">
+          <CheckCircle2 size={18} className="text-ok" />
         </div>
-        <span className="editor-chip border-ok/25 bg-ok/10 text-ok">{messages.workbench.resultReady}</span>
+        <p className="text-sm font-semibold text-ink">{resolvedTitle}</p>
       </div>
 
       <div className="workspace-section flex items-center gap-3">

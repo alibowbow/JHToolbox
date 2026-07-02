@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import JSZip from 'jszip';
 import { Copy, Download, LoaderCircle, Play } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
@@ -17,7 +17,7 @@ import { ResultCard } from '@/components/ui/ResultCard';
 import { UrlImageCropper } from '@/components/ui/UrlImageCropper';
 import { VideoTimelineEditor } from '@/components/ui/VideoTimelineEditor';
 import { toast } from '@/components/ui/Toast';
-import { formatMegaBytes, getCategoryCopy } from '@/lib/i18n';
+import { formatMegaBytes } from '@/lib/i18n';
 import {
   getLocalizedChoiceLabel,
   getLocalizedOptionLabel,
@@ -25,10 +25,8 @@ import {
   getLocalizedToolCopy,
 } from '@/lib/tool-localization';
 import {
-  clearPresetToolOptions,
   getLastRunToolOptions,
   getPresetToolOptions,
-  hasLastRunToolOptions,
   hasPresetToolOptions,
   saveLastRunToolOptions,
   savePresetToolOptions,
@@ -333,6 +331,26 @@ function moveFileItem(files: File[], fromIndex: number, toIndex: number) {
   return nextFiles;
 }
 
+/** 'pageCount' / 'page_count' → 'Page count' — metadata keys are identifiers, not copy. */
+function humanizeMetadataKey(key: string): string {
+  const spaced = key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .toLowerCase()
+    .trim();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+function formatMetadataValue(value: string | number | boolean, locale: 'en' | 'ko'): string {
+  if (typeof value === 'boolean') {
+    if (locale === 'ko') {
+      return value ? '예' : '아니요';
+    }
+    return value ? 'Yes' : 'No';
+  }
+  return String(value);
+}
+
 async function copyTextContent(text: string) {
   if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text);
@@ -522,13 +540,12 @@ function StandardToolWorkbench({
   const [results, setResults] = useState<ProcessedFile[]>([]);
   const [inputPreviewUrl, setInputPreviewUrl] = useState<string | null>(null);
   const [savedPresetAvailable, setSavedPresetAvailable] = useState(false);
-  const [lastRunAvailable, setLastRunAvailable] = useState(false);
   const [restoredFromLastRun, setRestoredFromLastRun] = useState(false);
+  const resultsSectionRef = useRef<HTMLElement | null>(null);
 
   const displayCategoryId = categoryId ?? tool.category;
   const Icon = categoryIcons[displayCategoryId];
   const style = categoryStyles[displayCategoryId];
-  const category = getCategoryCopy(locale, displayCategoryId);
   const localizedTool = getLocalizedToolCopy(tool, locale);
   const toolOptions = tool.options ?? [];
   const hiddenOptionKeys = HIDDEN_OPTION_KEYS_BY_TOOL_ID[tool.id] ?? EMPTY_OPTION_KEY_SET;
@@ -540,11 +557,6 @@ function StandardToolWorkbench({
   const showOptionsPanel = hasOptions && !CUSTOM_OPTIONS_IN_PREVIEW_TOOLS.has(tool.id);
   const showWideEditorLayout = tool.id === 'audio-cut';
   const fileOptional = usesDirectInput || OPTIONAL_FILE_TOOLS.has(tool.id);
-  const acceptLabel = useMemo(
-    () => (tool.accept === '*' ? (locale === 'ko' ? '모든 파일' : 'Any file') : tool.accept),
-    [locale, tool.accept],
-  );
-  const showProgress = running || results.length > 0 || error !== null;
   const showResults = results.length > 0 || error !== null;
   const dropLabel = fileOptional ? messages.workbench.dropzoneOptional : messages.workbench.dropzone;
   const trimMode = String(options.trimMode ?? 'keep');
@@ -563,14 +575,7 @@ function StandardToolWorkbench({
   const videoEditorEnabled = Boolean(inputPreviewUrl && primaryVideoFile && sourceVideoFiles.length === 1 && VIDEO_EDITOR_TOOL_IDS.has(tool.id));
 
   const syncOptionMemoryAvailability = () => {
-    if (!supportsOptionMemory) {
-      setSavedPresetAvailable(false);
-      setLastRunAvailable(false);
-      return;
-    }
-
-    setSavedPresetAvailable(hasPresetToolOptions(tool.id));
-    setLastRunAvailable(hasLastRunToolOptions(tool.id));
+    setSavedPresetAvailable(supportsOptionMemory ? hasPresetToolOptions(tool.id) : false);
   };
 
   useEffect(() => {
@@ -598,6 +603,14 @@ function StandardToolWorkbench({
       setProgress({ percent: 0, stage: messages.workbench.statusIdle });
     }
   }, [error, messages.workbench.statusIdle, results.length, running]);
+
+  // Bring the outcome (result cards or the error card) into view once a run
+  // finishes; on long pages it renders below the fold and is easy to miss.
+  useEffect(() => {
+    if (results.length > 0 || error) {
+      resultsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [error, results.length]);
 
   useEffect(() => {
     return () => {
@@ -687,26 +700,6 @@ function StandardToolWorkbench({
       ...presetOptions,
     });
     setRestoredFromLastRun(false);
-  };
-
-  const clearPreset = () => {
-    clearPresetToolOptions(tool.id);
-    syncOptionMemoryAvailability();
-    toast.success(messages.workbench.presetCleared);
-  };
-
-  const restoreLastRun = () => {
-    const lastRunOptions = getLastRunToolOptions(tool.id, toolOptions);
-    if (!lastRunOptions) {
-      toast.error(messages.workbench.missingLastRun);
-      return;
-    }
-
-    setOptions({
-      ...getDefaults(tool),
-      ...lastRunOptions,
-    });
-    setRestoredFromLastRun(true);
   };
 
   const resetOptionsToDefaults = () => {
@@ -824,77 +817,47 @@ function StandardToolWorkbench({
     }
   };
 
-  const progressStatus = error ? 'error' : results.length ? 'done' : running ? 'running' : 'idle';
   const optionMemoryPanel = supportsOptionMemory ? (
-    <div className="rounded-xl border border-border bg-base-subtle/70 p-3" data-testid="tool-option-memory-panel">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-faint">
-            {messages.workbench.settingsMemoryTitle}
-          </p>
-          <p className="mt-1 text-xs text-ink-muted">{messages.workbench.settingsMemoryDescription}</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {savedPresetAvailable ? (
-            <span className="badge border border-prime/30 bg-prime/10 text-prime">{messages.workbench.savedPresetReady}</span>
-          ) : null}
-          {lastRunAvailable ? (
-            <span className="badge border border-border bg-base-elevated text-ink-muted">{messages.workbench.lastRunReady}</span>
-          ) : null}
+    <div className="rounded-xl border border-border bg-base-subtle/70 px-3 py-2" data-testid="tool-option-memory-panel">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-faint">
+          {messages.workbench.settingsMemoryTitle}
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={savePreset}
+            disabled={running}
+            className="btn-ghost px-3 py-1.5 text-xs"
+            data-testid="tool-save-preset"
+          >
+            {messages.workbench.savePreset}
+          </button>
+          <button
+            type="button"
+            onClick={applyPreset}
+            disabled={!savedPresetAvailable || running}
+            className="btn-ghost px-3 py-1.5 text-xs"
+            data-testid="tool-apply-preset"
+          >
+            {messages.workbench.applyPreset}
+          </button>
+          <button
+            type="button"
+            onClick={resetOptionsToDefaults}
+            disabled={running}
+            className="btn-ghost px-3 py-1.5 text-xs"
+            data-testid="tool-reset-options"
+          >
+            {messages.workbench.resetOptions}
+          </button>
         </div>
       </div>
       {restoredFromLastRun ? (
-        <p className="mt-3 text-xs text-ok" data-testid="tool-option-memory-restored">
+        <p className="mt-1.5 text-xs text-ok" data-testid="tool-option-memory-restored">
           {messages.workbench.restoredFromLastRun}
         </p>
       ) : null}
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={savePreset}
-          disabled={running}
-          className="btn-ghost px-3 py-2 text-xs"
-          data-testid="tool-save-preset"
-        >
-          {messages.workbench.savePreset}
-        </button>
-        <button
-          type="button"
-          onClick={applyPreset}
-          disabled={!savedPresetAvailable || running}
-          className="btn-ghost px-3 py-2 text-xs"
-          data-testid="tool-apply-preset"
-        >
-          {messages.workbench.applyPreset}
-        </button>
-        <button
-          type="button"
-          onClick={clearPreset}
-          disabled={!savedPresetAvailable || running}
-          className="btn-ghost px-3 py-2 text-xs"
-          data-testid="tool-clear-preset"
-        >
-          {messages.workbench.clearPreset}
-        </button>
-        <button
-          type="button"
-          onClick={restoreLastRun}
-          disabled={!lastRunAvailable || running}
-          className="btn-ghost px-3 py-2 text-xs"
-          data-testid="tool-restore-last-run"
-        >
-          {messages.workbench.restoreLastRun}
-        </button>
-        <button
-          type="button"
-          onClick={resetOptionsToDefaults}
-          disabled={running}
-          className="btn-ghost px-3 py-2 text-xs"
-          data-testid="tool-reset-options"
-        >
-          {messages.workbench.resetOptions}
-        </button>
-      </div>
     </div>
   ) : null;
 
@@ -909,12 +872,9 @@ function StandardToolWorkbench({
         >
           {usesDirectInput ? (
             <section className="workspace-panel p-5 sm:p-6">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-ink">{messages.workbench.directInputTitle}</p>
-                  <p className="mt-1 text-sm text-ink-muted">{messages.workbench.directInputDescription}</p>
-                </div>
-                <span className={`badge border ${style.badge}`}>{category.nav}</span>
+              <div>
+                <p className="text-sm font-semibold text-ink">{messages.workbench.directInputTitle}</p>
+                <p className="mt-1 text-sm text-ink-muted">{messages.workbench.directInputDescription}</p>
               </div>
 
               <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -933,12 +893,7 @@ function StandardToolWorkbench({
             <>
               <section className={cx('workspace-panel space-y-5 p-5 sm:p-6', showOptionsPanel && !showWideEditorLayout && 'xl:col-span-3')}>
                 <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-ink">{messages.workbench.files}</p>
-                    <p className="mt-1 text-sm text-ink-muted">
-                      {messages.workbench.acceptedInput}: {acceptLabel}
-                    </p>
-                  </div>
+                  <p className="text-sm font-semibold text-ink">{messages.workbench.files}</p>
                   {fileOptional ? <span className={`badge border ${style.badge}`}>{messages.workbench.optionalUpload}</span> : null}
                 </div>
 
@@ -979,20 +934,8 @@ function StandardToolWorkbench({
                   </div>
                 ) : null}
 
-                {files.length > 0 ? (
+                {files.length > 0 && (usesPdfEditor || inputPreviewUrl) ? (
                   <section className="editor-stage">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-ink">{messages.workbench.editorPreviewTitle}</p>
-                        <p className="mt-1 text-sm text-ink-muted">
-                          {usesPdfEditor ? messages.workbench.mergePreviewDescription : messages.workbench.inputPreviewDescription}
-                        </p>
-                      </div>
-                      <span className="editor-chip normal-case tracking-normal text-ink-muted">
-                        {formatMegaBytes(files.reduce((sum, file) => sum + file.size, 0))}
-                      </span>
-                    </div>
-
                     {usesPdfEditor ? (
                       <PdfPageEditor
                         files={tool.id === 'pdf-rearrange' ? files.slice(0, 1) : files}
@@ -1054,36 +997,16 @@ function StandardToolWorkbench({
                         testIdPrefix={tool.id === 'video-crop' ? 'video-crop' : 'video-editor'}
                       />
                     ) : inputPreviewUrl ? (
-                      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
-                        <div className="editor-frame">
-                          {previewSourceFile?.type.startsWith('image/') ? (
-                            <img src={inputPreviewUrl} alt={previewSourceFile.name} className="max-h-[24rem] w-full rounded-lg object-contain" />
-                          ) : null}
-                          {previewSourceFile?.type.startsWith('audio/') ? <audio src={inputPreviewUrl} controls className="w-full" /> : null}
-                          {previewSourceFile?.type.startsWith('video/') ? (
-                            <video src={inputPreviewUrl} controls className="max-h-[24rem] w-full rounded-lg" />
-                          ) : null}
-                        </div>
-                        <div className="workspace-panel space-y-3 p-4">
-                          <div className="workspace-metric">
-                            <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.selectedFile}</p>
-                            <p className="mt-2 truncate text-sm font-semibold text-ink">{previewSourceFile?.name}</p>
-                          </div>
-                          <div className="workspace-metric">
-                            <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.fileCount}</p>
-                            <p className="mt-2 text-sm font-semibold text-ink">{files.length}</p>
-                          </div>
-                          <div className="workspace-metric">
-                            <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.firstFileSize}</p>
-                            <p className="mt-2 text-sm font-semibold text-ink">{formatMegaBytes(previewSourceFile?.size ?? 0)}</p>
-                          </div>
-                        </div>
+                      <div className="editor-frame">
+                        {previewSourceFile?.type.startsWith('image/') ? (
+                          <img src={inputPreviewUrl} alt={previewSourceFile.name} className="max-h-[24rem] w-full rounded-lg object-contain" />
+                        ) : null}
+                        {previewSourceFile?.type.startsWith('audio/') ? <audio src={inputPreviewUrl} controls className="w-full" /> : null}
+                        {previewSourceFile?.type.startsWith('video/') ? (
+                          <video src={inputPreviewUrl} controls className="max-h-[24rem] w-full rounded-lg" />
+                        ) : null}
                       </div>
-                    ) : (
-                      <div className="workspace-section text-sm text-ink-muted">
-                        {messages.workbench.readyToRunDescription}
-                      </div>
-                    )}
+                    ) : null}
                   </section>
                 ) : null}
 
@@ -1116,21 +1039,14 @@ function StandardToolWorkbench({
           )}
         </div>
 
-        {showProgress ? (
+        {running ? (
           <section className="workspace-panel p-5 sm:p-6">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-ink">{messages.workbench.progress}</p>
-                <p className="mt-1 text-sm text-ink-muted">{progress.stage}</p>
-              </div>
-              <span className={`badge border ${style.badge}`}>{category.nav}</span>
-            </div>
-            <ProgressBar value={progress.percent} label={progress.stage} status={progressStatus} />
+            <ProgressBar value={progress.percent} label={progress.stage} status="running" />
           </section>
         ) : null}
 
         {showResults ? (
-          <section className="space-y-4">
+          <section ref={resultsSectionRef} className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm font-semibold text-ink">{messages.workbench.results}</p>
               {results.length > 1 ? (
@@ -1212,9 +1128,14 @@ function StandardToolWorkbench({
                         </div>
                       ) : null}
                       {result.metadata ? (
-                        <pre className="max-h-64 overflow-auto rounded-xl border border-border bg-base-subtle p-3 text-xs text-ink">
-                          {JSON.stringify(result.metadata, null, 2)}
-                        </pre>
+                        <dl className="max-h-64 space-y-2 overflow-auto rounded-xl border border-border bg-base-subtle p-3">
+                          {Object.entries(result.metadata).map(([key, value]) => (
+                            <div key={key}>
+                              <dt className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">{humanizeMetadataKey(key)}</dt>
+                              <dd className="mt-0.5 break-words text-sm text-ink">{formatMetadataValue(value, locale)}</dd>
+                            </div>
+                          ))}
+                        </dl>
                       ) : null}
                     </ResultCard>
                   );

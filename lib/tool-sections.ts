@@ -30,7 +30,7 @@ export const categorySections: Partial<Record<ToolCategory, CategorySection[]>> 
     {
       id: 'create',
       title: { en: 'Create PDF (convert to PDF)', ko: 'PDF로 변환' },
-      toolIds: ['word-to-pdf', 'powerpoint-to-pdf', 'excel-to-pdf', 'image-to-pdf', 'html-to-pdf', 'url-pdf', 'hwpx-to-pdf'],
+      toolIds: ['word-to-pdf', 'powerpoint-to-pdf', 'excel-to-pdf', 'image-to-pdf', 'html-to-pdf', 'url-pdf'],
     },
     {
       id: 'convert',

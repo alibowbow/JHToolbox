@@ -187,10 +187,27 @@ function buildSecPr(widthHwp: number, heightHwp: number, landscape: boolean): st
 
 function buildPicture(binItemId: string, widthHwp: number, heightHwp: number, instId: number): string {
   // Inline (treatAsChar) full-page image. Coordinates in HWPUNIT.
+  //
+  // Child order follows the OWPML Picture model (ShapeObject → ShapeComponent
+  // → Picture): sz/pos/outMargin, then offset/orgSz/curSz/flip/rotationInfo/
+  // renderingInfo, then the image-specific elements. Hancom writes the
+  // ShapeComponent transform block into every picture and dereferences it on
+  // open, so it must be present (identity matrices) even for an untransformed
+  // image — omitting it makes the file fail to open.
   return `<hp:pic reverse="0" id="${instId}" zOrder="0" numberingType="PICTURE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" href="" groupLevel="0" instid="${instId}">
         <hp:sz width="${widthHwp}" widthRelTo="ABSOLUTE" height="${heightHwp}" heightRelTo="ABSOLUTE" protect="0"/>
         <hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>
         <hp:outMargin left="0" right="0" top="0" bottom="0"/>
+        <hp:offset x="0" y="0"/>
+        <hp:orgSz width="${widthHwp}" height="${heightHwp}"/>
+        <hp:curSz width="${widthHwp}" height="${heightHwp}"/>
+        <hp:flip horizontal="0" vertical="0"/>
+        <hp:rotationInfo angle="0" centerX="${Math.round(widthHwp / 2)}" centerY="${Math.round(heightHwp / 2)}" rotateimage="1"/>
+        <hp:renderingInfo>
+          <hc:transMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>
+          <hc:scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>
+          <hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>
+        </hp:renderingInfo>
         <hp:imgRect>
           <hc:pt0 x="0" y="0"/>
           <hc:pt1 x="${widthHwp}" y="0"/>
@@ -214,10 +231,14 @@ export function buildRasterSectionXml(params: {
 }): string {
   const { widthHwp, heightHwp, landscape, binItemId, instId } = params;
   const lineSeg = `<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="${heightHwp}" textheight="${heightHwp}" baseline="${Math.round(heightHwp * 0.85)}" spacing="0" horzpos="0" horzsize="${widthHwp}" flags="393216"/></hp:linesegarray>`;
+  // Hancom keeps the section definition (secPr + column control) in its own
+  // run, separate from content runs — mixing them can abort the load or leave
+  // the body blank, so the picture gets a second run of its own.
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="${HP_NS}" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
-  <hp:p id="0" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">
-    <hp:run charPrIDRef="0">${buildSecPr(widthHwp, heightHwp, landscape)}${buildPicture(binItemId, widthHwp, heightHwp, instId)}</hp:run>
+  <hp:p id="1" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">
+    <hp:run charPrIDRef="0">${buildSecPr(widthHwp, heightHwp, landscape)}<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="1" sameSz="1" sameGap="0"/></hp:ctrl></hp:run>
+    <hp:run charPrIDRef="0">${buildPicture(binItemId, widthHwp, heightHwp, instId)}</hp:run>
     ${lineSeg}
   </hp:p>
 </hs:sec>`;

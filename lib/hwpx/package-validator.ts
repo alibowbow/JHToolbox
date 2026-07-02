@@ -240,6 +240,24 @@ export async function validateHwpxStructure(bytes: Uint8Array): Promise<HwpxVali
       } else {
         errors.push(`${href} has no hp:pagePr size`);
       }
+
+      // Every picture must carry the full OWPML shape block (ShapeObject →
+      // ShapeComponent → Picture). Hancom writes and dereferences the
+      // transform elements on open; a pic without them fails to open.
+      const PIC_REQUIRED = [
+        'hp:sz', 'hp:pos', 'hp:outMargin',
+        'hp:offset', 'hp:orgSz', 'hp:curSz', 'hp:flip', 'hp:rotationInfo', 'hp:renderingInfo',
+        'hp:imgRect', 'hp:imgClip', 'hp:inMargin', 'hp:imgDim', 'hp:img', 'hp:effects',
+      ];
+      let picMatch: RegExpExecArray | null;
+      const picRe = /<hp:pic\b[^>]*>([\s\S]*?)<\/hp:pic>/g;
+      while ((picMatch = picRe.exec(sectionText)) !== null) {
+        for (const el of PIC_REQUIRED) {
+          if (!new RegExp(`<${el}[\\s/>]`).test(picMatch[1])) {
+            errors.push(`${href}: hp:pic is missing required element <${el}>`);
+          }
+        }
+      }
     }
     for (const id of binItems) {
       if (!zip.file(itemHrefs[id])) {
