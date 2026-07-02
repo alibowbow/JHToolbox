@@ -978,6 +978,226 @@ export async function extractPdfStyledPages(
   }));
 }
 
+export type PdfLayoutLine = {
+  text: string;
+  xPt: number;
+  /** Top of the line box, top-left origin. */
+  yPt: number;
+  widthPt: number;
+  fontSizePt: number;
+};
+
+export type PdfLayoutPage = {
+  pageNumber: number;
+  widthPt: number;
+  heightPt: number;
+  textLines: PdfLayoutLine[];
+  /** Ruling segments (stroked lines / thin filled rects), top-left origin. */
+  segments: Array<{ x1: number; y1: number; x2: number; y2: number }>;
+};
+
+function multiplyMatrix(a: number[], b: number[]): number[] {
+  // PDF 2x3 matrices [a b c d e f]: result applies a, then b.
+  return [
+    a[0] * b[0] + a[1] * b[2],
+    a[0] * b[1] + a[1] * b[3],
+    a[2] * b[0] + a[3] * b[2],
+    a[2] * b[1] + a[3] * b[3],
+    a[4] * b[0] + a[5] * b[2] + b[4],
+    a[4] * b[1] + a[5] * b[3] + b[5],
+  ];
+}
+
+function applyMatrix(m: number[], x: number, y: number): [number, number] {
+  return [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+}
+
+/**
+ * Extract positioned text lines and ruling segments (table borders, underlines)
+ * for the layout-preserving HWPX mode. Rules come from the page's operator
+ * list: stroked line paths plus thin filled rectangles (the two ways PDFs draw
+ * table grids). Parsing is defensive — anything unexpected yields fewer
+ * segments, never an error.
+ */
+export async function extractPdfLayoutPages(
+  file: File,
+  onProgress?: (value: number) => void,
+): Promise<PdfLayoutPage[]> {
+  const pdfjsLib = await getPdfJs();
+  const input = new Uint8Array(await file.arrayBuffer());
+  const doc = await pdfjsLib.getDocument({ data: input, useWorkerFetch: false }).promise;
+  const OPS = pdfjsLib.OPS as Record<string, number>;
+
+  try {
+    const pages: PdfLayoutPage[] = [];
+
+    for (let pageNo = 1; pageNo <= doc.numPages; pageNo += 1) {
+      onProgress?.((pageNo - 1) / Math.max(1, doc.numPages));
+      const page = await doc.getPage(pageNo);
+      const viewport = page.getViewport({ scale: 1 });
+      const toTop = (x: number, y: number): [number, number] =>
+        viewport.convertToViewportPoint(x, y) as [number, number];
+
+      // --- positioned text ---------------------------------------------------
+      const textContent = await page.getTextContent();
+      const rows = new Map<number, Array<{ x: number; endX: number; text: string; size: number; topY: number }>>();
+      for (const item of textContent.items as Array<{ str?: string; width?: number; transform?: number[] }>) {
+        const text = String(item.str ?? '');
+        if (!text.trim()) {
+          continue;
+        }
+        const tr = Array.isArray(item.transform) ? item.transform : [0, 0, 0, 0, 0, 0];
+        const size = Math.hypot(Number(tr[1] ?? 0), Number(tr[3] ?? 0)) || 12;
+        const [x, baselineTop] = toTop(Number(tr[4] ?? 0), Number(tr[5] ?? 0));
+        const topY = baselineTop - size * 0.8;
+        const key = Math.round(baselineTop / 3) * 3;
+        const bucket = rows.get(key) ?? [];
+        bucket.push({ x, endX: x + Number(item.width ?? 0), text, size, topY });
+        rows.set(key, bucket);
+      }
+
+      const textLines: PdfLayoutLine[] = Array.from(rows.values())
+        .flatMap((entries) => {
+          entries.sort((a, b) => a.x - b.x);
+          // Split a visual row into runs separated by wide gaps so columns
+          // (e.g. table cells) stay independent boxes.
+          const groups: Array<typeof entries> = [];
+          for (const entry of entries) {
+            const current = groups[groups.length - 1];
+            if (current && entry.x - current[current.length - 1].endX <= entry.size * 1.6) {
+              current.push(entry);
+            } else {
+              groups.push([entry]);
+            }
+          }
+          return groups.map((group) => {
+            const size = group.reduce((max, entry) => Math.max(max, entry.size), 0) || 12;
+            return {
+              text: group.map((entry) => entry.text).join(' ').replace(/\s+/g, ' ').trim(),
+              xPt: group[0].x,
+              yPt: Math.min(...group.map((entry) => entry.topY)),
+              widthPt: Math.max(...group.map((entry) => entry.endX)) - group[0].x,
+              fontSizePt: Math.max(6, Math.round(size * 10) / 10),
+            };
+          });
+        })
+        .filter((lineItem) => lineItem.text.length > 0);
+
+      // --- ruling segments from the operator list ----------------------------
+      const segments: PdfLayoutPage['segments'] = [];
+      try {
+        const opList = await page.getOperatorList();
+        let ctm = [1, 0, 0, 1, 0, 0];
+        const stack: number[][] = [];
+        type Sub = Array<[number, number]>;
+        let pending: { subpaths: Sub[]; rects: Array<[number, number, number, number]> } | null = null;
+
+        const pushSegment = (ax: number, ay: number, bx: number, by: number) => {
+          const [x1, y1] = toTop(...applyMatrix(ctm, ax, ay));
+          const [x2, y2] = toTop(...applyMatrix(ctm, bx, by));
+          segments.push({ x1, y1, x2, y2 });
+        };
+
+        const emitPending = (mode: 'stroke' | 'fill') => {
+          if (!pending) {
+            return;
+          }
+          if (mode === 'stroke') {
+            for (const sub of pending.subpaths) {
+              for (let i = 1; i < sub.length; i += 1) {
+                pushSegment(sub[i - 1][0], sub[i - 1][1], sub[i][0], sub[i][1]);
+              }
+            }
+            for (const [x, y, w, h] of pending.rects) {
+              pushSegment(x, y, x + w, y);
+              pushSegment(x + w, y, x + w, y + h);
+              pushSegment(x + w, y + h, x, y + h);
+              pushSegment(x, y + h, x, y);
+            }
+          } else {
+            // Thin filled rectangles are how many PDFs draw table rules.
+            for (const [x, y, w, h] of pending.rects) {
+              const [ox, oy] = applyMatrix(ctm, x, y);
+              const [wx, wy] = applyMatrix(ctm, x + w, y + h);
+              const absW = Math.abs(wx - ox);
+              const absH = Math.abs(wy - oy);
+              if (Math.min(absW, absH) > 2.5 || Math.max(absW, absH) <= 3) {
+                continue;
+              }
+              if (absH <= absW) {
+                pushSegment(x, y + h / 2, x + w, y + h / 2);
+              } else {
+                pushSegment(x + w / 2, y, x + w / 2, y + h);
+              }
+            }
+          }
+          pending = null;
+        };
+
+        for (let i = 0; i < opList.fnArray.length; i += 1) {
+          const fn = opList.fnArray[i];
+          const args = opList.argsArray[i];
+          if (fn === OPS.save) {
+            stack.push(ctm);
+          } else if (fn === OPS.restore) {
+            ctm = stack.pop() ?? [1, 0, 0, 1, 0, 0];
+          } else if (fn === OPS.transform && Array.isArray(args)) {
+            ctm = multiplyMatrix(args as number[], ctm);
+          } else if (fn === OPS.constructPath && Array.isArray(args) && Array.isArray(args[0]) && Array.isArray(args[1])) {
+            const pathOps = args[0] as number[];
+            const coords = args[1] as number[];
+            const subpaths: Sub[] = [];
+            const rects: Array<[number, number, number, number]> = [];
+            let current: Sub = [];
+            let j = 0;
+            for (const op of pathOps) {
+              if (op === OPS.moveTo) {
+                if (current.length > 1) subpaths.push(current);
+                current = [[coords[j], coords[j + 1]]];
+                j += 2;
+              } else if (op === OPS.lineTo) {
+                current.push([coords[j], coords[j + 1]]);
+                j += 2;
+              } else if (op === OPS.rectangle) {
+                rects.push([coords[j], coords[j + 1], coords[j + 2], coords[j + 3]]);
+                j += 4;
+              } else if (op === OPS.curveTo) {
+                j += 6;
+                current = [];
+              } else if (op === OPS.curveTo2 || op === OPS.curveTo3) {
+                j += 4;
+                current = [];
+              } else if (op === OPS.closePath && current.length > 1) {
+                current.push(current[0]);
+              }
+            }
+            if (current.length > 1) subpaths.push(current);
+            pending = { subpaths, rects };
+          } else if (fn === OPS.stroke || fn === OPS.fillStroke) {
+            emitPending('stroke');
+          } else if (fn === OPS.fill || fn === OPS.eoFill) {
+            emitPending('fill');
+          }
+        }
+      } catch {
+        // Operator-list parsing is best-effort; text boxes still carry the layout.
+      }
+
+      pages.push({
+        pageNumber: pageNo,
+        widthPt: viewport.width,
+        heightPt: viewport.height,
+        textLines,
+        segments,
+      });
+    }
+
+    return pages;
+  } finally {
+    await doc.destroy();
+  }
+}
+
 function createWorkbookFromPdfPages(pages: PdfTextPage[]) {
   const workbook = XLSX.utils.book_new();
 

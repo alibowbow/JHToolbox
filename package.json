@@ -25,8 +25,9 @@
     "check:hwpx-units": "node --experimental-strip-types scripts/checks/hwpx-units.check.mjs",
     "check:hwpx-package": "node --experimental-strip-types --import ./scripts/checks/register-hooks.mjs scripts/checks/hwpx-package.check.mjs",
     "check:hwpx-text": "node --experimental-strip-types --import ./scripts/checks/register-hooks.mjs scripts/checks/hwpx-text.check.mjs",
+    "check:layout-analysis": "node --experimental-strip-types scripts/checks/layout-analysis.check.mjs",
     "check:invariants": "node --experimental-strip-types scripts/checks/registry-invariants.check.mjs",
-    "test:unit": "npm run check:url-safety && npm run check:zip-safety && npm run check:spreadsheet-safety && npm run check:filename-safety && npm run check:option-schema && npm run check:html-sanitize && npm run check:pdf-page-math && npm run check:tile-math && npm run check:media-dimensions && npm run check:cms-detect && npm run check:pdf-reduction && npm run check:hwpx-units && npm run check:hwpx-package && npm run check:hwpx-text && npm run check:invariants",
+    "test:unit": "npm run check:url-safety && npm run check:zip-safety && npm run check:spreadsheet-safety && npm run check:filename-safety && npm run check:option-schema && npm run check:html-sanitize && npm run check:pdf-page-math && npm run check:tile-math && npm run check:media-dimensions && npm run check:cms-detect && npm run check:pdf-reduction && npm run check:hwpx-units && npm run check:hwpx-package && npm run check:hwpx-text && npm run check:layout-analysis && npm run check:invariants",
     "test:e2e": "playwright test",
     "verify": "npm run typecheck && npm run lint && npm run test:unit && npm run build"
   },
