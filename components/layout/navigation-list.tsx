@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Archive, FileText, Globe, Home, Image, Layers3, Monitor, Music, ScanSearch, Video } from 'lucide-react';
+import { Archive, FileText, Globe, Home, Image, Layers3, Monitor, Music, ScanSearch, Video, Workflow } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { getCategoryCopy } from '@/lib/i18n';
 import { useLocale } from '@/components/providers/locale-provider';
@@ -10,6 +10,7 @@ import { useLocale } from '@/components/providers/locale-provider';
 const navItems = [
   { href: '/', key: 'home', icon: Home, iconClass: 'text-prime', dotClass: 'bg-prime' },
   { href: '/tools', key: 'allTools', icon: Layers3, iconClass: 'text-accent', dotClass: 'bg-accent' },
+  { href: '/pipeline', key: 'pipeline', icon: Workflow, iconClass: 'text-prime', dotClass: 'bg-prime' },
   { href: '/tools/pdf', key: 'pdf', icon: FileText, iconClass: 'text-rose-300', dotClass: 'bg-rose-400' },
   { href: '/tools/image', key: 'image', icon: Image, iconClass: 'text-sky-300', dotClass: 'bg-sky-400' },
   { href: '/tools/ocr', key: 'ocr', icon: ScanSearch, iconClass: 'text-violet-300', dotClass: 'bg-violet-400' },
@@ -35,7 +36,9 @@ export function NavigationList({
       {navItems.map(({ href, key, icon: Icon, iconClass, dotClass }) => {
         const active = pathname === href || (href !== '/' && pathname.startsWith(href));
         const label =
-          key === 'home' || key === 'allTools' ? messages.nav[key] : getCategoryCopy(locale, key).nav;
+          key === 'home' || key === 'allTools' || key === 'pipeline'
+            ? messages.nav[key]
+            : getCategoryCopy(locale, key).nav;
 
         return (
           <Link key={href} href={href} onClick={onNavigate}>
