@@ -12,9 +12,10 @@ interface DropZoneProps {
   multiple?: boolean;
   label?: string;
   files?: File[];
+  disabled?: boolean;
 }
 
-export function DropZone({ onFiles, accept, multiple = false, label, files }: DropZoneProps) {
+export function DropZone({ onFiles, accept, multiple = false, label, files, disabled = false }: DropZoneProps) {
   const { messages } = useLocale();
   const inputId = useId();
   const [isDragging, setIsDragging] = useState(false);
@@ -35,17 +36,20 @@ export function DropZone({ onFiles, accept, multiple = false, label, files }: Dr
         animate={{ scale: isDragging ? 1.01 : 1 }}
         onDragOver={(event) => {
           event.preventDefault();
-          setIsDragging(true);
+          if (!disabled) setIsDragging(true);
         }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={(event) => {
           event.preventDefault();
           setIsDragging(false);
+          if (disabled) return;
           const droppedFiles = Array.from(event.dataTransfer.files);
           pushFiles(multiple ? [...currentFiles, ...droppedFiles] : droppedFiles.slice(0, 1));
         }}
-        className={`editor-stage flex cursor-pointer flex-col items-center justify-center gap-4 border-2 border-dashed p-8 text-center transition-colors sm:p-10 ${
-          isDragging ? 'border-prime bg-prime/10' : 'border-border-bright hover:border-prime/40'
+        className={`editor-stage flex flex-col items-center justify-center gap-4 border-2 border-dashed p-8 text-center transition-colors sm:p-10 ${
+          disabled
+            ? 'cursor-not-allowed opacity-50'
+            : `cursor-pointer ${isDragging ? 'border-prime bg-prime/10' : 'border-border-bright hover:border-prime/40'}`
         }`}
       >
         <motion.div
@@ -66,6 +70,7 @@ export function DropZone({ onFiles, accept, multiple = false, label, files }: Dr
           type="file"
           accept={accept}
           multiple={multiple}
+          disabled={disabled}
           className="hidden"
           onChange={(event) => {
             const nextFiles = Array.from(event.target.files ?? []);

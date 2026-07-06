@@ -1,6 +1,6 @@
 import { assembleHwpxPackage } from './package-writer';
-import { analyzePageLayout } from './layout-analysis';
-import type { PositionedTextLine, RuleSegment } from './layout-analysis';
+import { analyzePageLayout, groupIntoBlocks } from './layout-analysis';
+import type { PositionedTextLine, RuleSegment, TextBlock } from './layout-analysis';
 import { pdfPageToHwpPageSize, ptToHwpUnit } from './units';
 import {
   FULL_BLEED_MARGINS,
@@ -91,27 +91,35 @@ function subListParagraph(
   );
 }
 
-function subList(paragraphsXml: string): string {
+function subList(paragraphsXml: string, vertAlign: 'CENTER' | 'TOP' = 'CENTER'): string {
   return (
-    '<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">' +
+    `<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="${vertAlign}" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">` +
     paragraphsXml +
     '</hp:subList>'
   );
 }
 
-/** Invisible text box carrying one line of editable text at (x, y). */
+/**
+ * Invisible text box carrying one paragraph BLOCK of editable text at (x, y).
+ * Top-aligned so the first line sits exactly at the block's original position,
+ * and generously sized so Hangul font metrics (wider than the PDF's original
+ * font) do not force wraps that would spill into neighbouring boxes.
+ */
 function buildTextBox(params: {
   id: number;
   zOrder: number;
-  xHwp: number;
-  yHwp: number;
-  widthHwp: number;
-  heightHwp: number;
-  text: string;
-  charPrId: number;
-  fontSizePt: number;
+  block: TextBlock;
+  charPrIdFor: (fontSizePt: number, bold: boolean) => number;
 }): string {
-  const { id, zOrder, xHwp, yHwp, widthHwp, heightHwp, text, charPrId, fontSizePt } = params;
+  const { id, zOrder, block, charPrIdFor } = params;
+  const xHwp = ptToHwpUnit(block.xPt);
+  const yHwp = ptToHwpUnit(block.yPt);
+  // Width slack: +15% for font-metric differences, plus a fixed pad.
+  const widthHwp = Math.round(ptToHwpUnit(block.widthPt) * 1.15) + 1200;
+  const heightHwp = ptToHwpUnit(block.heightPt) + 600;
+  const paragraphs = block.lines
+    .map((line) => subListParagraph(line.text, charPrIdFor(line.fontSizePt, line.bold), line.fontSizePt, widthHwp))
+    .join('');
   return (
     `<hp:rect id="${id}" zOrder="${zOrder}" numberingType="NONE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" href="" groupLevel="0" instid="${id}" ratio="0">` +
     '<hp:offset x="0" y="0"/>' +
@@ -124,7 +132,7 @@ function buildTextBox(params: {
     NO_BORDER_LINESHAPE +
     NO_SHADOW +
     `<hp:drawText lastWidth="${widthHwp}" name="" editable="0">` +
-    subList(subListParagraph(text, charPrId, fontSizePt, widthHwp)) +
+    subList(paragraphs, 'TOP') +
     '<hp:textMargin left="0" right="0" top="0" bottom="0"/>' +
     '</hp:drawText>' +
     `<hc:pt0 x="0" y="0"/><hc:pt1 x="${widthHwp}" y="0"/><hc:pt2 x="${widthHwp}" y="${heightHwp}"/><hc:pt3 x="0" y="${heightHwp}"/>` +
@@ -255,23 +263,8 @@ export async function writeLayoutHwpx(doc: LayoutDocument): Promise<{ bytes: Uin
       stats.rules += 1;
     }
 
-    for (const line of plan.freeText) {
-      // Slack keeps single-line text from wrapping inside its box.
-      const widthHwp = ptToHwpUnit(line.widthPt) + 800;
-      const heightHwp = Math.max(400, Math.round(line.fontSizePt * 100 * 1.5));
-      floats.push(
-        buildTextBox({
-          id: nextId,
-          zOrder,
-          xHwp: ptToHwpUnit(line.xPt),
-          yHwp: ptToHwpUnit(line.yPt),
-          widthHwp,
-          heightHwp,
-          text: line.text,
-          charPrId: registry.idFor(line.fontSizePt, line.bold),
-          fontSizePt: line.fontSizePt,
-        }),
-      );
+    for (const block of groupIntoBlocks(plan.freeText)) {
+      floats.push(buildTextBox({ id: nextId, zOrder, block, charPrIdFor: registry.idFor }));
       nextId += 1;
       zOrder += 1;
       stats.textBoxes += 1;

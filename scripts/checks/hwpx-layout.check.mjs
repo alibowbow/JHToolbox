@@ -33,8 +33,10 @@ const doc = {
         line('값 A<1>', 310, 208, 40),
         line('합계', 110, 248, 30),
         line('42', 310, 248, 20),
-        // Free text below the table:
+        // Free text below the table: two stacked lines (same left edge, normal
+        // line gap) must collapse into ONE box, not two overlapping ones.
         line('표 아래 본문입니다.', 100, 400, 120),
+        line('둘째 줄도 같은 상자에.', 100, 414, 130),
       ],
       segments: [
         // 2x2 grid: x 100..300..500, y 200..240..280
@@ -79,6 +81,10 @@ check('text box present with drawText', section.includes('<hp:drawText lastWidth
 check('box border invisible (style NONE, no fillBrush in rect)', /<hp:rect (?:(?!<\/hp:rect>).)*style="NONE"/.test(section));
 check('rect: pt0..pt3 then sz/pos/outMargin last', /<hc:pt3 [^>]*\/><hp:sz [^>]*\/><hp:pos [^>]*\/><hp:outMargin [^>]*\/><\/hp:rect>/.test(section));
 check('title text box escaped', section.includes('<hp:t>문서 제목 &amp; 부제</hp:t>'));
+// Overlap fix: stacked lines collapse into ONE box (2 paragraphs) and free
+// text boxes are TOP-aligned so line 1 sits at the block's original position.
+check('stacked lines share one box (2 paragraphs)', /<hp:drawText [^>]*><hp:subList [^>]*vertAlign="TOP"[^>]*>(?:(?!<\/hp:subList>).)*<hp:t>표 아래 본문입니다\.<\/hp:t>(?:(?!<\/hp:subList>).)*<hp:t>둘째 줄도 같은 상자에\.<\/hp:t>/.test(section));
+check('free-text boxes are TOP-aligned', section.includes('vertAlign="TOP"'));
 
 // Rule line.
 check('leftover rule emitted as hp:line with startPt/endPt', /<hp:line (?:(?!<\/hp:line>).)*<hc:startPt x="0" y="0"\/><hc:endPt x="\d+" y="0"\/>/.test(section));

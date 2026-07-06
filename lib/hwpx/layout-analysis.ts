@@ -195,6 +195,57 @@ function denormalize(seg: NormalizedSegment): RuleSegment {
     : { x1: seg.at, y1: seg.from, x2: seg.at, y2: seg.to };
 }
 
+export interface TextBlock {
+  xPt: number;
+  yPt: number;
+  widthPt: number;
+  heightPt: number;
+  lines: PositionedTextLine[];
+}
+
+const BLOCK_X_TOLERANCE = 3; // pt: lines sharing a left edge belong together
+const LINE_HEIGHT_FACTOR = 1.35; // approximate visual line height per font size
+
+/**
+ * Group free text lines into paragraph blocks: consecutive lines that share a
+ * left edge with a normal line-gap become ONE text box in which paragraphs
+ * stack naturally. This is what prevents the overlap artifacts of
+ * one-box-per-line output: a Hangul font can be wider than the PDF font, and a
+ * wrapped continuation inside a per-line box spills onto the next box.
+ */
+export function groupIntoBlocks(lines: PositionedTextLine[]): TextBlock[] {
+  const sorted = [...lines].sort((a, b) => a.yPt - b.yPt || a.xPt - b.xPt);
+  const blocks: TextBlock[] = [];
+
+  for (const line of sorted) {
+    const bottomOf = (block: TextBlock) => {
+      const last = block.lines[block.lines.length - 1];
+      return last.yPt + last.fontSizePt * LINE_HEIGHT_FACTOR;
+    };
+    const candidate = blocks.find(
+      (block) =>
+        Math.abs(line.xPt - block.xPt) <= BLOCK_X_TOLERANCE &&
+        line.yPt >= block.yPt &&
+        line.yPt - bottomOf(block) <= Math.max(3, line.fontSizePt * 0.75),
+    );
+    if (candidate) {
+      candidate.lines.push(line);
+      candidate.widthPt = Math.max(candidate.widthPt, line.xPt + line.widthPt - candidate.xPt);
+      candidate.heightPt = line.yPt + line.fontSizePt * LINE_HEIGHT_FACTOR - candidate.yPt;
+    } else {
+      blocks.push({
+        xPt: line.xPt,
+        yPt: line.yPt,
+        widthPt: line.widthPt,
+        heightPt: line.fontSizePt * LINE_HEIGHT_FACTOR,
+        lines: [line],
+      });
+    }
+  }
+
+  return blocks;
+}
+
 /** Analyze one page: detect clean ruled tables and split the rest. */
 export function analyzePageLayout(textLines: PositionedTextLine[], segments: RuleSegment[]): LayoutPlan {
   const merged = mergeCollinear(normalizeSegments(segments));
