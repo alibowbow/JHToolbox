@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import JSZip from 'jszip';
-import { ArrowDown, ArrowUp, Download, LoaderCircle, Play, Plus, Save, Trash2, Workflow, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, CircleStop, Download, LoaderCircle, Play, Plus, Save, Trash2, Workflow, X } from 'lucide-react';
 import { DropZone } from '@/components/ui/DropZone';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { toast } from '@/components/ui/Toast';
@@ -28,6 +28,17 @@ import type { ToolDefinition, ToolOption } from '@/types/tool';
 type ToolOptionValues = Record<string, string | number | boolean>;
 type Step = { uid: string; toolId: string; options: ToolOptionValues };
 
+// Tools that can run without an uploaded file (they take a URL/text input),
+// so a pipeline starting with one should not require input files.
+const FILE_OPTIONAL_TOOLS = new Set(['qr-generator', 'url-image', 'url-pdf', 'detect-cms']);
+
+function toolNeedsFiles(toolId: string | undefined): boolean {
+  if (!toolId) return true;
+  const tool = getToolById(toolId);
+  if (!tool) return true;
+  return tool.inputMode !== 'url' && !FILE_OPTIONAL_TOOLS.has(tool.id);
+}
+
 // Tools usable in a pipeline: everything except the interactive capture studios
 // (screen/webcam/audio recorders take no file input and need a live session).
 function pipelineTools(): ToolDefinition[] {
@@ -42,11 +53,13 @@ function StepOptionField({
   option,
   value,
   locale,
+  disabled,
   onChange,
 }: {
   option: ToolOption;
   value: string | number | boolean | undefined;
   locale: 'en' | 'ko';
+  disabled: boolean;
   onChange: (value: string | number | boolean) => void;
 }) {
   const label = getLocalizedOptionLabel(option, locale);
@@ -56,7 +69,7 @@ function StepOptionField({
   let control: JSX.Element;
   if (option.type === 'select') {
     control = (
-      <select id={id} value={String(value)} onChange={(e) => onChange(e.target.value)} className={base}>
+      <select id={id} value={String(value)} disabled={disabled} onChange={(e) => onChange(e.target.value)} className={base}>
         {(option.options ?? []).map((entry) => (
           <option key={String(entry.value)} value={String(entry.value)}>
             {getLocalizedChoiceLabel(entry.label, locale)}
@@ -67,18 +80,18 @@ function StepOptionField({
   } else if (option.type === 'checkbox') {
     control = (
       <label className="mt-1 inline-flex items-center gap-2 text-sm text-ink-muted">
-        <input id={id} type="checkbox" checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} className="h-4 w-4" />
+        <input id={id} type="checkbox" checked={Boolean(value)} disabled={disabled} onChange={(e) => onChange(e.target.checked)} className="h-4 w-4" />
         {locale === 'ko' ? '사용' : 'Enabled'}
       </label>
     );
   } else if (option.type === 'color') {
     control = (
-      <input id={id} type="color" value={String(value)} onChange={(e) => onChange(e.target.value)} className="mt-1 h-9 w-full rounded-lg border border-border bg-base-subtle" />
+      <input id={id} type="color" value={String(value)} disabled={disabled} onChange={(e) => onChange(e.target.value)} className="mt-1 h-9 w-full rounded-lg border border-border bg-base-subtle" />
     );
   } else if (option.type === 'range') {
     control = (
       <div className="mt-1 flex items-center gap-2">
-        <input id={id} type="range" value={Number(value)} min={option.min} max={option.max} step={option.step} onChange={(e) => onChange(Number(e.target.value))} className="w-full accent-cyan-400" />
+        <input id={id} type="range" value={Number(value)} min={option.min} max={option.max} step={option.step} disabled={disabled} onChange={(e) => onChange(Number(e.target.value))} className="w-full accent-cyan-400" />
         <span className="w-10 text-right font-mono text-xs text-ink-muted">{String(value)}</span>
       </div>
     );
@@ -91,6 +104,7 @@ function StepOptionField({
         min={option.min}
         max={option.max}
         step={option.step}
+        disabled={disabled}
         placeholder={getLocalizedPlaceholder(option, locale)}
         onChange={(e) => onChange(option.type === 'number' ? Number(e.target.value) : e.target.value)}
         className={base}
@@ -120,11 +134,24 @@ export function PipelineBuilder() {
   const [recipes, setRecipes] = useState<Pipeline[]>([]);
   const [recipeName, setRecipeName] = useState('');
   const uidRef = useRef(0);
+  const signalRef = useRef<{ aborted: boolean } | null>(null);
 
   const tools = useMemo(pipelineTools, []);
 
   const refreshRecipes = () => setRecipes(listPipelines());
   useEffect(refreshRecipes, []);
+
+  // Release the previous run's output object URLs when the result changes or
+  // the page unmounts (downloads use the blob directly, so this is safe).
+  useEffect(() => {
+    return () => {
+      result?.finalFiles.forEach((file) => {
+        if (file.previewUrl?.startsWith('blob:')) {
+          URL.revokeObjectURL(file.previewUrl);
+        }
+      });
+    };
+  }, [result]);
 
   const nextUid = () => {
     uidRef.current += 1;
@@ -140,6 +167,7 @@ export function PipelineBuilder() {
 
   const updateOption = (index: number, key: string, value: string | number | boolean) => {
     setSteps((current) => current.map((step, i) => (i === index ? { ...step, options: { ...step.options, [key]: value } } : step)));
+    setResult(null);
   };
 
   const moveStep = (index: number, direction: -1 | 1) => {
@@ -150,6 +178,7 @@ export function PipelineBuilder() {
       [next[index], next[target]] = [next[target], next[index]];
       return next;
     });
+    setResult(null);
   };
 
   const removeStep = (index: number) => {
@@ -162,10 +191,12 @@ export function PipelineBuilder() {
       toast.error(t.addStepsFirst);
       return;
     }
-    if (!files.length) {
+    if (toolNeedsFiles(steps[0]?.toolId) && !files.length) {
       toast.error(t.addFilesFirst);
       return;
     }
+    const signal = { aborted: false };
+    signalRef.current = signal;
     setRunning(true);
     setResult(null);
     setProgress(null);
@@ -176,6 +207,7 @@ export function PipelineBuilder() {
         runStep: runTool,
         acceptForTool: (id) => getToolById(id)?.accept,
         onProgress: setProgress,
+        signal,
       });
       setResult(outcome);
       if (outcome.ok) {
@@ -188,6 +220,13 @@ export function PipelineBuilder() {
       toast.error(cause instanceof Error ? cause.message : t.cancelled);
     } finally {
       setRunning(false);
+      signalRef.current = null;
+    }
+  };
+
+  const onCancel = () => {
+    if (signalRef.current) {
+      signalRef.current.aborted = true;
     }
   };
 
@@ -211,7 +250,15 @@ export function PipelineBuilder() {
   };
 
   const loadRecipe = (pipeline: Pipeline) => {
-    setSteps(pipeline.steps.map((step) => ({ uid: nextUid(), toolId: step.toolId, options: { ...step.options } })));
+    // Re-normalize stored options against each tool's current schema (fills
+    // defaults, drops stale keys, and yields empty options for a removed tool).
+    setSteps(
+      pipeline.steps.map((step) => ({
+        uid: nextUid(),
+        toolId: step.toolId,
+        options: normalizeToolOptions(getToolById(step.toolId)?.options ?? [], step.options),
+      })),
+    );
     setRecipeName(pipeline.name);
     setResult(null);
   };
@@ -254,7 +301,17 @@ export function PipelineBuilder() {
 
       <section className="workspace-panel space-y-4 p-5 sm:p-6">
         <p className="text-sm font-semibold text-ink">{t.inputFiles}</p>
-        <DropZone files={files} onFiles={setFiles} multiple label={messages.workbench.dropzone} />
+        <DropZone
+          files={files}
+          onFiles={(next) => {
+            setFiles(next);
+            setResult(null);
+            setProgress(null);
+          }}
+          multiple
+          disabled={running}
+          label={messages.workbench.dropzone}
+        />
       </section>
 
       <section className="workspace-panel space-y-4 p-5 sm:p-6">
@@ -265,6 +322,7 @@ export function PipelineBuilder() {
             <select
               aria-label={t.addStep}
               value=""
+              disabled={running}
               onChange={(e) => {
                 if (e.target.value) addStep(e.target.value);
                 e.target.value = '';
@@ -310,13 +368,13 @@ export function PipelineBuilder() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
-                      <button type="button" aria-label={t.moveUp} disabled={index === 0} onClick={() => moveStep(index, -1)} className="rounded-lg border border-border p-1.5 text-ink-muted hover:border-border-bright disabled:opacity-40">
+                      <button type="button" aria-label={t.moveUp} disabled={running || index === 0} onClick={() => moveStep(index, -1)} className="rounded-lg border border-border p-1.5 text-ink-muted hover:border-border-bright disabled:opacity-40">
                         <ArrowUp size={14} />
                       </button>
-                      <button type="button" aria-label={t.moveDown} disabled={index === steps.length - 1} onClick={() => moveStep(index, 1)} className="rounded-lg border border-border p-1.5 text-ink-muted hover:border-border-bright disabled:opacity-40">
+                      <button type="button" aria-label={t.moveDown} disabled={running || index === steps.length - 1} onClick={() => moveStep(index, 1)} className="rounded-lg border border-border p-1.5 text-ink-muted hover:border-border-bright disabled:opacity-40">
                         <ArrowDown size={14} />
                       </button>
-                      <button type="button" aria-label={t.removeStep} onClick={() => removeStep(index)} className="rounded-lg p-1.5 text-ink-faint hover:bg-danger/10 hover:text-danger">
+                      <button type="button" aria-label={t.removeStep} disabled={running} onClick={() => removeStep(index)} className="rounded-lg p-1.5 text-ink-faint hover:bg-danger/10 hover:text-danger disabled:opacity-40">
                         <X size={14} />
                       </button>
                     </div>
@@ -330,6 +388,7 @@ export function PipelineBuilder() {
                           option={option}
                           value={step.options[option.key]}
                           locale={locale}
+                          disabled={running}
                           onChange={(value) => updateOption(index, option.key, value)}
                         />
                       ))}
@@ -348,14 +407,21 @@ export function PipelineBuilder() {
             {running ? <LoaderCircle size={18} className="animate-spin" /> : <Play size={18} />}
             {running ? t.running : t.run}
           </button>
+          {running ? (
+            <button type="button" onClick={onCancel} className="btn-ghost border-danger/30 text-danger">
+              <CircleStop size={16} />
+              {t.cancel}
+            </button>
+          ) : null}
           <div className="flex items-center gap-2">
             <input
               value={recipeName}
+              disabled={running}
               onChange={(e) => setRecipeName(e.target.value)}
               placeholder={t.namePlaceholder}
               className="input-surface text-sm"
             />
-            <button type="button" onClick={onSave} className="btn-ghost">
+            <button type="button" disabled={running} onClick={onSave} className="btn-ghost">
               <Save size={16} />
               {t.save}
             </button>
@@ -440,10 +506,10 @@ export function PipelineBuilder() {
                   <p className="truncate text-xs text-ink-muted">{pipeline.steps.map((step) => toolName(step.toolId)).join(' → ') || '—'}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => loadRecipe(pipeline)} className="btn-ghost px-3 py-1.5 text-xs">
+                  <button type="button" disabled={running} onClick={() => loadRecipe(pipeline)} className="btn-ghost px-3 py-1.5 text-xs disabled:opacity-40">
                     {t.load}
                   </button>
-                  <button type="button" aria-label={t.delete} onClick={() => onDeleteRecipe(pipeline.id)} className="rounded-lg p-1.5 text-ink-faint hover:bg-danger/10 hover:text-danger">
+                  <button type="button" aria-label={t.delete} disabled={running} onClick={() => onDeleteRecipe(pipeline.id)} className="rounded-lg p-1.5 text-ink-faint hover:bg-danger/10 hover:text-danger disabled:opacity-40">
                     <Trash2 size={14} />
                   </button>
                 </div>

@@ -96,6 +96,29 @@ const src = [new File(['seed'], 'seed.jpg', { type: 'image/jpeg' })];
   check('progress: mid-run below 100', overall[0] < 100);
 }
 
+// --- 3b. Non-reporting tools still emit per-step progress -------------------
+{
+  const silentRunner = async (ctx) => [{ name: `${ctx.toolId}.out`, blob: new Blob(['o']), mimeType: 'text/plain' }];
+  const events = [];
+  const result = await runPipeline({
+    steps: [{ toolId: 'a', options: {} }, { toolId: 'b', options: {} }, { toolId: 'c', options: {} }],
+    files: src,
+    runStep: silentRunner,
+    onProgress: (p) => events.push(p),
+  });
+  check('silent tools: a progress event per step', new Set(events.map((e) => e.stepIndex)).size === 3);
+  check('silent tools: step labels advance (toolId per step)', events.some((e) => e.toolId === 'b'));
+  check('silent tools: ends at 100', result.ok && events[events.length - 1].overallPercent === 100);
+}
+
+// --- 3c. Input files array is not mutated -----------------------------------
+{
+  const input = [new File(['x'], 'x.txt', { type: 'text/plain' })];
+  const snapshot = [...input];
+  await runPipeline({ steps: [{ toolId: 'a', options: {} }], files: input, runStep: async () => [{ name: 'y', blob: new Blob(['y']), mimeType: 'text/plain' }] });
+  check('input array untouched', input.length === snapshot.length && input[0] === snapshot[0]);
+}
+
 // --- 4. Empty pipeline throws -----------------------------------------------
 {
   let threw = false;

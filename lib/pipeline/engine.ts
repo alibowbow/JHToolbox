@@ -28,6 +28,17 @@ function processedToFile(file: ProcessedFile): File {
   return new File([file.blob], file.name, { type: file.mimeType });
 }
 
+/** Free an intermediate output's object URL (no-op in Node / for data: URLs). */
+function revokePreview(file: ProcessedFile): void {
+  if (
+    file.previewUrl?.startsWith('blob:') &&
+    typeof URL !== 'undefined' &&
+    typeof URL.revokeObjectURL === 'function'
+  ) {
+    URL.revokeObjectURL(file.previewUrl);
+  }
+}
+
 /**
  * Run an ordered list of tool steps, feeding each step's output into the next.
  * Pure and injectable: the only side effect is calling `runStep`, so the whole
@@ -47,7 +58,8 @@ export async function runPipeline(input: RunPipelineInput): Promise<PipelineRunR
   }
 
   const results: PipelineStepResult[] = [];
-  let current: File[] = input.files;
+  // Copy so a tool that mutates its input array cannot corrupt the caller's.
+  let current: File[] = [...input.files];
 
   for (let index = 0; index < steps.length; index += 1) {
     const step = steps[index];
@@ -63,6 +75,17 @@ export async function runPipeline(input: RunPipelineInput): Promise<PipelineRunR
       index > 0
         ? describeAcceptMismatch(input.acceptForTool?.(step.toolId), current)
         : undefined;
+
+    // Emit a step-start event so the UI advances the step label/boundary even
+    // for tools that never call their onProgress.
+    input.onProgress?.({
+      stepIndex: index,
+      totalSteps: steps.length,
+      stepPercent: 0,
+      overallPercent: clampPercent((index / steps.length) * 100),
+      stage: 'Starting',
+      toolId: step.toolId,
+    });
 
     const report = (progress: ProcessProgress) => {
       input.onProgress?.({
@@ -109,7 +132,13 @@ export async function runPipeline(input: RunPipelineInput): Promise<PipelineRunR
       return { ok: true, steps: results, finalFiles: outputs, failedStepIndex: null };
     }
 
-    current = outputs.map(processedToFile);
+    // Convert to Files for the next step, then release each intermediate
+    // output's object URL — they are discarded and never shown.
+    current = outputs.map((output) => {
+      const file = processedToFile(output);
+      revokePreview(output);
+      return file;
+    });
   }
 
   // Unreachable (the last step always returns), kept for exhaustiveness.
