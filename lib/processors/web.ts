@@ -4,6 +4,7 @@ import { ProcessContext, ProcessedFile } from '@/types/processor';
 import { parseBoolean, parseNumber } from '@/lib/utils';
 import { describeUrlRejection, validateExternalUrl } from '@/lib/url-safety';
 import { detectCms } from '@/lib/cms-detect';
+import { pngDimensions } from '@/lib/media-dimensions';
 
 /**
  * Resolve and SSRF-validate a user-supplied URL before any external request.
@@ -115,6 +116,12 @@ function buildMicrolinkUrl(url: string, opts: ScreenshotOptions): string {
   if (opts.fullPage) {
     params.set('screenshot.fullPage', 'true');
   }
+  // Give lazy-loaded content below the fold a chance to render before the
+  // capture; without it a "full" scroll can come back with blank tails.
+  const wait = Math.min(10, Math.max(0, Math.round(opts.waitSeconds ?? 0)));
+  if (wait > 0) {
+    params.set('screenshot.waitForTimeout', String(wait * 1000));
+  }
   return `https://api.microlink.io/?${params.toString()}`;
 }
 
@@ -157,25 +164,48 @@ async function fetchScreenshotCandidate(screenshotUrl: string): Promise<Blob> {
 async function fetchWebsiteScreenshot(url: string, opts: ScreenshotOptions): Promise<Blob> {
   const directPrimary = buildScreenshotUrl(url, opts, false);
 
-  // thum.io is tried first only so it stays the fast path when a browser allows
-  // the cross-origin read (and so the thum.io-mocked specs keep passing). In a
-  // real browser it is blocked by CORS, and routing it through an image proxy
-  // returns 404 because thum.io refuses the proxy's server-side request — so the
-  // actual work is done by Microlink, a CORS-native screenshot API. The proxied
-  // thum.io request stays as a last-ditch backstop.
-  const candidateUrls = [
-    directPrimary,
-    buildMicrolinkUrl(url, opts),
-    buildProxiedUrl(directPrimary),
-  ];
+  // For viewport captures thum.io stays the fast path (and the thum.io-mocked
+  // specs keep passing); in a real browser its bare endpoint is usually
+  // CORS-blocked and Microlink does the work. For FULL-PAGE captures Microlink
+  // goes first: its fullPage rendering is documented, while anonymous thum.io
+  // frequently ignores/caps the fullpage segment and would "succeed" with just
+  // the top of the scroll. The proxied thum.io request stays as a backstop.
+  const candidateUrls = opts.fullPage
+    ? [buildMicrolinkUrl(url, opts), directPrimary, buildProxiedUrl(directPrimary)]
+    : [directPrimary, buildMicrolinkUrl(url, opts), buildProxiedUrl(directPrimary)];
 
+  // A full-page request must not settle for a viewport-shaped answer: accept a
+  // capture that is clearly a scroll (height ≥ 2× width) immediately, otherwise
+  // keep trying candidates and return the tallest capture we saw.
+  let best: { blob: Blob; height: number } | null = null;
   let lastError: Error | null = null;
   for (const candidateUrl of candidateUrls) {
+    let blob: Blob;
     try {
-      return await fetchScreenshotCandidate(candidateUrl);
+      blob = await fetchScreenshotCandidate(candidateUrl);
     } catch (cause) {
       lastError = cause instanceof Error ? cause : new Error('Screenshot fetch failed.');
+      continue;
     }
+
+    if (!opts.fullPage) {
+      return blob;
+    }
+
+    const dims = pngDimensions(new Uint8Array(await blob.arrayBuffer()));
+    if (dims && dims.height >= dims.width * 2) {
+      return blob;
+    }
+    const height = dims?.height ?? 0;
+    if (!best || height > best.height) {
+      best = { blob, height };
+    }
+  }
+
+  if (best) {
+    // No candidate produced an unambiguous scroll capture; the page itself may
+    // simply be short. Return the tallest capture instead of failing.
+    return best.blob;
   }
 
   throw new Error(
