@@ -20,15 +20,16 @@ export function ToolCard({ tool, categoryId }: { tool: ToolDefinition; categoryI
   return (
     <Link href={`/tools/${displayCategoryId}/${tool.id}`} className="block h-full">
       <motion.article
-        whileHover={{ y: -4 }}
+        whileHover={{ y: -6, scale: 1.01 }}
         whileTap={{ scale: 0.98 }}
-        className={`card group flex h-full flex-col gap-5 ${style.border} bg-gradient-to-br ${style.gradient} p-5 transition-all`}
+        transition={{ type: "spring", stiffness: 400, damping: 25 }}
+        className={`card group flex h-full flex-col gap-5 rounded-[1.5rem] border border-border/40 hover:border-border/80 bg-base-elevated hover:shadow-panel hover:bg-gradient-to-br ${style.gradient} p-6 transition-all duration-300`}
       >
         <div className="flex items-start justify-between gap-3">
-          <div className={`flex h-12 w-12 items-center justify-center rounded-[1.1rem] border border-border/70 ${style.iconBg} ${style.icon}`}>
-            <Icon size={18} />
+          <div className={`flex h-12 w-12 items-center justify-center rounded-2xl border border-border/50 bg-base-subtle ${style.icon} transition-colors duration-300 group-hover:${style.iconBg}`}>
+            <Icon size={20} />
           </div>
-          <span className={`badge border ${style.badge}`}>{category.nav}</span>
+          <span className={`badge border border-border/40 bg-transparent group-hover:${style.badge} transition-colors duration-300`}>{category.nav}</span>
         </div>
 
         <div className="space-y-3">

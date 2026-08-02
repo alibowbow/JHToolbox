@@ -11,8 +11,8 @@ const config: Config = {
     extend: {
       colors: {
         border: {
-          DEFAULT: 'rgb(var(--color-border) / 0.055)',
-          bright: 'rgb(var(--color-border) / 0.11)',
+          DEFAULT: 'rgb(var(--color-border) / 0.08)',
+          bright: 'rgb(var(--color-border) / 0.15)',
         },
         ink: {
           DEFAULT: 'rgb(var(--color-ink) / 1)',

@@ -7,17 +7,17 @@ export function Sidebar() {
   const { messages } = useLocale();
 
   return (
-    <aside className="glass-outline hidden h-screen w-[280px] shrink-0 flex-col md:flex">
+    <aside className="glass-outline hidden h-screen w-[280px] shrink-0 flex-col border-r border-border/50 bg-base-subtle/30 md:flex">
       <div className="px-5 pb-5 pt-6">
-        <div className="workspace-panel overflow-hidden p-5">
-          <p className="workspace-kicker">{messages.shell.workspace}</p>
+        <div className="workspace-panel overflow-hidden p-6 border-border/40 shadow-sm bg-base-elevated/50 backdrop-blur-xl">
+          <p className="workspace-kicker text-[10px]">{messages.shell.workspace}</p>
           <div className="mt-3 flex items-center justify-between gap-3">
-            <span className="font-display text-2xl font-semibold tracking-tight text-ink">
+            <span className="font-display text-2xl font-bold tracking-tight text-ink">
               JH<span className="text-prime">Toolbox</span>
             </span>
-            <span className="editor-chip border-prime/25 bg-prime/10 text-prime">{messages.shell.localBadge}</span>
+            <span className="editor-chip border border-prime/30 bg-prime/10 text-prime shadow-sm shadow-prime/5">{messages.shell.localBadge}</span>
           </div>
-          <p className="mt-3 text-sm leading-relaxed text-ink-muted">
+          <p className="mt-3 text-[13px] leading-relaxed text-ink-muted">
             {messages.shell.workspaceTagline}
           </p>
         </div>

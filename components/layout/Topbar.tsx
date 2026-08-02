@@ -123,7 +123,7 @@ export function Topbar() {
 
   return (
     <>
-      <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between border-b border-border bg-base-subtle/80 px-4 backdrop-blur-md sm:px-6 lg:px-8">
+      <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between border-b border-border/60 bg-base-subtle/70 px-4 backdrop-blur-xl sm:px-6 lg:px-8">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -132,7 +132,7 @@ export function Topbar() {
               setMenuOpen(true);
             }}
             data-testid="mobile-menu-button"
-            className="topbar-button inline-flex h-11 w-11 md:hidden"
+            className="topbar-button inline-flex items-center justify-center rounded-xl h-10 w-10 border border-border/40 hover:bg-base-elevated hover:border-border/80 transition-all md:hidden"
             aria-label={messages.topbar.menu}
           >
             <Menu size={18} />
@@ -143,14 +143,14 @@ export function Topbar() {
           </div>
         </div>
 
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 items-center gap-3">
           <button
             type="button"
             onClick={() => {
               setMenuOpen(false);
               setSearchOpen(true);
             }}
-            className="topbar-button inline-flex h-11 w-11 sm:hidden"
+            className="topbar-button inline-flex items-center justify-center rounded-xl h-10 w-10 border border-border/40 hover:bg-base-elevated hover:border-border/80 transition-all sm:hidden"
             aria-label={messages.topbar.searchLabel}
           >
             <Search size={16} />
@@ -161,17 +161,18 @@ export function Topbar() {
               setMenuOpen(false);
               setSearchOpen(true);
             }}
-            className="group hidden min-w-0 items-center gap-3 rounded-2xl border border-border bg-base-elevated px-4 py-2.5 text-sm text-ink-muted transition-colors hover:border-border-bright hover:text-ink sm:inline-flex sm:w-64 lg:w-80"
+            className="group hidden min-w-0 items-center gap-3 rounded-2xl border border-border/60 bg-base-elevated/80 px-4 py-2.5 text-sm text-ink-muted shadow-sm backdrop-blur transition-all hover:border-prime/40 hover:bg-base-elevated hover:shadow-panel hover:text-ink sm:inline-flex sm:w-64 lg:w-80"
           >
             <Search size={14} className="shrink-0 text-ink-faint transition-colors group-hover:text-prime" />
             <div className="min-w-0 text-left">
               <span className="block truncate font-medium text-ink">{messages.topbar.searchLabel}</span>
               <span className="block truncate text-[11px] uppercase tracking-[0.18em] text-ink-faint">{messages.shell.searchScope}</span>
             </div>
-            <kbd className="ml-auto rounded-lg border border-border bg-base px-1.5 py-0.5 font-mono text-[10px] text-ink-faint">
+            <kbd className="ml-auto rounded-lg border border-border/60 bg-base-subtle px-1.5 py-0.5 font-mono text-[10px] text-ink-faint shadow-sm group-hover:border-prime/30 transition-colors">
               {messages.topbar.shortcut}
             </kbd>
           </button>
+          <div className="h-6 w-px bg-border/60 hidden sm:block"></div>
           <LocaleToggle />
           <ThemeToggle />
         </div>

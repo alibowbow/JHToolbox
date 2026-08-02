@@ -5,48 +5,48 @@
 @layer base {
   :root {
     color-scheme: light;
-    --color-base: 241 245 251;
-    --color-base-subtle: 248 250 253;
+    --color-base: 248 250 252;
+    --color-base-subtle: 255 255 255;
     --color-base-elevated: 255 255 255;
     --color-border: 15 23 42;
-    --color-ink: 9 17 31;
-    --color-ink-muted: 79 94 120;
-    --color-ink-faint: 129 140 162;
-    --color-prime: 19 164 197;
-    --color-prime-dim: 13 129 158;
-    --color-accent: 143 201 75;
-    --color-accent-dim: 111 156 56;
+    --color-ink: 15 23 42;
+    --color-ink-muted: 100 116 139;
+    --color-ink-faint: 148 163 184;
+    --color-prime: 59 130 246;
+    --color-prime-dim: 37 99 235;
+    --color-accent: 16 185 129;
+    --color-accent-dim: 5 150 105;
     --color-ok: 16 185 129;
-    --color-warn: 217 119 6;
+    --color-warn: 245 158 11;
     --color-danger: 239 68 68;
-    --color-prime-contrast: 3 19 26;
-    --shadow-card: 0 22px 58px -42px rgba(15, 23, 42, 0.18), 0 1px 0 rgba(255, 255, 255, 0.92) inset;
-    --shadow-panel: 0 28px 74px -50px rgba(15, 23, 42, 0.28), 0 14px 30px -24px rgba(15, 23, 42, 0.12);
-    --surface-highlight: rgba(255, 255, 255, 0.88);
-    --surface-stroke: rgba(15, 23, 42, 0.055);
+    --color-prime-contrast: 255 255 255;
+    --shadow-card: 0 10px 40px -10px rgba(15, 23, 42, 0.08), 0 1px 0 rgba(255, 255, 255, 1) inset;
+    --shadow-panel: 0 20px 60px -15px rgba(15, 23, 42, 0.12), 0 8px 24px -8px rgba(15, 23, 42, 0.08);
+    --surface-highlight: rgba(255, 255, 255, 0.9);
+    --surface-stroke: rgba(15, 23, 42, 0.04);
   }
 
   html.dark {
     color-scheme: dark;
-    --color-base: 7 11 18;
-    --color-base-subtle: 11 17 27;
-    --color-base-elevated: 17 25 39;
+    --color-base: 9 9 11;
+    --color-base-subtle: 18 18 20;
+    --color-base-elevated: 24 24 27;
     --color-border: 255 255 255;
-    --color-ink: 239 244 255;
-    --color-ink-muted: 181 193 215;
-    --color-ink-faint: 130 145 173;
-    --color-prime: 79 223 255;
-    --color-prime-dim: 30 185 215;
-    --color-accent: 190 255 122;
-    --color-accent-dim: 146 201 92;
+    --color-ink: 250 250 250;
+    --color-ink-muted: 161 161 170;
+    --color-ink-faint: 113 113 122;
+    --color-prime: 96 165 250;
+    --color-prime-dim: 59 130 246;
+    --color-accent: 52 211 153;
+    --color-accent-dim: 16 185 129;
     --color-ok: 52 211 153;
     --color-warn: 251 191 36;
     --color-danger: 248 113 113;
-    --color-prime-contrast: 3 19 26;
-    --shadow-card: 0 24px 64px -46px rgba(0, 0, 0, 0.82), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
-    --shadow-panel: 0 30px 80px -56px rgba(0, 0, 0, 0.9), 0 18px 36px -28px rgba(0, 0, 0, 0.54);
-    --surface-highlight: rgba(255, 255, 255, 0.05);
-    --surface-stroke: rgba(255, 255, 255, 0.075);
+    --color-prime-contrast: 9 9 11;
+    --shadow-card: 0 16px 48px -12px rgba(0, 0, 0, 0.9), inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+    --shadow-panel: 0 24px 64px -16px rgba(0, 0, 0, 0.95), 0 12px 32px -8px rgba(0, 0, 0, 0.7);
+    --surface-highlight: rgba(255, 255, 255, 0.03);
+    --surface-stroke: rgba(255, 255, 255, 0.06);
   }
 
   * {
@@ -160,28 +160,28 @@
 
   .surface-glow {
     background:
-      radial-gradient(circle at top left, rgb(var(--color-prime) / 0.18), transparent 34%),
-      radial-gradient(circle at bottom right, rgb(var(--color-accent) / 0.1), transparent 28%),
-      linear-gradient(180deg, rgb(var(--color-base-elevated) / 0.99), rgb(var(--color-base-elevated) / 0.9));
+      radial-gradient(circle at top left, rgb(var(--color-prime) / 0.12), transparent 40%),
+      radial-gradient(circle at bottom right, rgb(var(--color-accent) / 0.08), transparent 35%),
+      linear-gradient(180deg, rgb(var(--color-base-elevated) / 0.98), rgb(var(--color-base-elevated) / 0.95));
   }
 
   .workspace-panel {
-    @apply rounded-xl3 border border-border bg-base-elevated;
+    @apply rounded-[1.5rem] border border-border/80 bg-base-elevated backdrop-blur-xl transition-shadow duration-300;
     background-image:
-      linear-gradient(180deg, rgb(var(--color-base-elevated) / 0.995), rgb(var(--color-base-elevated) / 0.93)),
-      radial-gradient(circle at top, rgb(var(--color-prime) / 0.06), transparent 52%);
+      linear-gradient(180deg, rgb(var(--color-base-elevated) / 0.98), rgb(var(--color-base-elevated) / 0.9)),
+      radial-gradient(circle at top, rgb(var(--color-prime) / 0.04), transparent 50%);
     box-shadow: var(--shadow-panel);
   }
 
   .workspace-section {
-    @apply rounded-xl2 border border-border bg-base-elevated/80 p-5;
+    @apply rounded-[1.25rem] border border-border/70 bg-base-elevated/60 p-5 backdrop-blur-md;
     box-shadow:
       inset 0 1px 0 var(--surface-highlight),
-      0 16px 40px -34px rgba(15, 23, 42, 0.14);
+      0 12px 30px -20px rgba(0, 0, 0, 0.08);
   }
 
   .workspace-toolbar {
-    @apply flex flex-wrap items-center gap-2 rounded-xl2 border border-border bg-base-subtle/80 p-2;
+    @apply flex flex-wrap items-center gap-2 rounded-[1.25rem] border border-border/70 bg-base-subtle/60 p-2 backdrop-blur-md;
     box-shadow: inset 0 1px 0 var(--surface-highlight);
   }
 
