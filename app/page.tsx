@@ -54,40 +54,40 @@ export default function HomePage() {
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="surface-glow relative overflow-hidden rounded-[2rem] border border-border/70 p-7 shadow-card sm:p-10"
+        className="surface-glow relative overflow-hidden rounded-[2.5rem] border border-border/60 p-8 shadow-panel sm:p-12 backdrop-blur-xl"
       >
-        <div className="absolute inset-0 bg-grid-faint opacity-50" />
-        <div className="relative z-10 grid gap-8 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.7fr)] lg:items-end">
-          <div className="max-w-3xl">
-            <div className="badge mb-4 border border-prime/20 bg-prime/10 text-prime">
-              <span className="h-1.5 w-1.5 rounded-full bg-prime" />
-              {messages.home.badge}
+        <div className="absolute inset-0 bg-grid-faint opacity-40 mix-blend-overlay" />
+        <div className="relative z-10 grid gap-10 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.7fr)] lg:items-end">
+          <div className="max-w-3xl space-y-6">
+            <div className="badge inline-flex items-center gap-2 border border-prime/20 bg-prime/10 text-prime px-3 py-1 rounded-full shadow-glow-prime/10">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-prime opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-prime"></span>
+              </span>
+              <span className="font-medium tracking-wide text-xs uppercase">{messages.home.badge}</span>
             </div>
-            <h1 className="font-display text-4xl font-semibold leading-tight tracking-tight text-ink sm:text-5xl lg:text-6xl">
+            <h1 className="font-display text-4xl font-bold leading-[1.1] tracking-tight text-ink sm:text-5xl lg:text-[4rem]">
               {messages.home.titleLead}
               <br />
-              <span className="text-prime">{messages.home.titleAccent}</span>
+              <span className="bg-gradient-to-r from-prime to-accent bg-clip-text text-transparent">{messages.home.titleAccent}</span>
             </h1>
-            <p
-              className="mt-4 max-w-2xl text-sm leading-relaxed sm:text-base"
-              style={{ color: 'rgb(var(--color-ink) / 0.9)' }}
-            >
+            <p className="max-w-2xl text-base leading-relaxed text-ink-muted sm:text-lg">
               {messages.home.description}
             </p>
 
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Link href="/tools" className="btn-primary">
+            <div className="flex flex-wrap items-center gap-4 pt-2">
+              <Link href="/tools" className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-prime px-6 font-medium text-prime-contrast transition-all hover:bg-prime-dim hover:shadow-glow-prime hover:-translate-y-0.5">
                 {messages.home.primaryCta}
-                <ArrowRight size={16} />
+                <ArrowRight size={18} />
               </Link>
-              <a href="#recent-tools" className="btn-ghost">
+              <a href="#recent-tools" className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-border/60 bg-base-subtle/50 px-6 font-medium text-ink transition-all hover:bg-base-elevated hover:border-border/80 hover:-translate-y-0.5">
                 {messages.home.secondaryCta}
-                <ChevronDown size={16} />
+                <ChevronDown size={18} />
               </a>
             </div>
           </div>
 
-          <div className="workspace-panel p-5">
+          <div className="workspace-panel p-6 shadow-card hover:shadow-panel transition-shadow">
             <p className="workspace-kicker">{messages.home.glanceTitle}</p>
             <div className="mt-4 grid gap-3">
               {highlightMetrics.map((item) => (
