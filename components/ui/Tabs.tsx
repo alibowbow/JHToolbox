@@ -58,31 +58,31 @@ export function Tabs({
   };
 
   return (
-    <div className="space-y-6">
-      <div className="inline-flex w-full max-w-full gap-1 overflow-x-auto rounded-2xl border border-border bg-base-subtle/90 p-1.5">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => selectTab(tab.id)}
-            className={`relative rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
-              active === tab.id ? 'text-ink' : 'text-ink-muted hover:text-ink'
-            }`}
-          >
-            {active === tab.id ? (
-              <motion.div
-                layoutId="tab-active"
-                className="absolute inset-0 rounded-xl border border-border bg-base-elevated"
-                style={{ zIndex: -1 }}
-                transition={{ type: 'spring', stiffness: 500, damping: 40 }}
-              />
-            ) : null}
-            {tab.label}
-          </button>
-        ))}
+    <div className="space-y-8">
+      <div className="-mx-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex w-max gap-1.5">
+          {tabs.map((tab) => {
+            const selected = active === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => selectTab(tab.id)}
+                className={`whitespace-nowrap rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                  selected
+                    ? 'border-transparent bg-ink text-[rgb(var(--color-base-elevated))]'
+                    : 'border-border bg-base-elevated text-ink-muted hover:border-border-bright hover:text-ink'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      <motion.div key={active} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
+      <motion.div key={active} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}>
         {active ? children(active) : null}
       </motion.div>
     </div>

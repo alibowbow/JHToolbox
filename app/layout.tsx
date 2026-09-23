@@ -1,28 +1,13 @@
-import type { Metadata } from 'next';
-import localFont from 'next/font/local';
-import { DM_Sans, JetBrains_Mono } from 'next/font/google';
+import type { Metadata, Viewport } from 'next';
+import { JetBrains_Mono } from 'next/font/google';
 import { GeistMono } from 'geist/font/mono';
-import { GeistSans } from 'geist/font/sans';
+import './fonts/pretendard/pretendard-variable.css';
 import './globals.css';
 import { AppShell } from '@/components/layout/AppShell';
 import { PwaRegister } from '@/components/pwa-register';
 import { LocaleProvider } from '@/components/providers/locale-provider';
 import { ThemeProvider } from '@/components/providers/theme-provider';
 import { AppToaster } from '@/components/ui/Toast';
-
-const calSans = localFont({
-  src: '../public/fonts/CalSans-SemiBold.woff2',
-  variable: '--font-cal-sans',
-  display: 'swap',
-  weight: '600',
-});
-
-const dmSans = DM_Sans({
-  subsets: ['latin'],
-  weight: ['300', '400', '500'],
-  variable: '--font-audio-ui',
-  display: 'swap',
-});
 
 const jetbrainsMono = JetBrains_Mono({
   subsets: ['latin'],
@@ -35,6 +20,13 @@ export const metadata: Metadata = {
   title: 'JH Toolbox',
   description: 'Premium browser-only PDF, image, video, audio, OCR, and data tools.',
   manifest: '/manifest.webmanifest',
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#f6f7f9' },
+    { media: '(prefers-color-scheme: dark)', color: '#0b0c10' },
+  ],
 };
 
 const themeScript = `
@@ -63,7 +55,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
-      className={`${GeistSans.variable} ${GeistMono.variable} ${calSans.variable} ${dmSans.variable} ${jetbrainsMono.variable}`}
+      className={`${GeistMono.variable} ${jetbrainsMono.variable}`}
       suppressHydrationWarning
     >
       <head>

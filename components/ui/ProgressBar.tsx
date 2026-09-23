@@ -16,21 +16,29 @@ const STATUS_COLOR = {
 };
 
 export function ProgressBar({ value, label, status = 'idle' }: ProgressBarProps) {
+  const percent = Math.max(0, Math.min(100, Math.round(value)));
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
       {label ? (
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-ink-muted">{label}</span>
-          <span className="rounded-full border border-border bg-base-subtle px-2 py-1 font-mono text-ink-faint">{Math.round(value)}%</span>
+        <div className="flex items-center justify-between gap-3 text-sm">
+          <span className="min-w-0 truncate text-ink-muted">{label}</span>
+          <span className="shrink-0 font-medium tabular-nums text-ink">{percent}%</span>
         </div>
       ) : null}
-      <div className="h-2.5 overflow-hidden rounded-full border border-border bg-base-subtle">
+      <div
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+        aria-label={label}
+        className="h-2 overflow-hidden rounded-full bg-base-subtle"
+      >
         <motion.div
           initial={{ width: 0 }}
-          animate={{ width: `${value}%` }}
+          animate={{ width: `${percent}%` }}
           transition={{ ease: 'easeOut', duration: 0.3 }}
           className={`h-full rounded-full transition-colors ${STATUS_COLOR[status]}`}
-          style={status === 'running' ? { boxShadow: '0 0 16px 0 rgba(34,211,238,0.56)' } : undefined}
         />
       </div>
     </div>

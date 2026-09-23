@@ -2,11 +2,12 @@
 
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { ArrowRight, ChevronDown } from 'lucide-react';
+import { ArrowRight, Cpu, Search, ShieldCheck, Workflow } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { ToolCard } from '@/components/tool-card';
 import { useLocale } from '@/components/providers/locale-provider';
 import { formatToolCount, getCategoryCopy } from '@/lib/i18n';
+import { openToolSearch } from '@/lib/search-events';
 import { categoryIcons, categoryStyles } from '@/lib/tool-presentation';
 import { getRecentTools } from '@/lib/recent-tools';
 import { categories, getBrowsableTools, getToolById, getToolsByBrowseGroup, getToolsByCategory } from '@/lib/tool-registry';
@@ -16,14 +17,9 @@ function isToolDefinition(tool: ToolDefinition | undefined): tool is ToolDefinit
   return Boolean(tool);
 }
 
-const containerVariants = {
-  hidden: {},
-  show: { transition: { staggerChildren: 0.07 } },
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 16 },
-  show: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 320, damping: 30 } },
+const reveal = {
+  initial: { opacity: 0, y: 8 },
+  animate: { opacity: 1, y: 0 },
 };
 
 export default function HomePage() {
@@ -42,152 +38,170 @@ export default function HomePage() {
   const collectionTitle = recentTools.length > 0 ? messages.home.recentTitle : messages.home.popularTitle;
   const collectionDescription =
     recentTools.length > 0 ? messages.home.recentDescription : messages.home.popularDescription;
-  const highlightMetrics = [
-    { label: messages.home.metricToolCount, value: formatToolCount(locale, browseTools.length) },
-    { label: messages.home.metricEditorReady, value: formatToolCount(locale, editorEnabledCount) },
+
+  const trustPoints = messages.home.badge.split('|').map((part) => part.trim());
+  const metrics = [
+    { label: messages.home.metricToolCount, value: String(browseTools.length) },
+    { label: messages.home.metricEditorReady, value: String(editorEnabledCount) },
     { label: messages.home.metricExecution, value: messages.home.metricExecutionValue },
+  ];
+  const features = [
+    { icon: ShieldCheck, title: messages.home.featureOneTitle, body: messages.home.featureOneBody, tone: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' },
+    { icon: Cpu, title: messages.home.featureTwoTitle, body: messages.home.featureTwoBody, tone: 'bg-sky-500/10 text-sky-700 dark:text-sky-300' },
+    { icon: Workflow, title: messages.home.featureThreeTitle, body: messages.home.featureThreeBody, tone: 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-300', href: '/pipeline' },
   ];
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-10">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-14 lg:gap-16">
       <motion.section
-        initial={{ opacity: 0, y: 24 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="surface-glow relative overflow-hidden rounded-[2.5rem] border border-border p-8 shadow-panel sm:p-12 backdrop-blur-xl"
+        {...reveal}
+        transition={{ duration: 0.35, ease: 'easeOut' }}
+        className="relative overflow-hidden rounded-3xl border border-border bg-base-elevated px-6 py-10 sm:px-12 sm:py-14"
       >
-        <div className="absolute inset-0 bg-grid-faint opacity-40 mix-blend-overlay" />
-        <div className="relative z-10 grid gap-10 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.7fr)] lg:items-end">
-          <div className="max-w-3xl space-y-6">
-            <div className="badge inline-flex items-center gap-2 border border-prime/20 bg-prime/10 text-prime px-3 py-1 rounded-full shadow-glow-prime/10">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-prime opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-prime"></span>
-              </span>
-              <span className="font-medium tracking-wide text-xs uppercase">{messages.home.badge}</span>
-            </div>
-            <h1 className="font-display text-4xl font-bold leading-[1.1] tracking-tight text-ink sm:text-5xl lg:text-[4rem]">
-              {messages.home.titleLead}
-              <br />
-              <span className="bg-gradient-to-r from-prime to-accent bg-clip-text text-transparent">{messages.home.titleAccent}</span>
-            </h1>
-            <p className="max-w-2xl text-base leading-relaxed text-ink-muted sm:text-lg">
-              {messages.home.description}
-            </p>
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(55%_70%_at_0%_0%,rgb(var(--color-prime)/0.12),transparent_70%),radial-gradient(40%_60%_at_100%_100%,rgb(var(--color-accent)/0.08),transparent_70%)]"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 opacity-60 [background-image:radial-gradient(rgb(var(--color-border)/0.14)_1px,transparent_1px)] [background-size:22px_22px] [mask-image:linear-gradient(to_bottom,black,transparent_75%)]"
+        />
 
-            <div className="flex flex-wrap items-center gap-4 pt-2">
-              <Link href="/tools" className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-prime px-6 font-medium text-prime-contrast transition-all hover:bg-prime-dim hover:shadow-glow-prime hover:-translate-y-0.5">
-                {messages.home.primaryCta}
-                <ArrowRight size={18} />
-              </Link>
-              <a href="#recent-tools" className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-border bg-base-subtle/50 px-6 font-medium text-ink transition-all hover:bg-base-elevated hover:border-border-bright hover:-translate-y-0.5">
-                {messages.home.secondaryCta}
-                <ChevronDown size={18} />
-              </a>
-            </div>
+        <div className="relative max-w-3xl">
+          <ul className="flex flex-wrap items-center gap-2">
+            {trustPoints.map((point, index) => (
+              <li
+                key={point}
+                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-base-elevated/80 px-3 py-1 text-xs font-medium text-ink-muted"
+              >
+                {index === 0 ? <ShieldCheck size={13} className="text-ok" aria-hidden="true" /> : null}
+                {point}
+              </li>
+            ))}
+          </ul>
+
+          <h1 className="mt-6 text-[2.5rem] font-bold leading-[1.1] tracking-[-0.035em] text-ink sm:text-[3.5rem]">
+            {messages.home.titleLead}
+            <br />
+            <span className="text-prime">{messages.home.titleAccent}</span>
+          </h1>
+          <p className="mt-5 max-w-xl text-base leading-relaxed text-ink-muted sm:text-lg">{messages.home.description}</p>
+
+          <div className="mt-8 flex max-w-2xl flex-col gap-3 sm:flex-row">
+            <button
+              type="button"
+              onClick={openToolSearch}
+              className="group flex h-12 w-full min-w-0 shrink-0 items-center gap-3 rounded-xl sm:w-auto sm:flex-1 border border-border-strong bg-base-elevated px-4 text-left text-[15px] text-ink-faint shadow-[0_1px_2px_rgba(16,24,40,0.05)] transition-colors hover:border-prime/60 hover:text-ink-muted"
+            >
+              <Search size={18} className="shrink-0 text-ink-faint transition-colors group-hover:text-prime" aria-hidden="true" />
+              <span className="truncate">{messages.home.heroSearch}</span>
+              <kbd className="ml-auto hidden shrink-0 rounded-md border border-border bg-base-subtle px-1.5 py-0.5 font-mono text-[11px] font-medium text-ink-faint sm:block">
+                {messages.topbar.shortcut}
+              </kbd>
+            </button>
+            <Link href="/tools" className="btn-primary h-12 shrink-0 px-5 text-[15px]">
+              {messages.home.primaryCta}
+              <ArrowRight size={17} aria-hidden="true" />
+            </Link>
           </div>
 
-          <div className="workspace-panel p-6 shadow-card hover:shadow-panel transition-shadow">
-            <p className="workspace-kicker">{messages.home.glanceTitle}</p>
-            <div className="mt-4 grid gap-3">
-              {highlightMetrics.map((item) => (
-                <div key={item.label} className="workspace-metric">
-                  <p className="workspace-kicker">{item.label}</p>
-                  <p className="workspace-metric-value">{item.value}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+          <dl className="mt-10 flex flex-wrap gap-x-10 gap-y-5">
+            {metrics.map((metric) => (
+              <div key={metric.label} className="min-w-0">
+                <dt className="text-xs font-medium text-ink-faint">{metric.label}</dt>
+                <dd className="mt-1 text-xl font-bold tracking-tight text-ink tabular-nums">{metric.value}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
       </motion.section>
 
-      <section id="recent-tools" className="space-y-4">
+      <section aria-labelledby="home-categories" className="space-y-5">
         <div className="flex items-end justify-between gap-3">
-          <div>
-            <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{collectionTitle}</h2>
-            <p className="mt-1 text-sm text-ink-muted">{collectionDescription}</p>
-          </div>
-          {collectionTools.length > 0 ? (
-            <span className="badge border border-border bg-base-subtle text-ink-muted">
-              {formatToolCount(locale, collectionTools.length)}
-            </span>
-          ) : null}
+          <h2 id="home-categories" className="section-title">
+            {messages.home.categoriesTitle}
+          </h2>
+          <Link href="/tools" className="inline-flex items-center gap-1 text-sm font-medium text-prime hover:underline">
+            {messages.home.viewAll}
+            <ArrowRight size={14} aria-hidden="true" />
+          </Link>
         </div>
 
-        {collectionTools.length === 0 ? (
-          <div className="card p-5 text-sm text-ink-muted">{messages.home.popularDescription}</div>
-        ) : (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {collectionTools.map((tool) => (
-              <ToolCard key={tool.id} tool={tool} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="space-y-4">
-        <div className="flex items-end justify-between gap-3">
-          <div>
-            <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{messages.home.categoriesTitle}</h2>
-            <p className="mt-1 text-sm text-ink-muted">{messages.appTagline}</p>
-          </div>
-          <span className="badge border border-border bg-base-subtle text-ink-muted">{formatToolCount(locale, browseTools.length)}</span>
-        </div>
-
-        <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          animate="show"
-          className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
-        >
-          {categories.map((category) => {
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {categories.map((category, index) => {
             const Icon = categoryIcons[category.id];
             const copy = getCategoryCopy(locale, category.id);
             const style = categoryStyles[category.id];
+            const count = getToolsByCategory(category.id, { includeHidden: false }).length;
 
             return (
-              <motion.div key={category.id} variants={itemVariants}>
-                <Link href={`/tools/${category.id}`}>
-                  <div className={`card group h-full ${style.border} bg-gradient-to-br ${style.gradient} p-5 transition-all`}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className={`flex h-10 w-10 items-center justify-center rounded-xl border border-border ${style.iconBg} ${style.icon}`}>
-                        <Icon size={20} />
-                      </div>
-                      <span className="badge border border-border bg-base-subtle text-ink-muted">
-                        {formatToolCount(locale, getToolsByCategory(category.id, { includeHidden: false }).length)}
+              <motion.div key={category.id} {...reveal} transition={{ duration: 0.3, delay: 0.04 * index }}>
+                <Link href={`/tools/${category.id}`} className="group block h-full rounded-2xl">
+                  <div className="card flex h-full flex-col p-5 group-hover:-translate-y-0.5 group-hover:border-border-bright group-hover:shadow-card-hover">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className={`category-tile h-10 w-10 ${style.iconBg} ${style.icon}`}>
+                        <Icon size={19} />
                       </span>
+                      <span className="text-xs font-medium tabular-nums text-ink-faint">{formatToolCount(locale, count)}</span>
                     </div>
                     <p className="mt-4 text-base font-semibold text-ink">{copy.nav}</p>
                     <p className="mt-1 text-sm leading-relaxed text-ink-muted">{copy.shortDescription}</p>
-                    <div className="mt-4 flex items-center gap-1 text-xs font-medium text-ink-faint transition-colors group-hover:text-prime">
-                      {messages.home.openCategory}
-                      <ArrowRight size={12} className="transition-transform group-hover:translate-x-0.5" />
-                    </div>
                   </div>
                 </Link>
               </motion.div>
             );
           })}
-        </motion.div>
+        </div>
       </section>
 
-      <motion.section
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.4 }}
-        className="grid grid-cols-1 gap-4 md:grid-cols-2"
-      >
-        {[
-          { title: messages.home.featureOneTitle, body: messages.home.featureOneBody },
-          { title: messages.home.featureTwoTitle, body: messages.home.featureTwoBody },
-        ].map((item) => (
-          <div key={item.title} className="workspace-panel p-5">
-            <p className="workspace-kicker">{messages.home.whyTitle}</p>
-            <p className="mt-3 text-base font-semibold text-ink">{item.title}</p>
-            <p className="mt-2 text-sm leading-relaxed text-ink-muted">{item.body}</p>
+      <section id="recent-tools" aria-labelledby="home-collection" className="space-y-5">
+        <div>
+          <h2 id="home-collection" className="section-title">
+            {collectionTitle}
+          </h2>
+          <p className="mt-1 text-sm text-ink-muted">{collectionDescription}</p>
+        </div>
+
+        {collectionTools.length === 0 ? (
+          <div className="card p-5 text-sm text-ink-muted">{messages.home.popularDescription}</div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {collectionTools.map((tool) => (
+              <ToolCard key={tool.id} tool={tool} showCategory />
+            ))}
           </div>
-        ))}
-      </motion.section>
+        )}
+      </section>
+
+      <section aria-labelledby="home-why" className="space-y-5">
+        <h2 id="home-why" className="section-title">
+          {messages.home.whyTitle}
+        </h2>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          {features.map(({ icon: Icon, title, body, tone, href }) => {
+            const content = (
+              <>
+                <span className={`category-tile h-10 w-10 ${tone}`}>
+                  <Icon size={19} />
+                </span>
+                <p className="mt-4 text-base font-semibold text-ink">{title}</p>
+                <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">{body}</p>
+              </>
+            );
+            return href ? (
+              <Link key={title} href={href} className="group block rounded-2xl">
+                <div className="card h-full p-5 group-hover:-translate-y-0.5 group-hover:border-border-bright group-hover:shadow-card-hover">
+                  {content}
+                </div>
+              </Link>
+            ) : (
+              <div key={title} className="card p-5">
+                {content}
+              </div>
+            );
+          })}
+        </div>
+      </section>
     </div>
   );
 }

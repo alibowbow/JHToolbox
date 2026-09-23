@@ -24,25 +24,23 @@ test('tools directory tab selection stays put and persists across reloads', asyn
   expect(pageErrors).toEqual([]);
 });
 
-test('tool cards pick up their category colour on hover', async ({ page }) => {
+test('tool cards respond to hover with a lifted border and shadow', async ({ page }) => {
   await page.goto('/tools');
   const card = page.locator('a[href="/tools/pdf/pdf-merge"] article').first();
-  const icon = card.locator('div').nth(1);
-  const badge = card.locator('span.badge');
   await expect(card).toBeVisible();
 
-  const styleOf = async () => ({
-    iconBackground: await icon.evaluate((node) => getComputedStyle(node).backgroundColor),
-    badgeColor: await badge.evaluate((node) => getComputedStyle(node).color),
-    cardImage: await card.evaluate((node) => getComputedStyle(node).backgroundImage),
-  });
+  const styleOf = () =>
+    card.evaluate((node) => {
+      const computed = getComputedStyle(node);
+      return { border: computed.borderColor, shadow: computed.boxShadow, transform: computed.transform };
+    });
 
   const atRest = await styleOf();
   await card.hover();
-  await expect.poll(async () => (await styleOf()).iconBackground).not.toBe(atRest.iconBackground);
+  await expect.poll(async () => (await styleOf()).border).not.toBe(atRest.border);
   const hovered = await styleOf();
-  expect(hovered.badgeColor).not.toBe(atRest.badgeColor);
-  expect(hovered.cardImage).toContain('rgba(244, 63, 94');
+  expect(hovered.shadow).not.toBe(atRest.shadow);
+  expect(hovered.transform).not.toBe('none');
 });
 
 test('keyboard users get one tab stop per link and a visible focus ring', async ({ page }) => {

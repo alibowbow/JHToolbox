@@ -91,7 +91,7 @@ function StepOptionField({
   } else if (option.type === 'range') {
     control = (
       <div className="mt-1 flex items-center gap-2">
-        <input id={id} type="range" value={Number(value)} min={option.min} max={option.max} step={option.step} disabled={disabled} onChange={(e) => onChange(Number(e.target.value))} className="w-full accent-cyan-400" />
+        <input id={id} type="range" value={Number(value)} min={option.min} max={option.max} step={option.step} disabled={disabled} onChange={(e) => onChange(Number(e.target.value))} className="w-full accent-prime" />
         <span className="w-10 text-right font-mono text-xs text-ink-muted">{String(value)}</span>
       </div>
     );
@@ -114,7 +114,7 @@ function StepOptionField({
 
   return (
     <div>
-      <label htmlFor={id} className="text-[11px] font-medium uppercase tracking-[0.14em] text-ink-faint">
+      <label htmlFor={id} className="text-xs font-medium text-ink-muted">
         {label}
       </label>
       {control}
@@ -287,20 +287,18 @@ export function PipelineBuilder() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
-      <div className="workspace-panel p-6 sm:p-7">
-        <div className="flex items-start gap-4">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.25rem] border border-border bg-base-elevated text-prime shadow-card">
-            <Workflow size={26} />
-          </div>
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight text-ink sm:text-4xl">{t.title}</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-muted sm:text-base">{t.subtitle}</p>
-          </div>
+      <header className="flex items-start gap-4">
+        <span className="category-tile h-12 w-12 shrink-0 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 sm:h-14 sm:w-14">
+          <Workflow size={24} />
+        </span>
+        <div className="min-w-0 pt-0.5">
+          <h1 className="text-2xl font-bold tracking-tight text-ink sm:text-[1.75rem] sm:leading-tight">{t.title}</h1>
+          <p className="mt-1.5 max-w-2xl text-[15px] leading-relaxed text-ink-muted">{t.subtitle}</p>
         </div>
-      </div>
+      </header>
 
       <section className="workspace-panel space-y-4 p-5 sm:p-6">
-        <p className="text-sm font-semibold text-ink">{t.inputFiles}</p>
+        <h2 className="text-[15px] font-semibold text-ink">{t.inputFiles}</h2>
         <DropZone
           files={files}
           onFiles={(next) => {
@@ -316,7 +314,7 @@ export function PipelineBuilder() {
 
       <section className="workspace-panel space-y-4 p-5 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm font-semibold text-ink">{t.steps}</p>
+          <h2 className="text-[15px] font-semibold text-ink">{t.steps}</h2>
           <div className="flex items-center gap-2">
             <Plus size={16} className="text-ink-faint" />
             <select
@@ -363,7 +361,7 @@ export function PipelineBuilder() {
                         {index + 1}
                       </span>
                       <div>
-                        <p className="text-sm font-semibold text-ink">{toolName(step.toolId)}</p>
+                        <h3 className="text-sm font-semibold text-ink">{toolName(step.toolId)}</h3>
                         {tool?.accept ? <p className="text-[11px] font-mono text-ink-faint">{tool.accept}</p> : null}
                       </div>
                     </div>
@@ -444,7 +442,7 @@ export function PipelineBuilder() {
       {result ? (
         <section className="workspace-panel space-y-4 p-5 sm:p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm font-semibold text-ink">{t.result}</p>
+            <h2 className="text-[15px] font-semibold text-ink">{t.result}</h2>
             {result.ok && result.finalFiles.length ? (
               <button type="button" onClick={() => onDownloadAll(result.finalFiles)} className="btn-ghost">
                 <Download size={16} />
@@ -494,7 +492,7 @@ export function PipelineBuilder() {
       ) : null}
 
       <section className="workspace-panel space-y-3 p-5 sm:p-6">
-        <p className="text-sm font-semibold text-ink">{t.recipes}</p>
+        <h2 className="text-[15px] font-semibold text-ink">{t.recipes}</h2>
         {recipes.length === 0 ? (
           <p className="text-sm text-ink-muted">{t.noRecipes}</p>
         ) : (

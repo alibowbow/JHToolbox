@@ -1,17 +1,21 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Menu, Search, Sparkles, X } from 'lucide-react';
+import { ChevronRight, CornerDownLeft, Menu, Search, SearchX, X } from 'lucide-react';
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import type { ToolDefinition } from '@/types/tool';
+import { BrandLink } from '@/components/layout/Brand';
 import { NavigationList } from '@/components/layout/navigation-list';
+import { useFocusTrap } from '@/components/layout/useFocusTrap';
+import { OPEN_TOOL_SEARCH_EVENT } from '@/lib/search-events';
 import { useLocale } from '@/components/providers/locale-provider';
 import { getCategoryCopy } from '@/lib/i18n';
 import { getLocalizedToolCopy } from '@/lib/tool-localization';
-import { categoryIcons, categoryStyles } from '@/lib/tool-presentation';
-import { getBrowsableTools } from '@/lib/tool-registry';
+import { getToolIcon } from '@/lib/tool-icons';
+import { categoryStyles } from '@/lib/tool-presentation';
+import { categories, getBrowsableTools, getToolById } from '@/lib/tool-registry';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { LocaleToggle } from '@/components/ui/LocaleToggle';
 
@@ -25,6 +29,10 @@ export function Topbar() {
   const deferredQuery = useDeferredValue(query);
   const router = useRouter();
   const itemRefs = useRef<Array<HTMLAnchorElement | null>>([]);
+  const searchDialogRef = useRef<HTMLDivElement>(null);
+  const menuDrawerRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(searchDialogRef, searchOpen);
+  useFocusTrap(menuDrawerRef, menuOpen);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -39,8 +47,17 @@ export function Topbar() {
       }
     };
 
+    const onOpenSearch = () => {
+      setMenuOpen(false);
+      setSearchOpen(true);
+    };
+
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener(OPEN_TOOL_SEARCH_EVENT, onOpenSearch);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener(OPEN_TOOL_SEARCH_EVENT, onOpenSearch);
+    };
   }, []);
 
   useEffect(() => {
@@ -121,36 +138,36 @@ export function Topbar() {
     }
   };
 
+  const isQueryEmpty = deferredQuery.trim().length === 0;
+
   return (
     <>
-      <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between border-b border-border bg-base-subtle/70 px-4 backdrop-blur-xl sm:px-6 lg:px-8">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => {
-              setSearchOpen(false);
-              setMenuOpen(true);
-            }}
-            data-testid="mobile-menu-button"
-            className="topbar-button inline-flex items-center justify-center rounded-xl h-10 w-10 border border-border hover:bg-base-elevated hover:border-border-bright transition-all md:hidden"
-            aria-label={messages.topbar.menu}
-          >
-            <Menu size={18} />
-          </button>
-          <div className="hidden lg:block">
-            <p className="workspace-kicker">{messages.shell.commandCenter}</p>
-            <p className="mt-1 text-sm font-semibold text-ink">{messages.shell.commandCenterSub}</p>
-          </div>
+      <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-base/85 px-4 backdrop-blur-md sm:px-6 lg:px-10">
+        <button
+          type="button"
+          onClick={() => {
+            setSearchOpen(false);
+            setMenuOpen(true);
+          }}
+          data-testid="mobile-menu-button"
+          className="topbar-button h-9 w-9 md:hidden"
+          aria-label={messages.topbar.menu}
+        >
+          <Menu size={18} />
+        </button>
+        <div className="md:hidden">
+          <BrandLink />
         </div>
+        <Breadcrumbs />
 
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="ml-auto flex min-w-0 items-center gap-2">
           <button
             type="button"
             onClick={() => {
               setMenuOpen(false);
               setSearchOpen(true);
             }}
-            className="topbar-button inline-flex items-center justify-center rounded-xl h-10 w-10 border border-border hover:bg-base-elevated hover:border-border-bright transition-all sm:hidden"
+            className="topbar-button h-9 w-9 sm:hidden"
             aria-label={messages.topbar.searchLabel}
           >
             <Search size={16} />
@@ -161,18 +178,14 @@ export function Topbar() {
               setMenuOpen(false);
               setSearchOpen(true);
             }}
-            className="group hidden min-w-0 items-center gap-3 rounded-2xl border border-border bg-base-elevated/80 px-4 py-2.5 text-sm text-ink-muted shadow-sm backdrop-blur transition-all hover:border-prime/40 hover:bg-base-elevated hover:shadow-panel hover:text-ink sm:inline-flex sm:w-64 lg:w-80"
+            className="group hidden h-9 min-w-0 items-center gap-2.5 rounded-[10px] border border-border bg-base-elevated px-3 text-sm text-ink-faint transition hover:border-border-bright hover:text-ink-muted sm:flex sm:w-56 lg:w-72"
           >
-            <Search size={14} className="shrink-0 text-ink-faint transition-colors group-hover:text-prime" />
-            <div className="min-w-0 text-left">
-              <span className="block truncate font-medium text-ink">{messages.topbar.searchLabel}</span>
-              <span className="block truncate text-[11px] uppercase tracking-[0.18em] text-ink-faint">{messages.shell.searchScope}</span>
-            </div>
-            <kbd className="ml-auto rounded-lg border border-border bg-base-subtle px-1.5 py-0.5 font-mono text-[10px] text-ink-faint shadow-sm group-hover:border-prime/30 transition-colors">
+            <Search size={15} className="shrink-0" />
+            <span className="truncate">{messages.topbar.searchLabel}</span>
+            <kbd className="ml-auto rounded-md border border-border bg-base-subtle px-1.5 py-0.5 font-mono text-[10px] font-medium text-ink-faint">
               {messages.topbar.shortcut}
             </kbd>
           </button>
-          <div className="h-6 w-px bg-border/60 hidden sm:block"></div>
           <LocaleToggle />
           <ThemeToggle />
         </div>
@@ -184,42 +197,40 @@ export function Topbar() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-40 bg-black/40 md:hidden"
             onClick={() => setMenuOpen(false)}
           >
             <motion.div
-              initial={{ x: -24, opacity: 0 }}
+              ref={menuDrawerRef}
+              initial={{ x: -20, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -24, opacity: 0 }}
+              exit={{ x: -20, opacity: 0 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
               data-testid="mobile-menu-drawer"
               role="dialog"
               aria-modal="true"
               aria-label={messages.shell.menuTitle}
-              className="pointer-events-auto h-full w-80 border-r border-border bg-base-subtle px-4 py-4 shadow-card"
+              className="flex h-full w-[284px] max-w-[85vw] flex-col border-r border-border bg-base-elevated shadow-pop"
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="workspace-panel mb-6 p-5">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="workspace-kicker">{messages.shell.menuTitle}</p>
-                    <p className="mt-1 font-display text-xl font-semibold text-ink">
-                      JH<span className="text-prime">Toolbox</span>
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setMenuOpen(false)}
-                    className="topbar-button inline-flex h-10 w-10"
-                    aria-label={messages.common.close}
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
-                <p className="mt-3 text-sm text-ink-muted">{messages.shell.menuDescription}</p>
+              <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
+                <BrandLink onNavigate={() => setMenuOpen(false)} />
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen(false)}
+                  className="topbar-button h-9 w-9"
+                  aria-label={messages.common.close}
+                >
+                  <X size={18} />
+                </button>
               </div>
-              <div className="workspace-section p-3">
-                <NavigationList onNavigate={() => setMenuOpen(false)} activeIndicatorId="sidebar-mobile-active" />
+              <div className="flex-1 overflow-y-auto px-3 py-4">
+                <NavigationList onNavigate={() => setMenuOpen(false)} />
               </div>
+              <p className="shrink-0 border-t border-border px-5 py-4 text-xs leading-relaxed text-ink-muted">
+                {messages.shell.privacyNote}
+              </p>
             </motion.div>
           </motion.div>
         ) : null}
@@ -231,21 +242,24 @@ export function Topbar() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/65 p-4 backdrop-blur-sm"
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-50 bg-black/40 px-4 pt-[10vh] backdrop-blur-[2px]"
             onClick={() => setSearchOpen(false)}
           >
             <motion.div
-              initial={{ opacity: 0, y: 10, scale: 0.98 }}
+              ref={searchDialogRef}
+              initial={{ opacity: 0, y: -8, scale: 0.985 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 10, scale: 0.98 }}
+              exit={{ opacity: 0, y: -8, scale: 0.985 }}
+              transition={{ duration: 0.16, ease: 'easeOut' }}
               role="dialog"
               aria-modal="true"
               aria-label={messages.topbar.searchLabel}
-              className="workspace-panel mx-auto mt-16 max-w-2xl overflow-hidden"
+              className="mx-auto flex max-h-[76vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-border bg-base-elevated shadow-pop"
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="flex items-center gap-3 border-b border-border px-4 py-3">
-                <Search size={16} className="text-prime" />
+              <div className="flex items-center gap-3 border-b border-border px-4">
+                <Search size={18} className="shrink-0 text-ink-faint" aria-hidden="true" />
                 <input
                   autoFocus
                   type="search"
@@ -260,69 +274,146 @@ export function Topbar() {
                       ? `tool-search-option-${Math.min(activeIndex, searchResults.length - 1)}`
                       : undefined
                   }
-                  className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint"
+                  className="h-14 w-full min-w-0 bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-faint [&::-webkit-search-cancel-button]:hidden"
                 />
-                <button type="button" onClick={() => setSearchOpen(false)} className="text-ink-faint transition-colors hover:text-ink">
-                  <X size={16} />
+                <button
+                  type="button"
+                  onClick={() => setSearchOpen(false)}
+                  aria-label={messages.common.close}
+                  className="shrink-0 rounded-md border border-border bg-base-subtle px-1.5 py-0.5 font-mono text-[10px] font-medium text-ink-faint transition-colors hover:text-ink"
+                >
+                  Esc
                 </button>
               </div>
 
-              <div className="max-h-[70vh] overflow-y-auto p-3">
+              <div className="min-h-0 flex-1 overflow-y-auto p-2">
                 {searchResults.length === 0 ? (
-                  <div className="card flex items-center gap-3 p-4 text-sm text-ink-muted">
-                    <Sparkles size={16} className="text-prime" />
+                  <div className="flex flex-col items-center gap-3 px-4 py-10 text-center text-sm text-ink-muted">
+                    <SearchX size={22} className="text-ink-faint" aria-hidden="true" />
                     {messages.topbar.searchEmpty}
                   </div>
                 ) : (
-                  <div className="space-y-2" role="listbox" id="tool-search-results" aria-label={messages.topbar.searchLabel}>
-                    {searchResults.map((tool, index) => {
-                      const Icon = categoryIcons[tool.category];
-                      const category = getCategoryCopy(locale, tool.category);
-                      const localizedTool = getLocalizedToolCopy(tool, locale);
-                      const style = categoryStyles[tool.category];
-                      const isActive = index === Math.min(activeIndex, searchResults.length - 1);
+                  <>
+                    {isQueryEmpty ? (
+                      <p className="px-3 pb-1.5 pt-2 text-xs font-semibold text-ink-faint">{messages.topbar.searchSuggested}</p>
+                    ) : null}
+                    <div role="listbox" id="tool-search-results" aria-label={messages.topbar.searchLabel}>
+                      {searchResults.map((tool, index) => {
+                        const Icon = getToolIcon(tool.id, tool.category);
+                        const category = getCategoryCopy(locale, tool.category);
+                        const localizedTool = getLocalizedToolCopy(tool, locale);
+                        const style = categoryStyles[tool.category];
+                        const isActive = index === Math.min(activeIndex, searchResults.length - 1);
 
-                      return (
-                        <Link
-                          key={tool.id}
-                          ref={(element) => {
-                            itemRefs.current[index] = element;
-                          }}
-                          id={`tool-search-option-${index}`}
-                          role="option"
-                          aria-selected={isActive}
-                          href={`/tools/${tool.category}/${tool.id}`}
-                          onClick={() => setSearchOpen(false)}
-                          onMouseEnter={() => setActiveIndex(index)}
-                          className="block"
-                        >
-                          <motion.div
-                            whileHover={{ y: -1 }}
-                            className={`card flex items-start gap-3 p-4 transition-colors ${
-                              isActive ? 'border-prime/60 ring-1 ring-prime/40' : 'hover:border-border-bright'
+                        return (
+                          <Link
+                            key={tool.id}
+                            ref={(element) => {
+                              itemRefs.current[index] = element;
+                            }}
+                            id={`tool-search-option-${index}`}
+                            role="option"
+                            aria-selected={isActive}
+                            href={`/tools/${tool.category}/${tool.id}`}
+                            onClick={() => setSearchOpen(false)}
+                            onMouseEnter={() => setActiveIndex(index)}
+                            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors ${
+                              isActive ? 'bg-base-subtle' : ''
                             }`}
                           >
-                            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border ${style.iconBg} ${style.icon}`}>
-                              <Icon size={18} />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="text-sm font-semibold text-ink">{localizedTool.name}</p>
-                                <span className={`badge border ${style.badge}`}>{category.nav}</span>
-                              </div>
-                              <p className="mt-1 text-xs leading-relaxed text-ink-muted">{localizedTool.description}</p>
-                            </div>
-                          </motion.div>
-                        </Link>
-                      );
-                    })}
-                  </div>
+                            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] ${style.iconBg} ${style.icon}`}>
+                              <Icon size={17} />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium text-ink">{localizedTool.name}</span>
+                              <span className="block truncate text-xs text-ink-muted">{localizedTool.description}</span>
+                            </span>
+                            <span className="hidden shrink-0 text-xs text-ink-faint sm:block">{category.nav}</span>
+                            <CornerDownLeft
+                              size={14}
+                              aria-hidden="true"
+                              className={`shrink-0 text-ink-faint ${isActive ? 'opacity-100' : 'opacity-0'}`}
+                            />
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </>
                 )}
+              </div>
+
+              <div className="hidden items-center gap-4 border-t border-border px-4 py-2.5 text-xs text-ink-faint sm:flex">
+                <span className="flex items-center gap-1.5">
+                  <kbd className="rounded border border-border bg-base-subtle px-1 font-mono text-[10px]">↑↓</kbd>
+                  {messages.topbar.searchHintNavigate}
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <kbd className="rounded border border-border bg-base-subtle px-1 font-mono text-[10px]">↵</kbd>
+                  {messages.topbar.searchHintOpen}
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <kbd className="rounded border border-border bg-base-subtle px-1 font-mono text-[10px]">Esc</kbd>
+                  {messages.topbar.searchHintClose}
+                </span>
               </div>
             </motion.div>
           </motion.div>
         ) : null}
       </AnimatePresence>
     </>
+  );
+}
+
+function Breadcrumbs() {
+  const pathname = usePathname() ?? '/';
+  const { locale, messages } = useLocale();
+
+  const crumbs = useMemo(() => {
+    const items: Array<{ label: string; href?: string }> = [];
+    if (pathname === '/') {
+      items.push({ label: messages.nav.home });
+    } else if (pathname.startsWith('/pipeline')) {
+      items.push({ label: messages.nav.pipeline });
+    } else if (pathname.startsWith('/tools')) {
+      const [, categoryId, toolId] = pathname.split('/').filter(Boolean);
+      const category = categories.find((entry) => entry.id === categoryId);
+      const tool = toolId ? getToolById(toolId) : undefined;
+      items.push({ label: messages.nav.allTools, href: category ? '/tools' : undefined });
+      if (category) {
+        items.push({ label: getCategoryCopy(locale, category.id).nav, href: tool ? `/tools/${category.id}` : undefined });
+      }
+      if (category && tool) {
+        items.push({ label: getLocalizedToolCopy(tool, locale).name });
+      }
+    }
+    return items;
+  }, [locale, messages, pathname]);
+
+  if (crumbs.length === 0) {
+    return null;
+  }
+
+  return (
+    <nav aria-label={messages.shell.breadcrumb} className="hidden min-w-0 md:block">
+      <ol className="flex min-w-0 items-center gap-1.5 text-sm">
+        {crumbs.map((crumb, index) => {
+          const isLast = index === crumbs.length - 1;
+          return (
+            <li key={`${crumb.label}-${index}`} className="flex min-w-0 items-center gap-1.5">
+              {index > 0 ? <ChevronRight size={14} className="shrink-0 text-ink-faint" aria-hidden="true" /> : null}
+              {crumb.href && !isLast ? (
+                <Link href={crumb.href} className="truncate text-ink-muted transition-colors hover:text-ink">
+                  {crumb.label}
+                </Link>
+              ) : (
+                <span aria-current={isLast ? 'page' : undefined} className="truncate font-medium text-ink">
+                  {crumb.label}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
   );
 }

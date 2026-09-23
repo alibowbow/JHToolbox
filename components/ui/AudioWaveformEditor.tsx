@@ -740,7 +740,7 @@ export function AudioWaveformEditor({
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              <label className="text-xs uppercase tracking-[0.16em] text-ink-faint">
+              <label className="text-xs uppercase tracking-[0.04em] text-ink-faint">
                 {messages.workbench.startTime}
                 <input
                   type="number"
@@ -752,7 +752,7 @@ export function AudioWaveformEditor({
                   className="input-surface mt-1 w-full"
                 />
               </label>
-              <label className="text-xs uppercase tracking-[0.16em] text-ink-faint">
+              <label className="text-xs uppercase tracking-[0.04em] text-ink-faint">
                 {messages.workbench.endTime}
                 <input
                   type="number"
@@ -768,7 +768,7 @@ export function AudioWaveformEditor({
 
             <div className="rounded-xl border border-border bg-base-subtle/60 p-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.horizontalZoom}</p>
+                <p className="text-xs uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.horizontalZoom}</p>
                 <span className="badge border border-border bg-base-elevated text-ink-muted">x{zoom.toFixed(1)}</span>
               </div>
               <div className="mt-3 flex items-center gap-3">
@@ -783,7 +783,7 @@ export function AudioWaveformEditor({
                   step={ZOOM_STEP}
                   value={zoom}
                   onChange={(event) => updateZoom(Number(event.target.value))}
-                  className="w-full accent-cyan-400"
+                  className="w-full accent-prime"
                 />
                 <button type="button" onClick={() => updateZoom(zoom + ZOOM_STEP)} className="btn-ghost px-3 py-2 text-xs">
                   {messages.workbench.zoomIn}
@@ -794,19 +794,19 @@ export function AudioWaveformEditor({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="card p-3">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.currentTime}</p>
+              <p className="text-[11px] uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.currentTime}</p>
               <p className="mt-2 text-sm font-semibold text-ink">{formatSeconds(currentTime)}</p>
             </div>
             <div className="card p-3">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.totalDuration}</p>
+              <p className="text-[11px] uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.totalDuration}</p>
               <p className="mt-2 text-sm font-semibold text-ink">{formatSeconds(safeDuration)}</p>
             </div>
             <div className="card p-3">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.selectionDuration}</p>
+              <p className="text-[11px] uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.selectionDuration}</p>
               <p className="mt-2 text-sm font-semibold text-ink">{formatSeconds(selectionDuration)}</p>
             </div>
             <div className="card p-3">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.outputDuration}</p>
+              <p className="text-[11px] uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.outputDuration}</p>
               <p className="mt-2 text-sm font-semibold text-ink">{formatSeconds(outputDuration)}</p>
             </div>
           </div>
