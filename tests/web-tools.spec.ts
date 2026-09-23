@@ -16,14 +16,19 @@ async function waitForClientReady(page: Page) {
 test('webpage capture encodes query parameters before calling the screenshot service', async ({ page }) => {
   let requestedUrl: string | null = null;
 
-  await page.route('**image.thum.io/**', async (route) => {
-    requestedUrl = route.request().url();
-    await route.fulfill({
-      status: 200,
-      contentType: 'image/png',
-      body: oneByOnePng,
+  // Full-page captures try Microlink first, then thum.io; mock both so the
+  // first capture request is observed without touching the network.
+  for (const pattern of ['**api.microlink.io/**', '**image.thum.io/**']) {
+    await page.route(pattern, async (route) => {
+      requestedUrl ??= route.request().url();
+      await route.fulfill({
+        status: 200,
+        contentType: 'image/png',
+        body: oneByOnePng,
+      });
     });
-  });
+  }
+  await page.route('**images.weserv.nl/**', (route) => route.fulfill({ status: 404, body: '' }));
 
   await page.goto('/tools/web/url-image', { waitUntil: 'domcontentloaded' });
   await waitForClientReady(page);

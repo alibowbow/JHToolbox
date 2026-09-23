@@ -161,6 +161,32 @@ async function fetchScreenshotCandidate(screenshotUrl: string): Promise<Blob> {
   throw lastError ?? new Error('Unable to capture a rendered webpage screenshot for this URL.');
 }
 
+/**
+ * Pixel size of a capture. PNG headers are read directly; any other format
+ * (JPEG/WebP from proxies, SVG) is decoded by the browser so it is compared on
+ * real height rather than counted as zero.
+ */
+async function readImageSize(blob: Blob): Promise<{ width: number; height: number } | null> {
+  const fromHeader = pngDimensions(new Uint8Array(await blob.arrayBuffer()));
+  if (fromHeader || typeof Image === 'undefined') {
+    return fromHeader;
+  }
+
+  const url = URL.createObjectURL(blob);
+  try {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    return image.naturalWidth > 0 && image.naturalHeight > 0
+      ? { width: image.naturalWidth, height: image.naturalHeight }
+      : null;
+  } catch {
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 async function fetchWebsiteScreenshot(url: string, opts: ScreenshotOptions): Promise<Blob> {
   const directPrimary = buildScreenshotUrl(url, opts, false);
 
@@ -192,7 +218,7 @@ async function fetchWebsiteScreenshot(url: string, opts: ScreenshotOptions): Pro
       return blob;
     }
 
-    const dims = pngDimensions(new Uint8Array(await blob.arrayBuffer()));
+    const dims = await readImageSize(blob);
     if (dims && dims.height >= dims.width * 2) {
       return blob;
     }

@@ -954,7 +954,13 @@ test('url pdf captures the full page scroll before generating the pdf', async ({
     'base64',
   );
   let requestedCaptureUrl = '';
+  let requestedMicrolinkUrl = '';
 
+  // Every capture service is mocked so the test never depends on the network.
+  await page.route('https://api.microlink.io/**', async (route) => {
+    requestedMicrolinkUrl = route.request().url();
+    await route.fulfill({ status: 200, contentType: 'image/png', body: tinyPng });
+  });
   await page.route('https://image.thum.io/**', async (route) => {
     requestedCaptureUrl = route.request().url();
     await route.fulfill({
@@ -963,11 +969,13 @@ test('url pdf captures the full page scroll before generating the pdf', async ({
       body: tinyPng,
     });
   });
+  await page.route('https://images.weserv.nl/**', (route) => route.fulfill({ status: 404, body: '' }));
 
   await page.goto('/tools/pdf/url-pdf');
   await page.getByRole('button', { name: 'Run tool' }).click();
 
   await expect(page.getByText('url-capture.pdf')).toBeVisible({ timeout: 60_000 });
+  expect(requestedMicrolinkUrl).toContain('screenshot.fullPage=true');
   expect(requestedCaptureUrl).toContain('/fullpage/');
 });
 
@@ -987,13 +995,17 @@ test('url image allows trimming a long captured page before saving', async ({ pa
     </svg>
   `;
 
-  await page.route('https://image.thum.io/**', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'image/svg+xml',
-      body: tallSvg,
+  // Every capture service is mocked so the test never depends on the network.
+  for (const pattern of ['https://api.microlink.io/**', 'https://image.thum.io/**']) {
+    await page.route(pattern, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'image/svg+xml',
+        body: tallSvg,
+      });
     });
-  });
+  }
+  await page.route('https://images.weserv.nl/**', (route) => route.fulfill({ status: 404, body: '' }));
 
   await page.goto('/tools/web/url-image');
   await page.getByRole('button', { name: 'Run tool' }).click();
