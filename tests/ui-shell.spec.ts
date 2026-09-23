@@ -171,7 +171,7 @@ test('korean locale localizes tool titles, descriptions, and option labels', asy
   await page.goto('/tools/image/image-resize');
   await page.getByRole('button', { name: 'ko' }).click();
 
-  await expect(page.getByRole('heading', { level: 2, name: '이미지 크기 조정' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '이미지 크기 조정' })).toBeVisible();
   await expect(page.getByText('이미지 크기를 원하는 가로와 세로 값으로 조정합니다.')).toBeVisible();
   await expect(page.getByText('너비')).toBeVisible();
   await expect(page.getByText('높이')).toBeVisible();
@@ -182,7 +182,7 @@ test('korean locale also localizes newly added screen tools', async ({ page }) =
   await page.goto('/tools/screen/screenshot-capture');
   await page.getByRole('button', { name: 'ko' }).click();
 
-  await expect(page.getByRole('heading', { level: 2, name: '스크린샷 캡처' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '스크린샷 캡처' })).toBeVisible();
   // The capture panel's own Korean copy (the decorative category badge that
   // used to say "화면 녹화" was removed from the workbench).
   await expect(page.getByRole('main').getByText('스크린샷 대상')).toBeVisible();
@@ -250,7 +250,7 @@ test('legacy audio converter routes redirect to the batch converter', async ({ p
 test('video converter preset selects the requested output format in one workflow', async ({ page }) => {
   await page.goto('/tools/video/video-convert?outputFormat=gif');
 
-  await expect(page.getByRole('heading', { level: 2, name: 'Video Converter' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Video Converter' })).toBeVisible();
   await expect(page.locator('select').first()).toHaveValue('gif');
   await expect(page.getByText('Progress')).toHaveCount(0);
   await expect(page.getByText('Results')).toHaveCount(0);
@@ -260,7 +260,7 @@ test('legacy video format routes redirect to the unified video converter', async
   await page.goto('/tools/video/mp4-webm');
 
   await expect(page).toHaveURL(/\/tools\/video\/video-convert\?outputFormat=webm$/);
-  await expect(page.getByRole('heading', { level: 2, name: 'Video Converter' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Video Converter' })).toBeVisible();
   await expect(page.locator('select').first()).toHaveValue('webm');
 });
 
@@ -739,7 +739,7 @@ test('pdf menu lists url full page to pdf and opens the pdf route', async ({ pag
 
   await pdfToolCard.click();
   await expect(page).toHaveURL(/\/tools\/pdf\/url-pdf$/);
-  await expect(page.getByRole('heading', { level: 2, name: 'URL Full Page to PDF' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'URL Full Page to PDF' })).toBeVisible();
 });
 
 test('pdf category surfaces the newly added document workflows', async ({ page }) => {
@@ -954,7 +954,13 @@ test('url pdf captures the full page scroll before generating the pdf', async ({
     'base64',
   );
   let requestedCaptureUrl = '';
+  let requestedMicrolinkUrl = '';
 
+  // Every capture service is mocked so the test never depends on the network.
+  await page.route('https://api.microlink.io/**', async (route) => {
+    requestedMicrolinkUrl = route.request().url();
+    await route.fulfill({ status: 200, contentType: 'image/png', body: tinyPng });
+  });
   await page.route('https://image.thum.io/**', async (route) => {
     requestedCaptureUrl = route.request().url();
     await route.fulfill({
@@ -963,11 +969,13 @@ test('url pdf captures the full page scroll before generating the pdf', async ({
       body: tinyPng,
     });
   });
+  await page.route('https://images.weserv.nl/**', (route) => route.fulfill({ status: 404, body: '' }));
 
   await page.goto('/tools/pdf/url-pdf');
   await page.getByRole('button', { name: 'Run tool' }).click();
 
   await expect(page.getByText('url-capture.pdf')).toBeVisible({ timeout: 60_000 });
+  expect(requestedMicrolinkUrl).toContain('screenshot.fullPage=true');
   expect(requestedCaptureUrl).toContain('/fullpage/');
 });
 
@@ -987,13 +995,17 @@ test('url image allows trimming a long captured page before saving', async ({ pa
     </svg>
   `;
 
-  await page.route('https://image.thum.io/**', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'image/svg+xml',
-      body: tallSvg,
+  // Every capture service is mocked so the test never depends on the network.
+  for (const pattern of ['https://api.microlink.io/**', 'https://image.thum.io/**']) {
+    await page.route(pattern, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'image/svg+xml',
+        body: tallSvg,
+      });
     });
-  });
+  }
+  await page.route('https://images.weserv.nl/**', (route) => route.fulfill({ status: 404, body: '' }));
 
   await page.goto('/tools/web/url-image');
   await page.getByRole('button', { name: 'Run tool' }).click();

@@ -19,75 +19,48 @@ export const categoryStyles: Record<
   {
     icon: string;
     iconBg: string;
-    dot: string;
-    border: string;
-    gradient: string;
     badge: string;
   }
 > = {
   pdf: {
-    icon: 'text-rose-300',
+    icon: 'text-rose-700 dark:text-rose-300',
     iconBg: 'bg-rose-500/10',
-    dot: 'bg-rose-400',
-    border: 'hover:border-border-bright',
-    gradient: 'from-rose-500/14 via-rose-500/4 to-transparent',
-    badge: 'border-rose-400/20 bg-rose-500/10 text-rose-300',
+    badge: 'border-rose-400/20 bg-rose-500/10 text-rose-700 dark:text-rose-300',
   },
   image: {
-    icon: 'text-sky-300',
+    icon: 'text-sky-700 dark:text-sky-300',
     iconBg: 'bg-sky-500/10',
-    dot: 'bg-sky-400',
-    border: 'hover:border-border-bright',
-    gradient: 'from-sky-500/14 via-sky-500/4 to-transparent',
-    badge: 'border-sky-400/20 bg-sky-500/10 text-sky-300',
+    badge: 'border-sky-400/20 bg-sky-500/10 text-sky-700 dark:text-sky-300',
   },
   ocr: {
-    icon: 'text-violet-300',
+    icon: 'text-violet-700 dark:text-violet-300',
     iconBg: 'bg-violet-500/10',
-    dot: 'bg-violet-400',
-    border: 'hover:border-border-bright',
-    gradient: 'from-violet-500/14 via-violet-500/4 to-transparent',
-    badge: 'border-violet-400/20 bg-violet-500/10 text-violet-300',
+    badge: 'border-violet-400/20 bg-violet-500/10 text-violet-700 dark:text-violet-300',
   },
   video: {
-    icon: 'text-orange-300',
+    icon: 'text-orange-700 dark:text-orange-300',
     iconBg: 'bg-orange-500/10',
-    dot: 'bg-orange-400',
-    border: 'hover:border-border-bright',
-    gradient: 'from-orange-500/14 via-orange-500/4 to-transparent',
-    badge: 'border-orange-400/20 bg-orange-500/10 text-orange-300',
+    badge: 'border-orange-400/20 bg-orange-500/10 text-orange-700 dark:text-orange-300',
   },
   audio: {
-    icon: 'text-emerald-300',
+    icon: 'text-emerald-700 dark:text-emerald-300',
     iconBg: 'bg-emerald-500/10',
-    dot: 'bg-emerald-400',
-    border: 'hover:border-border-bright',
-    gradient: 'from-emerald-500/14 via-emerald-500/4 to-transparent',
-    badge: 'border-emerald-400/20 bg-emerald-500/10 text-emerald-300',
+    badge: 'border-emerald-400/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
   },
   file: {
-    icon: 'text-amber-300',
+    icon: 'text-amber-700 dark:text-amber-300',
     iconBg: 'bg-amber-500/10',
-    dot: 'bg-amber-400',
-    border: 'hover:border-border-bright',
-    gradient: 'from-amber-500/14 via-amber-500/4 to-transparent',
-    badge: 'border-amber-400/20 bg-amber-500/10 text-amber-300',
+    badge: 'border-amber-400/20 bg-amber-500/10 text-amber-700 dark:text-amber-300',
   },
   web: {
-    icon: 'text-cyan-300',
+    icon: 'text-cyan-700 dark:text-cyan-300',
     iconBg: 'bg-cyan-500/10',
-    dot: 'bg-cyan-400',
-    border: 'hover:border-border-bright',
-    gradient: 'from-cyan-500/14 via-cyan-500/4 to-transparent',
-    badge: 'border-cyan-400/20 bg-cyan-500/10 text-cyan-300',
+    badge: 'border-cyan-400/20 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300',
   },
   screen: {
-    icon: 'text-fuchsia-300',
+    icon: 'text-fuchsia-700 dark:text-fuchsia-300',
     iconBg: 'bg-fuchsia-500/10',
-    dot: 'bg-fuchsia-400',
-    border: 'hover:border-border-bright',
-    gradient: 'from-fuchsia-500/14 via-fuchsia-500/4 to-transparent',
-    badge: 'border-fuchsia-400/20 bg-fuchsia-500/10 text-fuchsia-300',
+    badge: 'border-fuchsia-400/20 bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300',
   },
 };
 

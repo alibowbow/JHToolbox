@@ -1,13 +1,13 @@
 import html2canvas from 'html2canvas';
 import JSZip from 'jszip';
-import { PDFArray, PDFDocument, PDFName, PDFNumber, PDFRawStream, degrees as pdfDegrees, rgb } from 'pdf-lib';
+import { BlendMode, PDFArray, PDFDocument, PDFName, PDFNumber, PDFRawStream, degrees as pdfDegrees, rgb } from 'pdf-lib';
 import * as XLSX from 'xlsx';
 import { getPdfJs } from '@/lib/processors/pdfjs-client';
 import { ProcessContext, ProcessedFile } from '@/types/processor';
 import { baseName, parseBoolean, parseNumber } from '@/lib/utils';
 import { sanitizeRowsForSpreadsheet } from '@/lib/spreadsheet-safety';
 import { sanitizeHtml } from '@/lib/html-sanitize';
-import { normalizePdfRotation, resolveDeletablePages } from '@/lib/pdf-page-math';
+import { normalizePdfRotation, resolveDeletablePages, resolveRearrangeOrder } from '@/lib/pdf-page-math';
 import {
   computeDownscaledSize,
   dpiToMaxImageDimension,
@@ -1520,6 +1520,9 @@ function buildPdfCompareReport(
   };
 }
 
+const EDIT_PDF_DEFAULT_COLOR = '#111827';
+const HIGHLIGHT_COLOR = '#fde047';
+
 async function processEditPdf(
   files: File[],
   options: Record<string, string | number | boolean>,
@@ -1540,7 +1543,7 @@ async function processEditPdf(
   const width = Math.max(24, parseNumber(options.width, 220));
   const height = Math.max(24, parseNumber(options.height, 72));
   const fontSize = Math.max(8, parseNumber(options.fontSize, 18));
-  const color = String(options.color ?? '#111827');
+  const color = String(options.color ?? EDIT_PDF_DEFAULT_COLOR);
   const opacity = clamp(parseNumber(options.opacity, 0.9), 0.05, 1);
   const text = String(options.text ?? 'Edited with JH Toolbox').trim() || 'Edited with JH Toolbox';
 
@@ -1558,15 +1561,21 @@ async function processEditPdf(
       opacity,
     });
   } else if (editType === 'rectangle' || editType === 'highlight') {
+    const isHighlight = editType === 'highlight';
+    // The colour option is shared with text/rectangle and always arrives with its
+    // dark default, so an untouched default means "highlighter yellow".
+    const fillColor = isHighlight && color.toLowerCase() === EDIT_PDF_DEFAULT_COLOR ? HIGHLIGHT_COLOR : color;
     page.drawRectangle({
       x,
       y,
       width,
       height,
-      color: parseColor(editType === 'highlight' && options.color === undefined ? '#fde047' : color),
+      color: parseColor(fillColor),
       borderColor: parseColor(color),
-      borderWidth: editType === 'highlight' ? 0 : 1,
-      opacity: editType === 'highlight' ? clamp(opacity, 0.1, 0.65) : opacity,
+      borderWidth: isHighlight ? 0 : 1,
+      opacity: isHighlight ? clamp(opacity, 0.1, 0.65) : opacity,
+      // Multiply darkens only the background, so text under a highlight stays legible.
+      blendMode: isHighlight ? BlendMode.Multiply : undefined,
     });
   } else {
     const overlay = await createTextOverlayPng(text, {
@@ -1803,18 +1812,15 @@ export async function processPdfTool(ctx: ProcessContext): Promise<ProcessedFile
     const sourceDocument = await PDFDocument.load(await source.arrayBuffer());
     const pageCount = sourceDocument.getPageCount();
 
-    const parsedOrder = Array.from(
-      new Set(
-        parseList(orderRaw)
-          .map((value) => value - 1)
-          .filter((value) => value >= 0 && value < pageCount),
-      ),
-    );
-    const fallbackOrder = Array.from({ length: pageCount }, (_, index) => index);
-    const finalOrder = parsedOrder.length > 0 ? parsedOrder : fallbackOrder;
+    const plan = resolveRearrangeOrder(orderRaw, pageCount);
+    if (plan.invalidEntries.length > 0) {
+      throw new Error(
+        `Page order has entries that are not pages of this ${pageCount}-page PDF: ${plan.invalidEntries.join(', ')}.`,
+      );
+    }
 
     const output = await PDFDocument.create();
-    const copiedPages = await output.copyPages(sourceDocument, finalOrder);
+    const copiedPages = await output.copyPages(sourceDocument, plan.order);
     copiedPages.forEach((page) => output.addPage(page));
 
     const bytes = await output.save({ useObjectStreams: true });
@@ -1823,6 +1829,10 @@ export async function processPdfTool(ctx: ProcessContext): Promise<ProcessedFile
         name: `${baseName(source.name)}-rearranged.pdf`,
         blob: blobFromBytes(bytes, 'application/pdf'),
         mimeType: 'application/pdf',
+        metadata: {
+          pageCount: plan.order.length,
+          removedPages: plan.removedPages.length > 0 ? plan.removedPages.join(', ') : undefined,
+        },
       },
     ];
   }

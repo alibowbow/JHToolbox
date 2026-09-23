@@ -11,8 +11,9 @@ const config: Config = {
     extend: {
       colors: {
         border: {
-          DEFAULT: 'rgb(var(--color-border) / 0.08)',
-          bright: 'rgb(var(--color-border) / 0.15)',
+          DEFAULT: 'rgb(var(--color-border) / 0.1)',
+          bright: 'rgb(var(--color-border) / 0.18)',
+          strong: 'rgb(var(--color-border) / 0.3)',
         },
         ink: {
           DEFAULT: 'rgb(var(--color-ink) / 1)',
@@ -23,6 +24,7 @@ const config: Config = {
           DEFAULT: 'rgb(var(--color-prime) / 1)',
           dim: 'rgb(var(--color-prime-dim) / 1)',
           glow: 'rgb(var(--color-prime) / 0.2)',
+          contrast: 'rgb(var(--color-prime-contrast) / 1)',
         },
         accent: {
           DEFAULT: 'rgb(var(--color-accent) / 1)',
@@ -46,15 +48,30 @@ const config: Config = {
           elevated: 'rgb(var(--color-base-elevated) / <alpha-value>)',
         },
       },
+      // Pretendard covers Hangul and Latin in one family, so Korean and English
+      // copy share the same metrics instead of falling back per script.
       fontFamily: {
-        sans: ['var(--font-geist-sans)', 'system-ui', 'sans-serif'],
-        mono: ['var(--font-geist-mono)', 'monospace'],
-        display: ['var(--font-cal-sans)', 'var(--font-geist-sans)', 'system-ui', 'sans-serif'],
+        sans: [
+          '"Pretendard Variable"',
+          'Pretendard',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'system-ui',
+          '"Apple SD Gothic Neo"',
+          '"Malgun Gothic"',
+          '"Noto Sans KR"',
+          'sans-serif',
+        ],
+        mono: ['var(--font-geist-mono)', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+        display: ['"Pretendard Variable"', 'Pretendard', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
         'glow-prime': '0 0 24px 0 rgb(var(--color-prime) / 0.22)',
         'glow-accent': '0 0 24px 0 rgb(var(--color-accent) / 0.22)',
         card: 'var(--shadow-card)',
+        'card-hover': 'var(--shadow-card-hover)',
+        panel: 'var(--shadow-panel)',
+        pop: 'var(--shadow-pop)',
       },
       borderRadius: {
         xl2: '1rem',

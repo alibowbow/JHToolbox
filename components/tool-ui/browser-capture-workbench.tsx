@@ -15,7 +15,8 @@ import { formatMegaBytes } from '@/lib/i18n';
 import { createWavRecordingSession, type WavRecordingSession } from '@/lib/processors/audio-recording';
 import { convertAudioFile, trimAudioFile } from '@/lib/processors/media';
 import { getLocalizedChoiceLabel, getLocalizedOptionLabel, getLocalizedToolCopy } from '@/lib/tool-localization';
-import { categoryIcons, categoryStyles } from '@/lib/tool-presentation';
+import { getToolIcon } from '@/lib/tool-icons';
+import { categoryStyles } from '@/lib/tool-presentation';
 import { downloadBlob } from '@/lib/utils';
 import { ProcessedFile } from '@/types/processor';
 import { ToolDefinition, ToolOption } from '@/types/tool';
@@ -231,7 +232,7 @@ function renderField(
           max={option.max}
           step={option.step}
           onChange={(event) => onChange(option.key, Number(event.target.value))}
-          className="w-full accent-cyan-400"
+          className="w-full accent-prime"
         />
         <p className="text-xs font-mono text-ink-muted">{String(value)}</p>
       </div>
@@ -555,7 +556,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
     [rawSearchParams],
   );
   const localizedTool = getLocalizedToolCopy(tool, locale);
-  const Icon = categoryIcons[tool.category];
+  const Icon = getToolIcon(tool.id, tool.category);
   const style = categoryStyles[tool.category];
   const copy = captureCopy[locale];
   const captureKind: BrowserCaptureKind =
@@ -1105,7 +1106,13 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
     : [copy.permissionNote, copy.screenAudioNote, guidanceLine, copy.mobilePlatformLimit, copy.localOnlyNote];
 
   return (
-    <ToolPageLayout title={localizedTool.name} description={localizedTool.description} icon={Icon} iconColor={style.icon}>
+    <ToolPageLayout
+      title={localizedTool.name}
+      description={localizedTool.description}
+      icon={Icon}
+      iconColor={style.icon}
+      iconBg={style.iconBg}
+    >
       <div className="space-y-6">
         <section
           className={`workspace-panel grid grid-cols-1 gap-5 p-5 sm:p-6 ${
@@ -1114,7 +1121,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
         >
           <div className="space-y-4">
             <div>
-              <p className="text-sm font-semibold text-ink">{isRecorder ? copy.liveCapture : copy.screenshotSource}</p>
+              <h2 className="text-[15px] font-semibold text-ink">{isRecorder ? copy.liveCapture : copy.screenshotSource}</h2>
               <p className="mt-1 text-sm text-ink-muted">
                 {isRecorder ? copy.liveCaptureDescription : copy.screenshotSourceDescription}
               </p>
@@ -1232,12 +1239,12 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
           {!isAudioRecorder ? (
             <div className="space-y-4">
               <section className="workspace-panel p-4">
-                <p className="text-sm font-semibold text-ink">{messages.workbench.options}</p>
+                <h2 className="text-[15px] font-semibold text-ink">{messages.workbench.options}</h2>
                 {tool.options?.length ? (
                   <div className="mt-4 space-y-4">
                     {tool.options.map((option) => (
                       <div key={option.key} className="workspace-section p-4">
-                        <label className="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">{getLocalizedOptionLabel(option, locale)}</label>
+                        <label className="text-xs font-medium uppercase tracking-[0.04em] text-ink-faint">{getLocalizedOptionLabel(option, locale)}</label>
                         {renderField(option, options[option.key], locale, (key, nextValue) =>
                           setOptions((currentOptions) => ({ ...currentOptions, [key]: nextValue }))
                         )}
@@ -1250,7 +1257,7 @@ export function BrowserCaptureWorkbench({ tool }: { tool: ToolDefinition }) {
               </section>
 
               <section className="workspace-panel p-4">
-                <p className="text-sm font-semibold text-ink">{copy.captureNotes}</p>
+                <h2 className="text-[15px] font-semibold text-ink">{copy.captureNotes}</h2>
                 <ul className="mt-3 space-y-2 text-sm text-ink-muted">
                   {captureNotes.map((note) => (
                     <li key={note}>{note}</li>

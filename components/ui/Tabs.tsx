@@ -19,66 +19,70 @@ export function Tabs({
 }) {
   const [active, setActive] = useState(tabs[0]?.id);
 
+  // Restore the saved tab (localStorage is unavailable during static render) and
+  // keep the selection valid when the tab list changes. This must not depend on
+  // `active`: re-reading storage on every selection change would race the write
+  // and bounce the view between the old and new tab indefinitely.
   useEffect(() => {
     if (!tabs.length) {
       return;
     }
 
+    let saved: string | null = null;
     if (storageKey) {
       try {
-        const saved = localStorage.getItem(storageKey);
-        if (saved && tabs.some((tab) => tab.id === saved)) {
-          setActive(saved);
-          return;
-        }
+        saved = localStorage.getItem(storageKey);
       } catch {
-        // Ignore storage errors and fall back to the first tab.
+        // Ignore storage errors and fall back to the current or first tab.
       }
     }
 
-    if (!active || !tabs.some((tab) => tab.id === active)) {
-      setActive(tabs[0].id);
-    }
-  }, [active, storageKey, tabs]);
+    setActive((current) => {
+      if (saved && tabs.some((tab) => tab.id === saved)) {
+        return saved;
+      }
+      return current && tabs.some((tab) => tab.id === current) ? current : tabs[0].id;
+    });
+  }, [storageKey, tabs]);
 
-  useEffect(() => {
-    if (!storageKey || !active) {
+  const selectTab = (id: string) => {
+    setActive(id);
+    if (!storageKey) {
       return;
     }
-
     try {
-      localStorage.setItem(storageKey, active);
+      localStorage.setItem(storageKey, id);
     } catch {
       // Ignore persistence errors in private browsing or locked storage.
     }
-  }, [active, storageKey]);
+  };
 
   return (
-    <div className="space-y-6">
-      <div className="inline-flex w-full max-w-full gap-1 overflow-x-auto rounded-2xl border border-border bg-base-subtle/90 p-1.5">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setActive(tab.id)}
-            className={`relative rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
-              active === tab.id ? 'text-ink' : 'text-ink-muted hover:text-ink'
-            }`}
-          >
-            {active === tab.id ? (
-              <motion.div
-                layoutId="tab-active"
-                className="absolute inset-0 rounded-xl border border-border/60 bg-base-elevated"
-                style={{ zIndex: -1 }}
-                transition={{ type: 'spring', stiffness: 500, damping: 40 }}
-              />
-            ) : null}
-            {tab.label}
-          </button>
-        ))}
+    <div className="space-y-8">
+      <div className="-mx-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex w-max gap-1.5">
+          {tabs.map((tab) => {
+            const selected = active === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => selectTab(tab.id)}
+                className={`whitespace-nowrap rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                  selected
+                    ? 'border-transparent bg-ink text-[rgb(var(--color-base-elevated))]'
+                    : 'border-border bg-base-elevated text-ink-muted hover:border-border-bright hover:text-ink'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      <motion.div key={active} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
+      <motion.div key={active} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}>
         {active ? children(active) : null}
       </motion.div>
     </div>

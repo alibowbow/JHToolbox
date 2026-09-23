@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { CheckCircle2, Download, File } from 'lucide-react';
+import { CheckCircle2, Download } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 
 interface ResultCardProps {
@@ -27,27 +27,29 @@ export function ResultCard({
 
   return (
     <motion.article
-      initial={{ opacity: 0, scale: 0.97, y: 8 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      className="workspace-panel overflow-hidden border-ok/20 bg-ok/5 p-5"
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, ease: 'easeOut' }}
+      className="card overflow-hidden p-4 sm:p-5"
     >
-      <div className="mb-4 flex items-center gap-3">
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-ok/10 text-ok">
-          <CheckCircle2 size={18} className="text-ok" />
-        </div>
-        <p className="text-sm font-semibold text-ink">{resolvedTitle}</p>
-      </div>
-
-      <div className="workspace-section flex items-center gap-3">
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl2 border border-border bg-base-subtle text-ink-muted">
-          <File size={18} />
-        </div>
+      <div className="flex items-center gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-ok/10 text-ok">
+          <CheckCircle2 size={19} aria-hidden="true" />
+        </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-ink">{fileName}</p>
-          {fileSize ? <p className="mt-0.5 text-xs font-mono text-ink-muted">{fileSize}</p> : null}
+          <p className="truncate text-sm font-semibold text-ink">{fileName}</p>
+          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-muted">
+            <span className="truncate">{resolvedTitle}</span>
+            {fileSize ? (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="shrink-0 tabular-nums">{fileSize}</span>
+              </>
+            ) : null}
+          </p>
         </div>
-        <button type="button" onClick={onDownload} className="btn-primary px-4 py-2 text-xs">
-          <Download size={14} />
+        <button type="button" onClick={onDownload} className="btn-primary shrink-0 px-3.5 py-2 text-[13px]">
+          <Download size={15} aria-hidden="true" />
           {resolvedActionLabel}
         </button>
       </div>

@@ -501,7 +501,7 @@ export function VideoTimelineEditor({
       <div className="rounded-xl border border-border bg-base-elevated p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.timeline}</p>
+            <p className="text-xs uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.timeline}</p>
             <p className="mt-1 text-xs text-ink-muted">{messages.workbench.trimRangeHint}</p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -524,15 +524,15 @@ export function VideoTimelineEditor({
 
         <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className="rounded-xl border border-border bg-base-subtle px-3 py-3">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.currentTime}</p>
+            <p className="text-[11px] uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.currentTime}</p>
             <p className="mt-2 text-sm font-semibold text-ink">{formatEditorTime(currentTime)}</p>
           </div>
           <div className="rounded-xl border border-border bg-base-subtle px-3 py-3">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.duration}</p>
+            <p className="text-[11px] uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.duration}</p>
             <p className="mt-2 text-sm font-semibold text-ink">{formatEditorTime(safeDuration)}</p>
           </div>
           <div className="rounded-xl border border-border bg-base-subtle px-3 py-3">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">
+            <p className="text-[11px] uppercase tracking-[0.04em] text-ink-faint">
               {captureEnabled ? messages.workbench.currentTime : messages.workbench.playhead}
             </p>
             <p className="mt-2 text-sm font-semibold text-ink">{formatEditorTime(captureEnabled ? captureTime : selectionDuration)}</p>
@@ -541,7 +541,7 @@ export function VideoTimelineEditor({
 
         <div className="mt-4 space-y-3">
           <label className="block">
-            <span className="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.playhead}</span>
+            <span className="text-xs font-medium uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.playhead}</span>
             <input
               type="range"
               min={0}
@@ -549,7 +549,7 @@ export function VideoTimelineEditor({
               step={1}
               value={playheadPercent}
               onChange={(event) => handlePlayheadChange(Number(event.target.value))}
-              className="mt-3 w-full accent-cyan-500"
+              className="mt-3 w-full accent-prime"
               aria-label={messages.workbench.playhead}
             />
           </label>
@@ -557,7 +557,7 @@ export function VideoTimelineEditor({
           {trimEnabled ? (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <label className="block">
-                <span className="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.trimStart}</span>
+                <span className="text-xs font-medium uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.trimStart}</span>
                 <input
                   type="range"
                   min={0}
@@ -565,12 +565,12 @@ export function VideoTimelineEditor({
                   step={1}
                   value={trimStartPercent}
                   onChange={(event) => handleTrimStartChange(Number(event.target.value))}
-                  className="mt-3 w-full accent-cyan-500"
+                  className="mt-3 w-full accent-prime"
                   aria-label={messages.workbench.trimStart}
                 />
               </label>
               <label className="block">
-                <span className="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.trimEnd}</span>
+                <span className="text-xs font-medium uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.trimEnd}</span>
                 <input
                   type="range"
                   min={0}
@@ -578,7 +578,7 @@ export function VideoTimelineEditor({
                   step={1}
                   value={trimEndPercent}
                   onChange={(event) => handleTrimEndChange(Number(event.target.value))}
-                  className="mt-3 w-full accent-cyan-500"
+                  className="mt-3 w-full accent-prime"
                   aria-label={messages.workbench.trimEnd}
                 />
               </label>
@@ -590,12 +590,12 @@ export function VideoTimelineEditor({
       {cropEnabled ? (
         <div className="space-y-4">
           <div className="rounded-xl border border-border bg-base-elevated p-4">
-            <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.cropFrame}</p>
+            <p className="text-xs uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.cropFrame}</p>
             <p className="mt-1 text-xs text-ink-muted">{messages.workbench.cropFrameHint}</p>
           </div>
 
           <div className="rounded-xl border border-border bg-base-elevated p-4">
-            <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.ratioPresets}</p>
+            <p className="text-xs uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.ratioPresets}</p>
             <div className="mt-3 flex flex-wrap gap-2">
               {aspectPresets.map((preset) => (
                 <button

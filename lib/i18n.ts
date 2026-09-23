@@ -59,6 +59,10 @@ export const dictionaries = {
       searchLabel: 'Tool search',
       searchPlaceholder: 'Search by tool name, description, or tag',
       searchEmpty: 'No matching tools found.',
+      searchSuggested: 'Suggested tools',
+      searchHintNavigate: 'Move',
+      searchHintOpen: 'Open',
+      searchHintClose: 'Close',
       searchCta: 'Open tool',
       locale: 'Language',
       theme: 'Theme',
@@ -75,8 +79,6 @@ export const dictionaries = {
       description:
         'Process PDFs, images, video, audio, and structured data locally with a premium interface designed for focused work.',
       primaryCta: 'Explore all tools',
-      secondaryCta: 'Jump to recent',
-      quickLaunchLabel: 'Quick launch',
       categoriesTitle: 'Quick categories',
       recentTitle: 'Recently used',
       recentDescription: 'Pick up where you left off and reopen the tools you used most recently.',
@@ -88,12 +90,15 @@ export const dictionaries = {
       featureOneBody: 'Your files stay in the browser and never touch an upload queue.',
       featureTwoTitle: 'WASM powered',
       featureTwoBody: 'FFmpeg, Tesseract, and PDF tooling run directly on-device.',
-      glanceTitle: 'Workspace at a glance',
       metricToolCount: 'Tool count',
       metricEditorReady: 'Editor-ready',
       metricExecution: 'Execution model',
       metricExecutionValue: 'Browser-local',
       whyTitle: 'Why it feels better',
+      heroSearch: 'What do you want to do? e.g. merge PDF, compress image',
+      featureThreeTitle: 'Chain tools into pipelines',
+      featureThreeBody: 'Save multi-step recipes and rerun them on new files in one click.',
+      viewAll: 'View all',
     },
     directory: {
       title: 'All tools',
@@ -166,6 +171,7 @@ export const dictionaries = {
       batchReady: 'Batch-ready',
       singleFile: 'Single file',
       removeFile: 'Remove file',
+      unsupportedFilesSkipped: 'Skipped files this tool cannot open',
       statusIdle: 'Waiting',
       statusRunning: 'Running',
       statusDone: 'Done',
@@ -255,16 +261,12 @@ export const dictionaries = {
       pdfEditorSource: 'Source',
     },
     shell: {
-      workspace: 'Workspace',
-      workspaceTagline: 'Browser-based editing, conversion, and capture tools in one focused workspace.',
-      localBadge: 'Local',
       navigate: 'Navigate',
-      shellBadge: 'Local shell',
-      commandCenter: 'Command center',
-      commandCenterSub: 'Premium local toolbox',
-      searchScope: 'Tools and workflows',
       menuTitle: 'Navigation',
-      menuDescription: 'Move between workflows without leaving the editing context.',
+      categoriesLabel: 'Categories',
+      privacyNote: 'Files are processed in your browser and never uploaded.',
+      skipToContent: 'Skip to content',
+      breadcrumb: 'Breadcrumb',
     },
     common: {
       open: 'Open',
@@ -332,6 +334,10 @@ export const dictionaries = {
       searchLabel: '도구 검색',
       searchPlaceholder: '도구 이름, 설명, 태그로 검색',
       searchEmpty: '일치하는 도구가 없습니다.',
+      searchSuggested: '추천 도구',
+      searchHintNavigate: '이동',
+      searchHintOpen: '열기',
+      searchHintClose: '닫기',
       searchCta: '열기',
       locale: '언어',
       theme: '테마',
@@ -347,8 +353,6 @@ export const dictionaries = {
       titleAccent: '브라우저 안에서.',
       description: 'PDF, 이미지, 비디오, 오디오, 구조화된 데이터를 로컬에서 바로 처리합니다.',
       primaryCta: '전체 도구 보기',
-      secondaryCta: '최근 작업 보기',
-      quickLaunchLabel: '빠른 시작',
       categoriesTitle: '빠른 카테고리',
       recentTitle: '최근 사용 도구',
       recentDescription: '최근에 사용한 작업으로 바로 돌아가 다시 실행할 수 있습니다.',
@@ -360,12 +364,15 @@ export const dictionaries = {
       featureOneBody: '파일은 브라우저 안에서만 처리되고 서버 업로드를 거치지 않습니다.',
       featureTwoTitle: 'WASM 기반 실행',
       featureTwoBody: 'FFmpeg, Tesseract, PDF 도구가 기기 안에서 직접 동작합니다.',
-      glanceTitle: '작업 공간 한눈에 보기',
       metricToolCount: '도구 수',
       metricEditorReady: '편집기 지원',
       metricExecution: '실행 방식',
       metricExecutionValue: '브라우저 로컬',
       whyTitle: '무엇이 다를까요',
+      heroSearch: '어떤 작업을 할까요? 예: PDF 병합, 이미지 압축',
+      featureThreeTitle: '파이프라인으로 자동화',
+      featureThreeBody: '여러 단계를 레시피로 저장하고 새 파일에 한 번에 다시 실행하세요.',
+      viewAll: '전체 보기',
     },
     directory: {
       title: '전체 도구',
@@ -438,6 +445,7 @@ export const dictionaries = {
       batchReady: '여러 파일 지원',
       singleFile: '단일 파일',
       removeFile: '파일 제거',
+      unsupportedFilesSkipped: '이 도구에서 열 수 없는 파일은 제외했습니다',
       statusIdle: '대기 중',
       statusRunning: '실행 중',
       statusDone: '완료',
@@ -527,16 +535,12 @@ export const dictionaries = {
       pdfEditorSource: '원본',
     },
     shell: {
-      workspace: '워크스페이스',
-      workspaceTagline: '편집·변환·캡처 도구를 하나의 집중된 작업 공간에 모았습니다.',
-      localBadge: '로컬',
       navigate: '둘러보기',
-      shellBadge: '로컬 셸',
-      commandCenter: '커맨드 센터',
-      commandCenterSub: '프리미엄 로컬 도구 모음',
-      searchScope: '도구와 작업 흐름',
       menuTitle: '내비게이션',
-      menuDescription: '편집 맥락을 잃지 않고 작업 사이를 이동하세요.',
+      categoriesLabel: '카테고리',
+      privacyNote: '파일은 브라우저 안에서만 처리되고 업로드되지 않습니다.',
+      skipToContent: '본문으로 건너뛰기',
+      breadcrumb: '현재 위치',
     },
     common: {
       open: '열기',
@@ -681,6 +685,13 @@ export function formatToolCount(locale: Locale, count: number) {
   return locale === 'ko' ? `${count}개 도구` : `${count} tools`;
 }
 
+/** Human-readable file size; tiny outputs read "3.2 KB" rather than "0.00 MB". */
 export function formatMegaBytes(size: number) {
+  if (!Number.isFinite(size) || size < 1024) {
+    return `${Math.max(0, Math.round(size || 0))} B`;
+  }
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
   return `${(size / 1024 / 1024).toFixed(2)} MB`;
 }

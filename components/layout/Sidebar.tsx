@@ -1,5 +1,7 @@
 'use client';
 
+import { ShieldCheck } from 'lucide-react';
+import { BrandLink } from '@/components/layout/Brand';
 import { NavigationList } from '@/components/layout/navigation-list';
 import { useLocale } from '@/components/providers/locale-provider';
 
@@ -7,32 +9,21 @@ export function Sidebar() {
   const { messages } = useLocale();
 
   return (
-    <aside className="glass-outline hidden h-screen w-[280px] shrink-0 flex-col border-r border-border/50 bg-base-subtle/30 md:flex">
-      <div className="px-5 pb-5 pt-6">
-        <div className="workspace-panel overflow-hidden p-6 border-border/40 shadow-sm bg-base-elevated/50 backdrop-blur-xl">
-          <p className="workspace-kicker text-[10px]">{messages.shell.workspace}</p>
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <span className="font-display text-2xl font-bold tracking-tight text-ink">
-              JH<span className="text-prime">Toolbox</span>
-            </span>
-            <span className="editor-chip border border-prime/30 bg-prime/10 text-prime shadow-sm shadow-prime/5">{messages.shell.localBadge}</span>
-          </div>
-          <p className="mt-3 text-[13px] leading-relaxed text-ink-muted">
-            {messages.shell.workspaceTagline}
-          </p>
-        </div>
+    <aside className="sticky top-0 hidden h-screen w-[248px] shrink-0 flex-col border-r border-border bg-base-elevated md:flex">
+      <div className="flex h-14 shrink-0 items-center px-5">
+        <BrandLink />
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-5">
-        <p className="workspace-kicker px-3 pb-3">{messages.shell.navigate}</p>
-        <NavigationList activeIndicatorId="sidebar-desktop-active" />
+      <div className="flex-1 overflow-y-auto px-3 pb-6 pt-3">
+        <NavigationList />
       </div>
 
-      <div className="px-5 py-4">
-        <div className="workspace-toolbar justify-between">
-          <span className="text-xs font-mono text-ink-faint">{messages.common.versionLine}</span>
-          <span className="editor-chip px-2.5 py-1">{messages.shell.shellBadge}</span>
+      <div className="shrink-0 border-t border-border px-5 py-4">
+        <div className="flex items-start gap-2.5">
+          <ShieldCheck size={16} className="mt-px shrink-0 text-ok" aria-hidden="true" />
+          <p className="text-xs leading-relaxed text-ink-muted">{messages.shell.privacyNote}</p>
         </div>
+        <p className="mt-2.5 font-mono text-[11px] text-ink-faint">{messages.common.versionLine}</p>
       </div>
     </aside>
   );

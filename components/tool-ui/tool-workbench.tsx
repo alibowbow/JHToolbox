@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import JSZip from 'jszip';
-import { Copy, Download, LoaderCircle, Play } from 'lucide-react';
+import { AlertCircle, Copy, Download, LoaderCircle, Play } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { ToolPageLayout } from '@/components/ToolPageLayout';
 import { useLocale } from '@/components/providers/locale-provider';
@@ -32,7 +32,8 @@ import {
   savePresetToolOptions,
 } from '@/lib/tool-option-memory';
 import { runTool } from '@/lib/processors';
-import { categoryIcons, categoryStyles } from '@/lib/tool-presentation';
+import { getToolIcon } from '@/lib/tool-icons';
+import { categoryStyles } from '@/lib/tool-presentation';
 import { pushRecentTool } from '@/lib/recent-tools';
 import { cx, downloadBlob, safeFileName } from '@/lib/utils';
 import { dedupeFileName } from '@/lib/filename-safety';
@@ -376,7 +377,7 @@ function renderField(
   inputId: string,
   onChange: (key: string, nextValue: string | number | boolean) => void,
 ) {
-  const commonClassName = 'input-surface mt-1 w-full';
+  const commonClassName = 'input-surface h-10 w-full';
 
   if (option.type === 'select') {
     return (
@@ -392,13 +393,13 @@ function renderField(
 
   if (option.type === 'checkbox') {
     return (
-      <label className="mt-2 inline-flex items-center gap-2 text-sm text-ink-muted">
+      <label className="inline-flex items-center gap-2 text-sm text-ink-muted">
         <input
           id={inputId}
           type="checkbox"
           checked={Boolean(value)}
           onChange={(event) => onChange(option.key, event.target.checked)}
-          className="h-4 w-4"
+          className="h-4 w-4 rounded accent-prime"
         />
         {locale === 'ko' ? '사용' : 'Enabled'}
       </label>
@@ -412,14 +413,14 @@ function renderField(
         type="color"
         value={String(value)}
         onChange={(event) => onChange(option.key, event.target.value)}
-        className="mt-1 h-10 w-full rounded-xl border border-border bg-base-subtle"
+        className="h-10 w-full cursor-pointer rounded-[10px] border border-border-strong bg-base-elevated p-1"
       />
     );
   }
 
   if (option.type === 'range') {
     return (
-      <div className="mt-1 space-y-2">
+      <div className="flex items-center gap-3">
         <input
           id={inputId}
           type="range"
@@ -428,9 +429,11 @@ function renderField(
           min={option.min}
           max={option.max}
           step={option.step}
-          className="w-full accent-cyan-400"
+          className="w-full accent-prime"
         />
-        <p className="text-xs font-mono text-ink-muted">{String(value)}</p>
+        <output htmlFor={inputId} className="w-12 shrink-0 text-right text-sm font-medium tabular-nums text-ink">
+          {String(value)}
+        </output>
       </div>
     );
   }
@@ -465,19 +468,18 @@ function renderOptionField(
   const inputId = `tool-option-${tool.id}-${option.key}`;
 
   return (
-    <div key={option.key} className="workspace-section p-4">
-      <label htmlFor={inputId} className="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">
+    <div key={option.key} className="space-y-2">
+      <label htmlFor={inputId} className="block text-sm font-medium text-ink">
         {getLocalizedOptionLabel(option, locale)}
       </label>
       {presetGroup ? (
-        <div className="mt-3 rounded-xl2 border border-border bg-base-subtle/70 p-3">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-faint">{presetGroup.title}</p>
-              <p className="mt-1 text-xs text-ink-muted">{presetGroup.description}</p>
-            </div>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
+        <div className="space-y-2">
+          <p className="text-xs leading-relaxed text-ink-faint">
+            <span className="font-medium text-ink-muted">{presetGroup.title}</span>
+            <span aria-hidden="true"> · </span>
+            {presetGroup.description}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
             {presetGroup.presets.map((preset) => {
               const active = isPresetActive(preset, values);
 
@@ -487,10 +489,11 @@ function renderOptionField(
                   type="button"
                   data-testid={`option-preset-${option.key}-${preset.id}`}
                   onClick={() => applyPresetValues(preset.values, allOptions, onChange)}
+                  aria-pressed={active}
                   className={cx(
-                    'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                    'rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
                     active
-                      ? 'border-prime/60 bg-prime/10 text-prime'
+                      ? 'border-prime/50 bg-prime/10 text-prime'
                       : 'border-border bg-base-elevated text-ink-muted hover:border-border-bright hover:text-ink',
                   )}
                 >
@@ -544,7 +547,7 @@ function StandardToolWorkbench({
   const resultsSectionRef = useRef<HTMLElement | null>(null);
 
   const displayCategoryId = categoryId ?? tool.category;
-  const Icon = categoryIcons[displayCategoryId];
+  const Icon = getToolIcon(tool.id, displayCategoryId);
   const style = categoryStyles[displayCategoryId];
   const localizedTool = getLocalizedToolCopy(tool, locale);
   const toolOptions = tool.options ?? [];
@@ -818,11 +821,9 @@ function StandardToolWorkbench({
   };
 
   const optionMemoryPanel = supportsOptionMemory ? (
-    <div className="rounded-xl border border-border bg-base-subtle/70 px-3 py-2" data-testid="tool-option-memory-panel">
+    <div className="rounded-xl border border-border bg-base-subtle/60 px-3 py-2.5" data-testid="tool-option-memory-panel">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-faint">
-          {messages.workbench.settingsMemoryTitle}
-        </p>
+        <p className="text-xs font-medium text-ink-muted">{messages.workbench.settingsMemoryTitle}</p>
         <div className="flex flex-wrap gap-1.5">
           <button
             type="button"
@@ -862,7 +863,13 @@ function StandardToolWorkbench({
   ) : null;
 
   return (
-    <ToolPageLayout title={localizedTool.name} description={localizedTool.description} icon={Icon} iconColor={style.icon}>
+    <ToolPageLayout
+      title={localizedTool.name}
+      description={localizedTool.description}
+      icon={Icon}
+      iconColor={style.icon}
+      iconBg={style.iconBg}
+    >
       <div className="space-y-6">
         <div
           className={cx(
@@ -873,7 +880,7 @@ function StandardToolWorkbench({
           {usesDirectInput ? (
             <section className="workspace-panel p-5 sm:p-6">
               <div>
-                <p className="text-sm font-semibold text-ink">{messages.workbench.directInputTitle}</p>
+                <h2 className="text-[15px] font-semibold text-ink">{messages.workbench.directInputTitle}</h2>
                 <p className="mt-1 text-sm text-ink-muted">{messages.workbench.directInputDescription}</p>
               </div>
 
@@ -884,7 +891,7 @@ function StandardToolWorkbench({
               </div>
               {optionMemoryPanel ? <div className="mt-4">{optionMemoryPanel}</div> : null}
 
-              <button type="button" disabled={running} onClick={onProcess} className="btn-primary mt-5 w-full justify-center lg:w-auto">
+              <button type="button" disabled={running} onClick={onProcess} className="btn-primary mt-6 h-11 w-full lg:w-auto lg:px-6">
                 {running ? <LoaderCircle size={18} className="animate-spin" /> : <Play size={18} />}
                 {running ? messages.workbench.running : messages.workbench.runTool}
               </button>
@@ -893,8 +900,8 @@ function StandardToolWorkbench({
             <>
               <section className={cx('workspace-panel space-y-5 p-5 sm:p-6', showOptionsPanel && !showWideEditorLayout && 'xl:col-span-3')}>
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-ink">{messages.workbench.files}</p>
-                  {fileOptional ? <span className={`badge border ${style.badge}`}>{messages.workbench.optionalUpload}</span> : null}
+                  <h2 className="text-[15px] font-semibold text-ink">{messages.workbench.files}</h2>
+                  {fileOptional ? <span className="badge border border-border bg-base-subtle text-ink-muted">{messages.workbench.optionalUpload}</span> : null}
                 </div>
 
                 <DropZone
@@ -1012,7 +1019,7 @@ function StandardToolWorkbench({
 
                 {!showOptionsPanel && optionMemoryPanel ? <div>{optionMemoryPanel}</div> : null}
                 {!showOptionsPanel ? (
-                  <button type="button" disabled={running} onClick={onProcess} className="btn-primary w-full justify-center">
+                  <button type="button" disabled={running} onClick={onProcess} className="btn-primary h-11 w-full">
                     {running ? <LoaderCircle size={18} className="animate-spin" /> : <Play size={18} />}
                     {running ? messages.workbench.running : messages.workbench.runTool}
                   </button>
@@ -1020,16 +1027,21 @@ function StandardToolWorkbench({
               </section>
 
               {showOptionsPanel ? (
-                <section className={cx('workspace-panel p-5 sm:p-6', !showWideEditorLayout && 'xl:col-span-2')}>
-                  <p className="text-sm font-semibold text-ink">{messages.workbench.options}</p>
+                <section
+                  className={cx(
+                    'workspace-panel p-5 sm:p-6',
+                    !showWideEditorLayout && 'xl:sticky xl:top-[4.5rem] xl:col-span-2 xl:self-start',
+                  )}
+                >
+                  <h2 className="text-[15px] font-semibold text-ink">{messages.workbench.options}</h2>
                   {optionMemoryPanel ? <div className="mt-4">{optionMemoryPanel}</div> : null}
-                  <div className="mt-4 space-y-4">
+                  <div className="mt-5 space-y-5">
                     {visibleToolOptions.map((option, optionIndex, allOptions) =>
                       renderOptionField(tool, option, optionIndex, allOptions, options, locale, updateOptionValue),
                     )}
                   </div>
 
-                  <button type="button" disabled={running} onClick={onProcess} className="btn-primary mt-5 w-full justify-center">
+                  <button type="button" disabled={running} onClick={onProcess} className="btn-primary mt-6 h-11 w-full">
                     {running ? <LoaderCircle size={18} className="animate-spin" /> : <Play size={18} />}
                     {running ? messages.workbench.running : messages.workbench.runTool}
                   </button>
@@ -1048,7 +1060,7 @@ function StandardToolWorkbench({
         {showResults ? (
           <section ref={resultsSectionRef} className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-ink">{messages.workbench.results}</p>
+              <h2 className="text-[15px] font-semibold text-ink">{messages.workbench.results}</h2>
               {results.length > 1 ? (
                 <button type="button" onClick={onDownloadAll} disabled={!results.length} className="btn-ghost disabled:opacity-60">
                   <Download size={16} />
@@ -1057,7 +1069,12 @@ function StandardToolWorkbench({
               ) : null}
             </div>
 
-            {error ? <div className="workspace-panel border-danger/30 bg-danger/10 p-4 text-sm text-danger">{error}</div> : null}
+            {error ? (
+              <div role="alert" className="flex items-start gap-3 rounded-2xl border border-danger/25 bg-danger/5 p-4 text-sm text-danger">
+                <AlertCircle size={18} className="mt-px shrink-0" aria-hidden="true" />
+                <p className="min-w-0 break-words">{error}</p>
+              </div>
+            ) : null}
 
             {results.length > 0 ? (
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -1111,7 +1128,7 @@ function StandardToolWorkbench({
                       {result.textContent ? (
                         <div className="space-y-3">
                           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-base-subtle/70 px-3 py-2">
-                            <p className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.extractedText}</p>
+                            <p className="text-xs font-medium text-ink-muted">{messages.workbench.extractedText}</p>
                             <button
                               type="button"
                               data-testid="result-copy-text"
@@ -1122,18 +1139,18 @@ function StandardToolWorkbench({
                               {messages.workbench.copyText}
                             </button>
                           </div>
-                          <pre className="max-h-64 overflow-auto rounded-xl border border-border bg-base-subtle p-3 text-xs text-ink">
+                          <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-xl border border-border bg-base-subtle p-3 font-mono text-xs leading-relaxed text-ink">
                             {result.textContent}
                           </pre>
                         </div>
                       ) : null}
                       {result.metadata ? (
-                        <dl className="max-h-64 space-y-2 overflow-auto rounded-xl border border-border bg-base-subtle p-3">
+                        <dl className="grid max-h-64 grid-cols-1 gap-x-6 gap-y-2.5 overflow-auto rounded-xl border border-border bg-base-subtle/60 p-3.5 sm:grid-cols-2">
                           {Object.entries(result.metadata)
                             .filter((entry): entry is [string, string | number | boolean] => entry[1] !== null && entry[1] !== undefined)
                             .map(([key, value]) => (
                               <div key={key}>
-                                <dt className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">{humanizeMetadataKey(key)}</dt>
+                                <dt className="text-xs text-ink-faint">{humanizeMetadataKey(key)}</dt>
                                 <dd className="mt-0.5 break-words text-sm text-ink">{formatMetadataValue(value, locale)}</dd>
                               </div>
                             ))}

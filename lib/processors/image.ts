@@ -24,9 +24,21 @@ function canvas(width: number, height: number): HTMLCanvasElement {
   return c;
 }
 
+// JPEG has no alpha channel and browsers encode transparent pixels as black, so
+// composite onto white first — what viewers show for transparent areas.
+function flattenOnWhite(source: HTMLCanvasElement): HTMLCanvasElement {
+  const flat = canvas(source.width, source.height);
+  const ctx = flat.getContext('2d')!;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, flat.width, flat.height);
+  ctx.drawImage(source, 0, 0);
+  return flat;
+}
+
 async function canvasBlob(source: HTMLCanvasElement, mimeType = 'image/png', quality = 0.92): Promise<Blob> {
+  const encodable = mimeType === 'image/jpeg' ? flattenOnWhite(source) : source;
   return await new Promise((resolve, reject) => {
-    source.toBlob(
+    encodable.toBlob(
       (blob) => {
         if (!blob) {
           reject(new Error('이미지 Blob 생성에 실패했습니다.'));

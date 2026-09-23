@@ -30,7 +30,7 @@ export function BeforeAfterImageCompare({
           <p className="text-sm font-semibold text-ink">{title}</p>
           <p className="mt-1 text-xs text-ink-muted">{description}</p>
         </div>
-        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-faint">
+        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-faint">
           <span className="rounded-full border border-border bg-base-elevated px-2 py-1">{beforeLabel}</span>
           <span className="rounded-full border border-prime/30 bg-prime/10 px-2 py-1 text-prime">{afterLabel}</span>
         </div>
@@ -57,7 +57,7 @@ export function BeforeAfterImageCompare({
       </div>
 
       <label className="block">
-        <span className="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">{sliderLabel}</span>
+        <span className="text-xs font-medium uppercase tracking-[0.04em] text-ink-faint">{sliderLabel}</span>
         <input
           type="range"
           min={0}
@@ -65,7 +65,7 @@ export function BeforeAfterImageCompare({
           step={1}
           value={position}
           onChange={(event) => setPosition(Number(event.target.value))}
-          className="mt-3 w-full accent-cyan-500"
+          className="mt-3 w-full accent-prime"
           data-testid={`${testIdPrefix}-slider`}
         />
       </label>

@@ -372,7 +372,7 @@ export function ImageCropEditor({
   return (
     <div className="space-y-4" data-testid={`${testIdPrefix}-editor`}>
       <div className="rounded-xl border border-border bg-base-elevated p-3">
-        <p className="text-xs uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.cropAspectRatio}</p>
+        <p className="text-xs uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.cropAspectRatio}</p>
         <div className="mt-3 flex flex-wrap gap-2">
           {aspectPresets.map((preset) => (
             <button
@@ -462,19 +462,19 @@ export function ImageCropEditor({
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4" data-testid={`${testIdPrefix}-metrics`}>
         <div className="rounded-xl border border-border bg-base-elevated px-3 py-3">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">X</p>
+          <p className="text-[11px] uppercase tracking-[0.04em] text-ink-faint">X</p>
           <p className="mt-2 text-sm font-semibold text-ink">{normalizedCrop.x}px</p>
         </div>
         <div className="rounded-xl border border-border bg-base-elevated px-3 py-3">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">Y</p>
+          <p className="text-[11px] uppercase tracking-[0.04em] text-ink-faint">Y</p>
           <p className="mt-2 text-sm font-semibold text-ink">{normalizedCrop.y}px</p>
         </div>
         <div className="rounded-xl border border-border bg-base-elevated px-3 py-3">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.cropWidthLabel}</p>
+          <p className="text-[11px] uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.cropWidthLabel}</p>
           <p className="mt-2 text-sm font-semibold text-ink">{normalizedCrop.width}px</p>
         </div>
         <div className="rounded-xl border border-border bg-base-elevated px-3 py-3">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-ink-faint">{messages.workbench.cropHeightLabel}</p>
+          <p className="text-[11px] uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.cropHeightLabel}</p>
           <p className="mt-2 text-sm font-semibold text-ink">{normalizedCrop.height}px</p>
         </div>
       </div>

@@ -1,52 +1,53 @@
 'use client';
 
 import Link from 'next/link';
-import { Archive, FileText, Globe, Home, Image, Layers3, Monitor, Music, ScanSearch, Video } from 'lucide-react';
+import { Home, LayoutGrid, Workflow } from 'lucide-react';
 import { usePathname } from 'next/navigation';
-import { motion } from 'framer-motion';
 import { useLocale } from '@/components/providers/locale-provider';
+import { isNavItemActive } from '@/components/layout/navigation-list';
 import { getCategoryCopy } from '@/lib/i18n';
+import { categoryIcons } from '@/lib/tool-presentation';
+import { categories } from '@/lib/tool-registry';
 
-const items = [
+const primaryItems = [
   { href: '/', key: 'home', icon: Home },
-  { href: '/tools', key: 'allTools', icon: Layers3 },
-  { href: '/tools/pdf', key: 'pdf', icon: FileText },
-  { href: '/tools/image', key: 'image', icon: Image },
-  { href: '/tools/ocr', key: 'ocr', icon: ScanSearch },
-  { href: '/tools/video', key: 'video', icon: Video },
-  { href: '/tools/audio', key: 'audio', icon: Music },
-  { href: '/tools/screen', key: 'screen', icon: Monitor },
-  { href: '/tools/file', key: 'file', icon: Archive },
-  { href: '/tools/web', key: 'web', icon: Globe },
+  { href: '/tools', key: 'allTools', icon: LayoutGrid },
+  { href: '/pipeline', key: 'pipeline', icon: Workflow },
 ] as const;
 
 export function BottomNav() {
   const pathname = usePathname() ?? '';
   const { locale, messages } = useLocale();
 
+  const items = [
+    ...primaryItems.map(({ href, key, icon }) => ({ href, icon, label: messages.nav[key] })),
+    ...categories.map((category) => ({
+      href: `/tools/${category.id}`,
+      icon: categoryIcons[category.id],
+      label: getCategoryCopy(locale, category.id).nav,
+    })),
+  ];
+
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-base-subtle/90 backdrop-blur md:hidden">
+    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-base-elevated/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden">
       <div
         data-testid="mobile-bottom-nav-scroll"
-        className="overflow-x-auto px-3 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="overflow-x-auto px-2 py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        <nav aria-label={messages.shell.navigate} className="mx-auto flex min-w-max gap-2 rounded-[1.4rem] border border-border/60 bg-base-elevated/75 p-2 shadow-card">
-          {items.map(({ href, key, icon: Icon }) => {
-            const active = pathname === href || (href !== '/' && pathname.startsWith(href));
-            const label =
-              key === 'home' || key === 'allTools' ? messages.nav[key] : getCategoryCopy(locale, key).nav;
-
+        <nav aria-label={messages.shell.navigate} className="flex min-w-max gap-1">
+          {items.map(({ href, icon: Icon, label }) => {
+            const active = isNavItemActive(pathname, href);
             return (
-              <Link key={href} href={href} className="shrink-0">
-                <motion.div
-                  whileTap={{ scale: 0.95 }}
-                  className={`flex min-w-[80px] flex-col items-center gap-1 rounded-xl2 px-3 py-2.5 text-[11px] ${
-                    active ? 'bg-base text-ink shadow-card' : 'text-ink-muted'
-                  }`}
-                >
-                  <Icon size={16} />
-                  <span className="max-w-[68px] truncate">{label}</span>
-                </motion.div>
+              <Link
+                key={href}
+                href={href}
+                aria-current={active ? 'page' : undefined}
+                className={`flex min-w-[64px] shrink-0 flex-col items-center gap-1 rounded-xl px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+                  active ? 'bg-base-subtle text-ink' : 'text-ink-muted'
+                }`}
+              >
+                <Icon size={19} className={active ? 'text-prime' : undefined} />
+                <span className="max-w-[72px] truncate">{label}</span>
               </Link>
             );
           })}

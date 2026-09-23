@@ -13,11 +13,11 @@ export function ThemeToggle() {
     <button
       type="button"
       onClick={toggleTheme}
-      className="topbar-button inline-flex h-11 w-11"
+      className="topbar-button h-9 w-9"
       aria-label={messages.topbar.toggleTheme}
       title={isDark ? messages.topbar.switchToLight : messages.topbar.switchToDark}
     >
-      {isDark ? <SunMedium size={18} /> : <MoonStar size={18} />}
+      {isDark ? <SunMedium size={17} /> : <MoonStar size={17} />}
     </button>
   );
 }

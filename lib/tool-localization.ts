@@ -150,7 +150,7 @@ const koToolDescriptions: Record<string, string> = {
 };
 
 const koOptionLabelsByLabel: Record<string, string> = {
-  'Page order': '페이지 순서',
+  'Pages to keep, in order': '남길 페이지 (적은 순서대로)',
   Rotation: '회전 각도',
   'Pages to delete': '삭제할 페이지',
   'Start number': '시작 번호',
@@ -258,7 +258,7 @@ const koChoiceLabels: Record<string, string> = {
 };
 
 const koPlaceholders: Record<string, string> = {
-  'e.g. 3,1,2': '예: 3,1,2',
+  'e.g. 3,1,2 or 4-6 (unlisted pages are removed)': '예: 3,1,2 또는 4~6 (적지 않은 페이지는 빠집니다)',
   'e.g. 2,5': '예: 2,5',
 };
 

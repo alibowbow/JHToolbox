@@ -47,7 +47,7 @@ export async function processOcrTool(ctx: ProcessContext): Promise<ProcessedFile
   }
 
   if (toolId === 'ocr-image-to-text') {
-    const lang = String(options.lang ?? 'eng');
+    const lang = String(options.lang ?? 'kor+eng');
     const outputFiles: ProcessedFile[] = [];
 
     for (let index = 0; index < files.length; index += 1) {

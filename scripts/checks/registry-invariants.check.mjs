@@ -108,6 +108,14 @@ for (const [catId, secs] of Object.entries(sections)) {
   check(`section ${catId}: covers every tool shown on the page (missing: ${missing.join(', ') || 'none'})`, missing.length === 0);
 }
 
+// 6. every file-processing tool is routed to a processor. Capture tools run in
+//    the capture workbench instead; everything else (including hidden/legacy
+//    ids, which the pipeline builder can still run) must reach runTool's
+//    dispatch, or it fails at run time with "Unsupported tool.".
+const router = await loadStripped('lib/processors/index.ts');
+const unrouted = tools.filter((t) => t.inputMode !== 'capture' && !router.isRoutedTool(t.id)).map((t) => t.id);
+check(`every non-capture tool is routed (unrouted: ${unrouted.join(', ') || 'none'})`, unrouted.length === 0);
+
 console.log(
   `\nregistry-invariants: ${pass} passed, ${fail} failed (tools=${tools.length}, browsable=${browsable.length})`,
 );
