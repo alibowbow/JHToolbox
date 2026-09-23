@@ -104,3 +104,15 @@ export function normalizeToolOptions(
 
   return out;
 }
+
+/** Whether an option applies given the other current values (see ToolOption.showWhen). */
+export function isOptionApplicable(
+  option: { showWhen?: { key: string; equals: Array<string | number | boolean> } },
+  values: Record<string, unknown>,
+): boolean {
+  if (!option.showWhen) {
+    return true;
+  }
+  const current = values[option.showWhen.key];
+  return option.showWhen.equals.some((expected) => String(expected) === String(current));
+}

@@ -53,6 +53,7 @@ check('kept original reports 0% saved', summarizePdfReduction(1000, 1200).savedP
 // mode resolution
 check('mode flatten', resolveReduceMode('flatten') === 'flatten');
 check('mode keep-text', resolveReduceMode('keep-text') === 'keep-text');
+check('mode structure', resolveReduceMode('structure') === 'structure');
 check('mode unknown -> flatten (default)', resolveReduceMode('x') === 'flatten');
 check('mode undefined -> flatten (default)', resolveReduceMode(undefined) === 'flatten');
 

@@ -17,4 +17,6 @@ export interface ProcessContext {
   files: File[];
   options: Record<string, string | number | boolean>;
   onProgress: (progress: ProcessProgress) => void;
+  /** Aborted when the user cancels; long-running processors should stop early. */
+  signal?: AbortSignal;
 }

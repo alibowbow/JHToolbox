@@ -12,8 +12,11 @@ export interface RunPipelineInput {
   /** Optional: a tool's accepted-input string, for non-blocking warnings. */
   acceptForTool?: (toolId: string) => string | undefined;
   onProgress?: (progress: PipelineProgress) => void;
-  /** Cooperative cancellation checked between steps. */
-  signal?: { aborted: boolean };
+  /**
+   * Cancellation: checked between steps, and — when it is a real AbortSignal —
+   * also handed to the running step so it can stop mid-way.
+   */
+  signal?: { aborted: boolean } | AbortSignal;
 }
 
 function clampPercent(value: number): number {
@@ -105,8 +108,13 @@ export async function runPipeline(input: RunPipelineInput): Promise<PipelineRunR
         files: current,
         options: step.options,
         onProgress: report,
+        signal: typeof AbortSignal !== 'undefined' && input.signal instanceof AbortSignal ? input.signal : undefined,
       });
     } catch (cause) {
+      if (input.signal?.aborted) {
+        results.push({ toolId: step.toolId, ok: false, outputCount: 0, warning, error: 'Pipeline cancelled.' });
+        return { ok: false, steps: results, finalFiles: [], failedStepIndex: index };
+      }
       const message = cause instanceof Error ? cause.message : 'This step failed.';
       results.push({ toolId: step.toolId, ok: false, outputCount: 0, warning, error: message });
       return { ok: false, steps: results, finalFiles: [], failedStepIndex: index };

@@ -138,6 +138,7 @@ test('full-page capture keeps looking when a service returns only the first scre
     await route.fulfill({ status: 404, body: '' });
   });
 
+  await page.getByRole('textbox').first().fill('https://example.com');
   await page.getByRole('button', { name: 'Run tool' }).click();
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Download original' }).click();

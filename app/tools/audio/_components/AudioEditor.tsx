@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useLocale } from '@/components/providers/locale-provider';
 import {
   ProjectHistory,
@@ -106,7 +107,46 @@ function getVisibleTrackName(track: AudioProjectTrack | null, locale: 'en' | 'ko
   return track.name;
 }
 
+/**
+ * The audio shortcuts (cut, merge, fade, speed, pitch, record) all open this
+ * editor; `?intent=` says which job the user came for.
+ */
+type AudioIntent = 'cut' | 'merge' | 'fade' | 'speed' | 'pitch' | 'record';
+const INTENT_TABS: Partial<Record<AudioIntent, AudioEffectTab>> = { fade: 'fade', speed: 'speed', pitch: 'pitch' };
+const INTENT_PROMPTS: Record<string, { en: string; ko: string }> = {
+  cut: {
+    en: 'Open an audio file, then drag across the waveform to select the part to keep or remove.',
+    ko: '오디오 파일을 연 뒤, 파형 위를 드래그해 남기거나 지울 구간을 고르세요.',
+  },
+  merge: {
+    en: 'Open several audio files at once — each becomes a track you can line up and export as one file.',
+    ko: '여러 오디오 파일을 한 번에 여세요. 파일마다 트랙이 되고, 이어 붙여 한 파일로 저장할 수 있어요.',
+  },
+  fade: {
+    en: 'Open an audio file — the Fade panel below is ready for fade in / fade out.',
+    ko: '오디오 파일을 열면 아래 페이드 패널에서 페이드 인/아웃을 바로 적용할 수 있어요.',
+  },
+  speed: {
+    en: 'Open an audio file — the Speed panel below changes the tempo.',
+    ko: '오디오 파일을 열면 아래 속도 패널에서 빠르기를 바꿀 수 있어요.',
+  },
+  pitch: {
+    en: 'Open an audio file — the Pitch panel below shifts the key.',
+    ko: '오디오 파일을 열면 아래 피치 패널에서 음높이를 바꿀 수 있어요.',
+  },
+  record: {
+    en: 'Press the red record button above to record from your microphone.',
+    ko: '위의 빨간 녹음 버튼을 누르면 마이크로 녹음을 시작합니다.',
+  },
+};
+
+function readIntent(value: string | null): AudioIntent | null {
+  return value && value in INTENT_PROMPTS ? (value as AudioIntent) : null;
+}
+
 export function AudioEditor({ mode }: AudioEditorProps) {
+  const searchParams = useSearchParams();
+  const intent = readIntent(searchParams?.get('intent') ?? null);
   const { locale } = useLocale();
   const copy = useMemo(() => getAudioEditorCopy(locale), [locale]);
 
@@ -119,7 +159,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const [zoom, setZoom] = useState(1);
   const [loopEnabled, setLoopEnabled] = useState(false);
   const [effects, setEffects] = useState<AudioEffectsState>(DEFAULT_EFFECTS);
-  const [activeTab, setActiveTab] = useState<AudioEffectTab>('fade');
+  const [activeTab, setActiveTab] = useState<AudioEffectTab>(() => (intent && INTENT_TABS[intent]) || 'fade');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -134,6 +174,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const [recordingDuration, setRecordingDuration] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const importFilesRef = useRef<(files: File[]) => Promise<void>>(async () => undefined);
   const playerRef = useRef<ProjectPlayer | null>(null);
   const historyRef = useRef(new ProjectHistory());
   const tracksRef = useRef<AudioProjectTrack[]>([]);
@@ -369,6 +410,17 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     setStatusMessage(copy.status.redoApplied);
   };
 
+  // Files chosen before the editor finished loading sit in the input without
+  // a handled change event; import them once mounted.
+  useEffect(() => {
+    const input = fileInputRef.current;
+    if (input?.files && input.files.length > 0) {
+      const pending = Array.from(input.files);
+      input.value = '';
+      window.setTimeout(() => void importFilesRef.current(pending), 0);
+    }
+  }, []);
+
   const openPicker = () => {
     if (isRecording || !fileInputRef.current) {
       return;
@@ -455,6 +507,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       setLoadError(error instanceof Error ? error.message : copy.status.decodeFailed);
     }
   };
+  importFilesRef.current = importFiles;
 
   const handleAddEmptyTrack = () => {
     const nextTrack = createProjectTrack(
@@ -1380,8 +1433,8 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     </div>
   );
 
-  const emptyStatePromptText =
-    locale === 'ko' ? '오디오를 불러오거나 녹음 버튼을 눌러 시작하세요.' : 'Open audio or press the record button to get started.';
+  const emptyStatePromptText = INTENT_PROMPTS[intent ?? '']?.[locale] ?? (
+    locale === 'ko' ? '오디오를 불러오거나 녹음 버튼을 눌러 시작하세요.' : 'Open audio or press the record button to get started.');
   const emptyStateFeatureList =
     locale === 'ko'
       ? ['자르기', '오디오 변환', '녹음', '멀티트랙', '리버브', '앰플리파이', 'EQ']

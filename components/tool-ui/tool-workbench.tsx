@@ -1,51 +1,63 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import JSZip from 'jszip';
-import { AlertCircle, Copy, Download, LoaderCircle, Play } from 'lucide-react';
+import { AlertCircle, Check, Copy, Download, LoaderCircle, Play, RotateCcw, X } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import { ToolPageLayout } from '@/components/ToolPageLayout';
 import { useLocale } from '@/components/providers/locale-provider';
-import { AudioWaveformEditor } from '@/components/ui/AudioWaveformEditor';
-import { BeforeAfterImageCompare } from '@/components/ui/BeforeAfterImageCompare';
-import { BrowserCaptureWorkbench } from '@/components/tool-ui/browser-capture-workbench';
-import { PdfPageEditor, PdfEditorPage } from '@/components/ui/PdfPageEditor';
+import { EditStampPreview, SignStampPreview, WatermarkPreview, useObjectUrl } from '@/components/tool-ui/pdf-stage-previews';
+import { parseRegions, serializeRegions } from '@/lib/pdf-regions';
 import { DropZone } from '@/components/ui/DropZone';
-import { ProgressBar } from '@/components/ui/ProgressBar';
-import { ImageCropEditor, type CropRect } from '@/components/ui/ImageCropEditor';
+import type { PdfEditorPage } from '@/components/ui/PdfPageEditor';
+import type { CropRect } from '@/components/ui/crop-math';
 import { ResultCard } from '@/components/ui/ResultCard';
-import { UrlImageCropper } from '@/components/ui/UrlImageCropper';
-import { VideoTimelineEditor } from '@/components/ui/VideoTimelineEditor';
-import { toast } from '@/components/ui/Toast';
-import { formatMegaBytes } from '@/lib/i18n';
+import { ContinueMenu } from '@/components/ui/ContinueMenu';
+import { formatFileCount, formatMegaBytes } from '@/lib/i18n';
 import {
   getLocalizedChoiceLabel,
   getLocalizedOptionLabel,
   getLocalizedPlaceholder,
   getLocalizedToolCopy,
 } from '@/lib/tool-localization';
-import {
-  getLastRunToolOptions,
-  getPresetToolOptions,
-  hasPresetToolOptions,
-  saveLastRunToolOptions,
-  savePresetToolOptions,
-} from '@/lib/tool-option-memory';
+import { getLastRunToolOptions, saveLastRunToolOptions } from '@/lib/tool-option-memory';
+import { receiveHandedOffFiles } from '@/lib/file-handoff';
+import { partitionByAccept } from '@/lib/file-accept';
+import { nextToolIds } from '@/lib/next-tools';
+import { getDisplayMetadata, localizeErrorMessage, localizeStage } from '@/lib/error-messages';
 import { runTool } from '@/lib/processors';
 import { getToolIcon } from '@/lib/tool-icons';
 import { categoryStyles } from '@/lib/tool-presentation';
 import { pushRecentTool } from '@/lib/recent-tools';
 import { cx, downloadBlob, safeFileName } from '@/lib/utils';
 import { dedupeFileName } from '@/lib/filename-safety';
-import { normalizeToolOptions } from '@/lib/option-schema';
+import { isOptionApplicable, normalizeToolOptions } from '@/lib/option-schema';
 import { ProcessedFile } from '@/types/processor';
 import { ToolDefinition, ToolOption } from '@/types/tool';
+
+// Editors load only for the tools that show them.
+const BeforeAfterImageCompare = dynamic(() => import('@/components/ui/BeforeAfterImageCompare').then((mod) => mod.BeforeAfterImageCompare), { ssr: false });
+const PdfPageEditor = dynamic(() => import('@/components/ui/PdfPageEditor').then((mod) => mod.PdfPageEditor), { ssr: false });
+const PdfPagePicker = dynamic(() => import('@/components/ui/PdfPagePicker').then((mod) => mod.PdfPagePicker), { ssr: false });
+const PdfPlacementEditor = dynamic(() => import('@/components/ui/PdfPlacementEditor').then((mod) => mod.PdfPlacementEditor), { ssr: false });
+const ImageCropEditor = dynamic(() => import('@/components/ui/ImageCropEditor').then((mod) => mod.ImageCropEditor), { ssr: false });
+const ImageOverlayEditor = dynamic(() => import('@/components/ui/ImageOverlayEditor').then((mod) => mod.ImageOverlayEditor), { ssr: false });
+const ImageTransformPreview = dynamic(() => import('@/components/ui/ImageTransformPreview').then((mod) => mod.ImageTransformPreview), { ssr: false });
+const UrlImageCropper = dynamic(() => import('@/components/ui/UrlImageCropper').then((mod) => mod.UrlImageCropper), { ssr: false });
+const VideoTimelineEditor = dynamic(() => import('@/components/ui/VideoTimelineEditor').then((mod) => mod.VideoTimelineEditor), { ssr: false });
+const BrowserCaptureWorkbench = dynamic(
+  () => import('@/components/tool-ui/browser-capture-workbench').then((mod) => mod.BrowserCaptureWorkbench),
+  { ssr: false },
+);
+const DataFilePreview = dynamic(() => import('@/components/ui/DataFilePreview').then((mod) => mod.DataFilePreview), { ssr: false });
 
 const OPTIONAL_FILE_TOOLS = new Set(['qr-generator', 'url-image', 'url-pdf', 'detect-cms']);
 const PDF_EDITOR_TOOLS = new Set(['pdf-merge', 'pdf-rearrange']);
 const CUSTOM_OPTIONS_IN_PREVIEW_TOOLS = new Set(['pdf-rearrange', 'image-crop', 'video-trim', 'video-crop']);
 const IMAGE_COMPARE_EXCLUDED_TOOL_IDS = new Set([
   'image-crop',
+  'image-rotate',
   'image-split',
   'image-combine',
   'image-collage',
@@ -90,6 +102,12 @@ const HIDDEN_OPTION_KEYS_BY_TOOL_ID: Record<string, Set<string>> = {
   'mute-video': new Set(['startTime', 'endTime']),
   'extract-audio': new Set(['startTime', 'endTime']),
   'video-reverse': new Set(['startTime', 'endTime']),
+  // Set by dragging on the picture or page instead of typing coordinates.
+  'image-add-text': new Set(['x', 'y']),
+  'image-watermark': new Set(['x', 'y']),
+  'pdf-sign': new Set(['pageNumber', 'x', 'y', 'width', 'height']),
+  'edit-pdf': new Set(['pageNumber', 'x', 'y', 'width', 'height']),
+  'pdf-redact': new Set(['pageStart', 'pageEnd', 'x', 'y', 'width', 'height']),
 };
 
 type SearchParamSource = Pick<URLSearchParams, 'get'>;
@@ -103,7 +121,6 @@ type OptionPreset = {
 
 type OptionPresetGroup = {
   title: string;
-  description: string;
   presets: OptionPreset[];
 };
 
@@ -120,13 +137,9 @@ const OUTPUT_WIDTH_PRESET_TOOL_IDS = new Set([
 const PRESET_COPY = {
   en: {
     recommendedSizesTitle: 'Recommended sizes',
-    recommendedSizesDescription: 'Start from a common preset, then fine-tune the numbers below.',
     canvasWidthTitle: 'Common canvas widths',
-    canvasWidthDescription: 'Use a typical viewport width instead of guessing pixel values.',
     outputWidthTitle: 'Common output widths',
-    outputWidthDescription: 'Pick a typical export width and adjust only if you need a custom size.',
     overlaySizeTitle: 'Common box sizes',
-    overlaySizeDescription: 'These presets match typical stamp, signature, and redact box sizes.',
     presetSquare: 'Square',
     presetPortrait: 'Portrait',
     presetStory: 'Story',
@@ -145,13 +158,9 @@ const PRESET_COPY = {
   },
   ko: {
     recommendedSizesTitle: '추천 크기',
-    recommendedSizesDescription: '자주 쓰는 크기부터 고른 뒤, 아래 숫자로 미세 조정하세요.',
     canvasWidthTitle: '자주 쓰는 캔버스 너비',
-    canvasWidthDescription: '픽셀 값을 추측하지 말고 대표 화면 폭부터 고르세요.',
     outputWidthTitle: '자주 쓰는 출력 너비',
-    outputWidthDescription: '보편적인 출력 폭을 먼저 고르고 필요할 때만 직접 조정하세요.',
     overlaySizeTitle: '자주 쓰는 박스 크기',
-    overlaySizeDescription: '서명, 편집 박스, 가림 영역에 맞는 대표 크기입니다.',
     presetSquare: '정사각형',
     presetPortrait: '세로형',
     presetStory: '스토리',
@@ -242,7 +251,6 @@ function getOptionPresetGroup(
     if (RESOLUTION_PRESET_TOOL_IDS.has(tool.id)) {
       return {
         title: copy.recommendedSizesTitle,
-        description: copy.recommendedSizesDescription,
         presets: [
           { id: 'square', label: `${copy.presetSquare} 1080×1080`, values: { width: 1080, height: 1080 } },
           { id: 'portrait', label: `${copy.presetPortrait} 1080×1350`, values: { width: 1080, height: 1350 } },
@@ -256,7 +264,6 @@ function getOptionPresetGroup(
     if (OVERLAY_SIZE_PRESET_TOOL_IDS.has(tool.id)) {
       return {
         title: copy.overlaySizeTitle,
-        description: copy.overlaySizeDescription,
         presets: buildOverlayPresets(locale, option, nextOption),
       };
     }
@@ -265,7 +272,6 @@ function getOptionPresetGroup(
   if (/canvas width/i.test(option.label)) {
     return {
       title: copy.canvasWidthTitle,
-      description: copy.canvasWidthDescription,
       presets: [
         { id: 'mobile', label: `${copy.presetMobile} 390px`, values: { width: 390 } },
         { id: 'tablet', label: `${copy.presetTablet} 768px`, values: { width: 768 } },
@@ -279,7 +285,6 @@ function getOptionPresetGroup(
   if (OUTPUT_WIDTH_PRESET_TOOL_IDS.has(tool.id)) {
     return {
       title: copy.outputWidthTitle,
-      description: copy.outputWidthDescription,
       presets: [
         { id: 'small', label: `${copy.presetSmall} 480px`, values: { width: 480 } },
         { id: 'medium', label: `${copy.presetMedium} 720px`, values: { width: 720 } },
@@ -323,33 +328,6 @@ function getInitialOptions(
 
 function hasSearchParamOverrides(tool: ToolDefinition, searchParams: SearchParamSource) {
   return (tool.options ?? []).some((option) => searchParams.get(option.key) !== null);
-}
-
-function moveFileItem(files: File[], fromIndex: number, toIndex: number) {
-  const nextFiles = [...files];
-  const [item] = nextFiles.splice(fromIndex, 1);
-  nextFiles.splice(toIndex, 0, item);
-  return nextFiles;
-}
-
-/** 'pageCount' / 'page_count' → 'Page count' — metadata keys are identifiers, not copy. */
-function humanizeMetadataKey(key: string): string {
-  const spaced = key
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/[_-]+/g, ' ')
-    .toLowerCase()
-    .trim();
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-}
-
-function formatMetadataValue(value: string | number | boolean, locale: 'en' | 'ko'): string {
-  if (typeof value === 'boolean') {
-    if (locale === 'ko') {
-      return value ? '예' : '아니요';
-    }
-    return value ? 'Yes' : 'No';
-  }
-  return String(value);
 }
 
 async function copyTextContent(text: string) {
@@ -473,12 +451,8 @@ function renderOptionField(
         {getLocalizedOptionLabel(option, locale)}
       </label>
       {presetGroup ? (
-        <div className="space-y-2">
-          <p className="text-xs leading-relaxed text-ink-faint">
-            <span className="font-medium text-ink-muted">{presetGroup.title}</span>
-            <span aria-hidden="true"> · </span>
-            {presetGroup.description}
-          </p>
+        <div className="space-y-1.5">
+          <p className="text-xs text-ink-faint">{presetGroup.title}</p>
           <div className="flex flex-wrap gap-1.5">
             {presetGroup.presets.map((preset) => {
               const active = isPresetActive(preset, values);
@@ -517,6 +491,27 @@ export function ToolWorkbench({ tool, categoryId }: { tool: ToolDefinition; cate
   return <StandardToolWorkbench tool={tool} categoryId={categoryId} />;
 }
 
+function resultToFile(result: ProcessedFile) {
+  return new File([result.blob], result.name, { type: result.mimeType });
+}
+
+function fileSignature(files: File[]) {
+  return files.map((file) => `${file.name}:${file.size}:${file.lastModified}`).join('|');
+}
+
+function optionsSignature(options: ToolOptionValues) {
+  return JSON.stringify(Object.keys(options).sort().map((key) => [key, options[key]]));
+}
+
+/** Tools where input order matters, so file rows get move buttons. */
+const REORDERABLE_TOOL_IDS = new Set(['pdf-merge', 'image-to-pdf', 'images-to-gif', 'image-combine', 'image-collage', 'create-zip']);
+const SIZE_REDUCTION_TOOL_IDS = new Set(['pdf-compress', 'pdf-reduce-size', 'image-compress', 'video-compress']);
+const TEXT_PREVIEW_LIMIT = 4000;
+/** Data converters: the input is shown as a table before converting. */
+const DATA_PREVIEW_TOOL_IDS = new Set(['csv-json', 'csv-excel', 'split-csv', 'json-csv', 'json-xml', 'xml-json', 'xml-csv', 'excel-csv']);
+/** PDF tools that also take an image (signature, overlay, watermark) to preview on the page. */
+const PDF_OVERLAY_TOOL_IDS = new Set(['pdf-sign', 'edit-pdf', 'pdf-watermark']);
+
 function StandardToolWorkbench({
   tool,
   categoryId,
@@ -524,7 +519,6 @@ function StandardToolWorkbench({
   tool: ToolDefinition;
   categoryId?: ToolDefinition['category'];
 }) {
-
   const { locale, messages } = useLocale();
   const rawSearchParams = useSearchParams();
   const searchParams: SearchParamSource = rawSearchParams ?? new URLSearchParams();
@@ -532,19 +526,21 @@ function StandardToolWorkbench({
   const [files, setFiles] = useState<File[]>([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [options, setOptions] = useState<Record<string, string | number | boolean>>(() =>
     getInitialOptions(tool, searchParams),
   );
   const optionsRef = useRef(options);
-  const [progress, setProgress] = useState<{ percent: number; stage: string }>({
-    percent: 0,
-    stage: messages.workbench.statusIdle,
-  });
+  const [progress, setProgress] = useState<{ percent: number; stage: string }>({ percent: 0, stage: '' });
   const [results, setResults] = useState<ProcessedFile[]>([]);
+  const [resultsSignature, setResultsSignature] = useState<string | null>(null);
   const [inputPreviewUrl, setInputPreviewUrl] = useState<string | null>(null);
-  const [savedPresetAvailable, setSavedPresetAvailable] = useState(false);
   const [restoredFromLastRun, setRestoredFromLastRun] = useState(false);
+  const [copied, setCopied] = useState<{ key: string; ok: boolean } | null>(null);
   const resultsSectionRef = useRef<HTMLElement | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const lastToolIdRef = useRef<string | null>(null);
+  const runIdRef = useRef(0);
 
   const displayCategoryId = categoryId ?? tool.category;
   const Icon = getToolIcon(tool.id, displayCategoryId);
@@ -552,17 +548,18 @@ function StandardToolWorkbench({
   const localizedTool = getLocalizedToolCopy(tool, locale);
   const toolOptions = tool.options ?? [];
   const hiddenOptionKeys = HIDDEN_OPTION_KEYS_BY_TOOL_ID[tool.id] ?? EMPTY_OPTION_KEY_SET;
-  const visibleToolOptions = toolOptions.filter((option) => !hiddenOptionKeys.has(option.key));
+  const visibleToolOptions = toolOptions.filter((option) => !option.hidden && !hiddenOptionKeys.has(option.key));
+  // Values an editor sets for the current file (trim range, crop box, capture
+  // time) are not preferences: remembering them would silently apply them to
+  // the next, different file.
+  const rememberableOptions = visibleToolOptions;
   const usesDirectInput = tool.inputMode === 'url';
   const usesPdfEditor = PDF_EDITOR_TOOLS.has(tool.id);
   const hasOptions = visibleToolOptions.length > 0;
-  const supportsOptionMemory = toolOptions.length > 0 && !CUSTOM_OPTIONS_IN_PREVIEW_TOOLS.has(tool.id);
+  const supportsOptionMemory = rememberableOptions.length > 0 && !CUSTOM_OPTIONS_IN_PREVIEW_TOOLS.has(tool.id);
   const showOptionsPanel = hasOptions && !CUSTOM_OPTIONS_IN_PREVIEW_TOOLS.has(tool.id);
-  const showWideEditorLayout = tool.id === 'audio-cut';
   const fileOptional = usesDirectInput || OPTIONAL_FILE_TOOLS.has(tool.id);
-  const showResults = results.length > 0 || error !== null;
   const dropLabel = fileOptional ? messages.workbench.dropzoneOptional : messages.workbench.dropzone;
-  const trimMode = String(options.trimMode ?? 'keep');
   const imageCropRect: CropRect = {
     x: Number(options.x ?? 0),
     y: Number(options.y ?? 0),
@@ -576,39 +573,84 @@ function StandardToolWorkbench({
       ? primaryVideoFile
       : files[0] ?? null;
   const videoEditorEnabled = Boolean(inputPreviewUrl && primaryVideoFile && sourceVideoFiles.length === 1 && VIDEO_EDITOR_TOOL_IDS.has(tool.id));
-
-  const syncOptionMemoryAvailability = () => {
-    setSavedPresetAvailable(supportsOptionMemory ? hasPresetToolOptions(tool.id) : false);
-  };
+  const inputSignature = useMemo(() => `${fileSignature(files)}#${optionsSignature(options)}`, [files, options]);
+  const showResults = results.length > 0 || error !== null;
 
   useEffect(() => {
     optionsRef.current = options;
   }, [options]);
 
   useEffect(() => {
+    abortRef.current?.abort();
+    runIdRef.current += 1;
     const restoredOptions =
       supportsOptionMemory && !hasSearchParamOverrides(tool, searchParams)
-        ? getLastRunToolOptions(tool.id, toolOptions)
+        ? getLastRunToolOptions(tool.id, rememberableOptions)
         : null;
 
     setOptions(getInitialOptions(tool, searchParams, restoredOptions));
-    setFiles([]);
+    // Results sent here with "continue with…" from the previous tool. Files
+    // are cleared only when the tool changes: on first mount the drop zone
+    // may already have picked up files chosen while the page was loading.
+    const toolChanged = lastToolIdRef.current !== null && lastToolIdRef.current !== tool.id;
+    lastToolIdRef.current = tool.id;
+    const handedOff = receiveHandedOffFiles(tool.id);
+    if (handedOff) {
+      const { accepted } = partitionByAccept(handedOff, tool.accept === '*' ? undefined : tool.accept);
+      setFiles(tool.multiple ? accepted : accepted.slice(0, 1));
+    } else if (toolChanged) {
+      setFiles([]);
+    }
     setResults([]);
+    setResultsSignature(null);
     setError(null);
+    setNotice(null);
+    setRunning(false);
     setInputPreviewUrl(null);
-    setProgress({ percent: 0, stage: messages.workbench.statusIdle });
+    setProgress({ percent: 0, stage: '' });
     setRestoredFromLastRun(Boolean(restoredOptions));
-    syncOptionMemoryAvailability();
-  }, [messages.workbench.statusIdle, searchParamString, searchParams, supportsOptionMemory, tool, tool.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only when the tool or its URL parameters change
+  }, [searchParamString, supportsOptionMemory, tool, tool.id]);
+
+  // Trim ranges, crop boxes and capture times belong to one particular file:
+  // a new set of files starts from the defaults (the editor fills them in again).
+  // Values that came with the page link are kept for the first upload.
+  const filesKey = useMemo(() => fileSignature(files), [files]);
+  const previousFilesKeyRef = useRef('');
+  useEffect(() => {
+    const previous = previousFilesKeyRef.current;
+    previousFilesKeyRef.current = filesKey;
+    const perFileKeys = toolOptions.filter((option) => option.hidden || hiddenOptionKeys.has(option.key)).map((option) => option.key);
+    if (!previous || perFileKeys.length === 0) {
+      return;
+    }
+    const defaults = getDefaults(tool);
+    setOptions((current) => {
+      const next = { ...current };
+      perFileKeys.forEach((key) => {
+        next[key] = defaults[key];
+      });
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only when the files change
+  }, [filesKey]);
+
+  // A result belongs to the inputs that produced it: once the files or options
+  // change, the old output (or error) would be misleading, so it goes away.
+  useEffect(() => {
+    if (resultsSignature !== null && resultsSignature !== inputSignature) {
+      setResults([]);
+      setError(null);
+      setResultsSignature(null);
+    }
+  }, [inputSignature, resultsSignature]);
 
   useEffect(() => {
-    if (!running && !results.length && !error) {
-      setProgress({ percent: 0, stage: messages.workbench.statusIdle });
-    }
-  }, [error, messages.workbench.statusIdle, results.length, running]);
+    setNotice(null);
+  }, [inputSignature]);
 
-  // Bring the outcome (result cards or the error card) into view once a run
-  // finishes; on long pages it renders below the fold and is easy to miss.
+  // Bring the outcome into view once a run finishes; on long pages it renders
+  // below the fold and is easy to miss.
   useEffect(() => {
     if (results.length > 0 || error) {
       resultsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -624,6 +666,10 @@ function StandardToolWorkbench({
       });
     };
   }, [results]);
+
+  useEffect(() => {
+    return () => abortRef.current?.abort();
+  }, []);
 
   useEffect(() => {
     if (!previewSourceFile) {
@@ -681,78 +727,81 @@ function StandardToolWorkbench({
     };
   };
 
-  const savePreset = () => {
-    if (!supportsOptionMemory) {
-      return;
-    }
-
-    savePresetToolOptions(tool.id, toolOptions, options);
-    syncOptionMemoryAvailability();
-    toast.success(messages.workbench.presetSaved);
-  };
-
-  const applyPreset = () => {
-    const presetOptions = getPresetToolOptions(tool.id, toolOptions);
-    if (!presetOptions) {
-      toast.error(messages.workbench.missingPreset);
-      return;
-    }
-
-    setOptions({
-      ...getDefaults(tool),
-      ...presetOptions,
-    });
-    setRestoredFromLastRun(false);
-  };
-
   const resetOptionsToDefaults = () => {
     setOptions(getInitialOptions(tool, searchParams));
     setRestoredFromLastRun(false);
+  };
+
+  const onCancel = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    runIdRef.current += 1;
+    setRunning(false);
+    setProgress({ percent: 0, stage: '' });
+    setNotice(messages.workbench.cancelled);
   };
 
   const onProcess = async () => {
     const currentOptions = optionsRef.current;
 
     if (!files.length && !fileOptional) {
-      setError(messages.workbench.addFileError);
-      toast.error(messages.workbench.addFileError);
+      setNotice(messages.workbench.addFileError);
       return;
     }
 
-    if (tool.id === 'pdf-merge' && files.length > 0 && String(currentOptions.mergePlan ?? '').trim() === '') {
-      setError(messages.workbench.addPageError);
-      toast.error(messages.workbench.addPageError);
+    // URL tools need an address; say so here instead of failing after a request.
+    if (usesDirectInput && toolOptions.some((option) => option.key === 'url') && !String(currentOptions.url ?? '').trim()) {
+      setNotice(localizeErrorMessage(new Error('Enter a URL to continue.'), locale));
       return;
     }
 
-    if (tool.id === 'pdf-rearrange' && files.length > 0 && String(currentOptions.order ?? '').trim() === '') {
-      setError(messages.workbench.addPageError);
-      toast.error(messages.workbench.addPageError);
+    if (
+      (tool.id === 'pdf-merge' && files.length > 0 && String(currentOptions.mergePlan ?? '').trim() === '') ||
+      (tool.id === 'pdf-rearrange' && files.length > 0 && String(currentOptions.order ?? '').trim() === '')
+    ) {
+      setNotice(messages.workbench.addPageError);
       return;
     }
 
     if (VIDEO_TRIM_TOOL_IDS.has(tool.id)) {
-      const startTime = Number(options.startTime ?? 0);
-      const endTime = Number(options.endTime ?? 0);
+      const startTime = Number(currentOptions.startTime ?? 0);
+      const endTime = Number(currentOptions.endTime ?? 0);
       if (endTime > 0 && endTime <= startTime + 0.01) {
-        setError(messages.workbench.invalidTrimRange);
-        toast.error(messages.workbench.invalidTrimRange);
+        setNotice(messages.workbench.invalidTrimRange);
         return;
       }
     }
 
-    try {
-      setError(null);
-      setResults([]);
-      setRunning(true);
-      setProgress({ percent: 2, stage: messages.workbench.statusRunning });
+    const runId = runIdRef.current + 1;
+    runIdRef.current = runId;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const signature = `${fileSignature(files)}#${optionsSignature(currentOptions)}`;
+    const isCurrent = () => runIdRef.current === runId && !controller.signal.aborted;
 
+    setNotice(null);
+    setError(null);
+    setResults([]);
+    setResultsSignature(null);
+    setRunning(true);
+    setProgress({ percent: 2, stage: messages.workbench.statusRunning });
+
+    try {
       const processedFiles = await runTool({
         toolId: tool.id,
         files,
         options: currentOptions,
-        onProgress: setProgress,
+        onProgress: (next) => {
+          if (isCurrent()) {
+            setProgress(next);
+          }
+        },
+        signal: controller.signal,
       });
+
+      if (!isCurrent()) {
+        return;
+      }
 
       const filesWithPreview = processedFiles.map((item) => {
         if (item.previewUrl) {
@@ -774,20 +823,23 @@ function StandardToolWorkbench({
       });
 
       setResults(filesWithPreview);
-      setProgress({ percent: 100, stage: messages.workbench.statusDone });
+      setResultsSignature(signature);
       if (supportsOptionMemory) {
-        saveLastRunToolOptions(tool.id, toolOptions, currentOptions);
-        syncOptionMemoryAvailability();
+        saveLastRunToolOptions(tool.id, rememberableOptions, currentOptions);
       }
       pushRecentTool(tool.id);
-      toast.success(messages.workbench.success);
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : messages.workbench.failure;
-      setError(message);
-      setProgress({ percent: 0, stage: messages.workbench.statusError });
-      toast.error(message);
+      if (!isCurrent()) {
+        return;
+      }
+      setError(localizeErrorMessage(cause, locale));
+      setResultsSignature(signature);
     } finally {
-      setRunning(false);
+      if (runIdRef.current === runId) {
+        setRunning(false);
+        setProgress({ percent: 0, stage: '' });
+        abortRef.current = null;
+      }
     }
   };
 
@@ -808,59 +860,242 @@ function StandardToolWorkbench({
     });
 
     const blob = await zip.generateAsync({ type: 'blob' });
-    downloadBlob(blob, `${tool.id}-results.zip`);
+    const baseNameForZip = files[0]?.name.replace(/\.[^/.]+$/, '') || tool.id;
+    downloadBlob(blob, `${safeFileName(baseNameForZip)}.zip`);
   };
 
-  const onCopyResultText = async (text: string) => {
+  // The button itself says "Copied" for a moment; no toast.
+  const onCopyResultText = async (text: string, key: string) => {
     try {
       await copyTextContent(text);
-      toast.success(messages.workbench.copyTextSuccess);
+      setCopied({ key, ok: true });
     } catch {
-      toast.error(messages.workbench.copyTextError);
+      setCopied({ key, ok: false });
     }
+    window.setTimeout(() => setCopied((current) => (current?.key === key ? null : current)), 1800);
   };
 
-  const optionMemoryPanel = supportsOptionMemory ? (
-    <div className="rounded-xl border border-border bg-base-subtle/60 px-3 py-2.5" data-testid="tool-option-memory-panel">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs font-medium text-ink-muted">{messages.workbench.settingsMemoryTitle}</p>
-        <div className="flex flex-wrap gap-1.5">
-          <button
-            type="button"
-            onClick={savePreset}
-            disabled={running}
-            className="btn-ghost px-3 py-1.5 text-xs"
-            data-testid="tool-save-preset"
-          >
-            {messages.workbench.savePreset}
-          </button>
-          <button
-            type="button"
-            onClick={applyPreset}
-            disabled={!savedPresetAvailable || running}
-            className="btn-ghost px-3 py-1.5 text-xs"
-            data-testid="tool-apply-preset"
-          >
-            {messages.workbench.applyPreset}
-          </button>
-          <button
-            type="button"
-            onClick={resetOptionsToDefaults}
-            disabled={running}
-            className="btn-ghost px-3 py-1.5 text-xs"
-            data-testid="tool-reset-options"
-          >
-            {messages.workbench.resetOptions}
-          </button>
-        </div>
-      </div>
-      {restoredFromLastRun ? (
-        <p className="mt-1.5 text-xs text-ok" data-testid="tool-option-memory-restored">
-          {messages.workbench.restoredFromLastRun}
-        </p>
+  const optionsHeader = (
+    <div className="flex items-center justify-between gap-3">
+      <h2 className="text-[15px] font-semibold text-ink">{usesDirectInput ? messages.workbench.directInputTitle : messages.workbench.options}</h2>
+      {supportsOptionMemory ? (
+        <button
+          type="button"
+          onClick={resetOptionsToDefaults}
+          disabled={running}
+          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-ink-muted transition-colors hover:bg-base-subtle hover:text-ink disabled:opacity-50"
+          data-testid="tool-reset-options"
+        >
+          <RotateCcw size={13} aria-hidden="true" />
+          {messages.workbench.resetOptions}
+        </button>
       ) : null}
     </div>
+  );
+
+  const restoredNote = restoredFromLastRun ? (
+    <p className="mt-1.5 text-xs text-ink-faint" data-testid="tool-option-memory-restored">
+      {messages.workbench.restoredFromLastRun}
+    </p>
   ) : null;
+
+  const optionFields = visibleToolOptions
+    .filter((option) => isOptionApplicable(option, options))
+    .map((option, optionIndex, allOptions) => renderOptionField(tool, option, optionIndex, allOptions, options, locale, updateOptionValue));
+
+  const pdfInput = useMemo(() => files.find((file) => file.type === 'application/pdf' || /\.pdf$/i.test(file.name)), [files]);
+  const overlayImageFile = useMemo(() => files.find((file) => file.type.startsWith('image/')), [files]);
+  const overlayImageUrl = useObjectUrl(PDF_OVERLAY_TOOL_IDS.has(tool.id) ? overlayImageFile : undefined);
+  // image-watermark takes the watermark picture as the last file.
+  const watermarkImageUrl = useObjectUrl(
+    tool.id === 'image-watermark' && String(options.watermarkType ?? 'text') === 'image' && files.length >= 2
+      ? files[files.length - 1]
+      : undefined,
+  );
+
+  // A stable array: a new one on every render would make the page editor reload.
+  const pdfEditorFiles = useMemo(() => (tool.id === 'pdf-rearrange' ? files.slice(0, 1) : files), [files, tool.id]);
+
+  // The editor or preview for the current input (null when a file row is enough).
+  const renderInputStage = () => {
+    if (files.length === 0) {
+      return null;
+    }
+
+    if (usesPdfEditor) {
+      return (
+        <PdfPageEditor
+          files={pdfEditorFiles}
+          mode={tool.id === 'pdf-merge' ? 'merge' : 'rearrange'}
+          onChange={handlePdfPlanChange}
+        />
+      );
+    }
+
+    if ((tool.id === 'pdf-delete-page' || tool.id === 'pdf-rotate' || tool.id === 'pdf-to-image') && files.length === 1 && pdfInput) {
+      return (
+        <PdfPagePicker
+          file={pdfInput}
+          value={String(options.pages ?? '')}
+          onChange={(next) => updateOptionValue('pages', next)}
+          mode={tool.id === 'pdf-rotate' ? 'rotate' : tool.id === 'pdf-to-image' ? 'pick' : 'delete'}
+          rotation={Number(options.degrees ?? 90)}
+        />
+      );
+    }
+
+    if (tool.id === 'pdf-redact' && pdfInput) {
+      return (
+        <PdfPlacementEditor
+          file={pdfInput}
+          mode="regions"
+          regions={parseRegions(options.regions)}
+          onRegionsChange={(regions) => updateOptionValue('regions', serializeRegions(regions))}
+          boxColor={String(options.color ?? '#000000')}
+          testIdPrefix="pdf-redact"
+        />
+      );
+    }
+
+    if ((tool.id === 'pdf-sign' || tool.id === 'edit-pdf') && pdfInput) {
+      return (
+        <PdfPlacementEditor
+          file={pdfInput}
+          mode="stamp"
+          placement={{
+            pageNumber: Number(options.pageNumber ?? 1),
+            x: Number(options.x ?? 40),
+            y: Number(options.y ?? 40),
+            width: Number(options.width ?? 180),
+            height: Number(options.height ?? 72),
+          }}
+          onPlacementChange={(next) => setOptions((current) => ({ ...current, ...next }))}
+          renderStamp={(size) =>
+            tool.id === 'pdf-sign' ? (
+              <SignStampPreview options={options} imageUrl={overlayImageUrl} size={size} />
+            ) : (
+              <EditStampPreview options={options} imageUrl={overlayImageUrl} size={size} />
+            )
+          }
+          testIdPrefix={tool.id}
+        />
+      );
+    }
+
+    if (tool.id === 'pdf-watermark' && pdfInput) {
+      return (
+        <PdfPlacementEditor
+          file={pdfInput}
+          mode="view"
+          overlay={(page) => <WatermarkPreview options={options} imageUrl={overlayImageUrl} page={page} />}
+          testIdPrefix="pdf-watermark"
+        />
+      );
+    }
+
+    if (DATA_PREVIEW_TOOL_IDS.has(tool.id) && files.length === 1) {
+      return <DataFilePreview file={files[0]} />;
+    }
+
+    if (!inputPreviewUrl) {
+      return null;
+    }
+
+    if ((tool.id === 'image-rotate' || tool.id === 'image-flip') && files[0]?.type.startsWith('image/')) {
+      return (
+        <ImageTransformPreview
+          imageUrl={inputPreviewUrl}
+          degrees={tool.id === 'image-rotate' ? Number(options.degrees ?? 90) : 0}
+          flipHorizontal={tool.id === 'image-flip' && Boolean(options.horizontal)}
+          flipVertical={tool.id === 'image-flip' && Boolean(options.vertical)}
+          onRotate={tool.id === 'image-rotate' ? (next) => updateOptionValue('degrees', next) : undefined}
+        />
+      );
+    }
+
+    if ((tool.id === 'image-add-text' || tool.id === 'image-watermark') && files[0]?.type.startsWith('image/')) {
+      const imageWatermark = tool.id === 'image-watermark' && String(options.watermarkType ?? 'text') === 'image';
+      if (imageWatermark && !watermarkImageUrl) {
+        return null;
+      }
+      return (
+        <ImageOverlayEditor
+          imageUrl={inputPreviewUrl}
+          overlay={
+            imageWatermark && watermarkImageUrl
+              ? { kind: 'image', url: watermarkImageUrl, scale: Number(options.scale ?? 0.24), opacity: Number(options.opacity ?? 0.5) }
+              : {
+                  kind: 'text',
+                  text: String(options.text ?? ''),
+                  fontSize: Number(options.fontSize ?? 42),
+                  color: String(options.color ?? '#ffffff'),
+                  opacity: tool.id === 'image-watermark' ? Number(options.opacity ?? 0.5) : 1,
+                }
+          }
+          position={{ x: Number(options.x ?? 20), y: Number(options.y ?? 20) }}
+          onPositionChange={(next) => setOptions((current) => ({ ...current, x: next.x, y: next.y }))}
+          testIdPrefix={tool.id}
+        />
+      );
+    }
+
+    if (tool.id === 'image-crop' && files[0]?.type.startsWith('image/')) {
+      return (
+        <ImageCropEditor
+          crop={imageCropRect}
+          previewUrl={inputPreviewUrl}
+          onCropChange={(nextCrop) => setOptions((currentOptions) => ({ ...currentOptions, ...nextCrop }))}
+          resetOnImageLoad
+        />
+      );
+    }
+
+    if (videoEditorEnabled && primaryVideoFile) {
+      return (
+        <VideoTimelineEditor
+          // A new file gets a fresh editor: no state from the previous clip.
+          key={inputPreviewUrl}
+          file={primaryVideoFile}
+          previewUrl={inputPreviewUrl}
+          trimEnabled={VIDEO_TRIM_TOOL_IDS.has(tool.id)}
+          trimStart={Number(options.startTime ?? 0)}
+          trimEnd={Number(options.endTime ?? 0)}
+          onTrimChange={(nextValues) => setOptions((currentOptions) => ({ ...currentOptions, ...nextValues }))}
+          captureEnabled={tool.id === 'video-thumbnail-generator'}
+          captureTime={Number(options.timestamp ?? 0)}
+          onCaptureTimeChange={(nextValue) => updateOptionValue('timestamp', Number(nextValue.toFixed(3)))}
+          cropEnabled={tool.id === 'video-crop'}
+          crop={imageCropRect}
+          onCropChange={(nextCrop) => setOptions((currentOptions) => ({ ...currentOptions, ...nextCrop }))}
+          aspectPresetId={String(options.cropPreset ?? 'free')}
+          onAspectPresetChange={(nextAspectPresetId) => updateOptionValue('cropPreset', nextAspectPresetId)}
+          testIdPrefix={tool.id === 'video-crop' ? 'video-crop' : 'video-editor'}
+        />
+      );
+    }
+
+    if (previewSourceFile?.type.startsWith('audio/')) {
+      return <audio src={inputPreviewUrl} controls className="w-full" />;
+    }
+
+    if (previewSourceFile?.type.startsWith('video/')) {
+      return <video src={inputPreviewUrl} controls className="max-h-[20rem] w-full rounded-lg bg-black" />;
+    }
+
+    return null;
+  };
+  const inputStage = renderInputStage();
+
+  const totalInputBytes = files.reduce((sum, file) => sum + file.size, 0);
+  const statusText = notice
+    ? notice
+    : files.length > 0
+      ? `${formatFileCount(locale, files.length)} · ${formatMegaBytes(totalInputBytes)}`
+      : fileOptional
+        ? messages.workbench.readyToRun
+        : messages.workbench.addFilesHint;
+  const oneToOneResults = files.length > 0 && results.length === files.length;
+  const compactResults = results.length > 3;
 
   return (
     <ToolPageLayout
@@ -870,215 +1105,85 @@ function StandardToolWorkbench({
       iconColor={style.icon}
       iconBg={style.iconBg}
     >
-      <div className="space-y-6">
-        <div
-          className={cx(
-            'grid grid-cols-1 gap-5',
-            !usesDirectInput && showOptionsPanel && !showWideEditorLayout && 'xl:grid-cols-5',
-          )}
-        >
-          {usesDirectInput ? (
-            <section className="workspace-panel p-5 sm:p-6">
-              <div>
-                <h2 className="text-[15px] font-semibold text-ink">{messages.workbench.directInputTitle}</h2>
-                <p className="mt-1 text-sm text-ink-muted">{messages.workbench.directInputDescription}</p>
-              </div>
-
-              <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                {visibleToolOptions.map((option, optionIndex, allOptions) =>
-                  renderOptionField(tool, option, optionIndex, allOptions, options, locale, updateOptionValue),
-                )}
-              </div>
-              {optionMemoryPanel ? <div className="mt-4">{optionMemoryPanel}</div> : null}
-
-              <button type="button" disabled={running} onClick={onProcess} className="btn-primary mt-6 h-11 w-full lg:w-auto lg:px-6">
-                {running ? <LoaderCircle size={18} className="animate-spin" /> : <Play size={18} />}
-                {running ? messages.workbench.running : messages.workbench.runTool}
-              </button>
-            </section>
-          ) : (
-            <>
-              <section className={cx('workspace-panel space-y-5 p-5 sm:p-6', showOptionsPanel && !showWideEditorLayout && 'xl:col-span-3')}>
-                <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-[15px] font-semibold text-ink">{messages.workbench.files}</h2>
-                  {fileOptional ? <span className="badge border border-border bg-base-subtle text-ink-muted">{messages.workbench.optionalUpload}</span> : null}
-                </div>
-
-                <DropZone
-                  files={files}
-                  onFiles={setFiles}
-                  accept={tool.accept === '*' ? undefined : tool.accept}
-                  multiple={Boolean(tool.multiple)}
-                  label={dropLabel}
-                />
-
-                {tool.id === 'pdf-merge' && files.length > 1 ? (
-                  <div className="workspace-toolbar">
-                    {files.map((file, index) => (
-                      <div key={`${file.name}-${index}`} className="flex items-center gap-2 rounded-full border border-border bg-base-elevated px-3 py-2 text-xs text-ink-muted">
-                        <span className="font-mono text-ink-faint">#{index + 1}</span>
-                        <span className="max-w-[14rem] truncate">{file.name}</span>
-                        <div className="flex gap-1">
-                          <button
-                            type="button"
-                            disabled={index === 0}
-                            onClick={() => setFiles((currentFiles) => moveFileItem(currentFiles, index, index - 1))}
-                            className="rounded-lg border border-border px-2 py-1 text-[11px] hover:border-border-bright disabled:opacity-50"
-                          >
-                            {messages.workbench.moveUp}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={index === files.length - 1}
-                            onClick={() => setFiles((currentFiles) => moveFileItem(currentFiles, index, index + 1))}
-                            className="rounded-lg border border-border px-2 py-1 text-[11px] hover:border-border-bright disabled:opacity-50"
-                          >
-                            {messages.workbench.moveDown}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-
-                {files.length > 0 && (usesPdfEditor || inputPreviewUrl) ? (
-                  <section className="editor-stage">
-                    {usesPdfEditor ? (
-                      <PdfPageEditor
-                        files={tool.id === 'pdf-rearrange' ? files.slice(0, 1) : files}
-                        mode={tool.id === 'pdf-merge' ? 'merge' : 'rearrange'}
-                        onChange={handlePdfPlanChange}
-                      />
-                    ) : tool.id === 'audio-cut' && inputPreviewUrl ? (
-                      <AudioWaveformEditor
-                        file={files[0]}
-                        previewUrl={inputPreviewUrl}
-                        trimMode={trimMode}
-                        startTime={Number(options.startTime ?? 0)}
-                        endTime={Number(options.endTime ?? 0)}
-                        onChange={(nextValues) =>
-                          setOptions((currentOptions) => ({
-                            ...currentOptions,
-                            ...nextValues,
-                          }))
-                        }
-                      />
-                    ) : tool.id === 'image-crop' && inputPreviewUrl && files[0]?.type.startsWith('image/') ? (
-                      <ImageCropEditor
-                        crop={imageCropRect}
-                        previewUrl={inputPreviewUrl}
-                        onCropChange={(nextCrop) =>
-                          setOptions((currentOptions) => ({
-                            ...currentOptions,
-                            ...nextCrop,
-                          }))
-                        }
-                        resetOnImageLoad
-                      />
-                    ) : videoEditorEnabled && inputPreviewUrl && primaryVideoFile ? (
-                      <VideoTimelineEditor
-                        file={primaryVideoFile}
-                        previewUrl={inputPreviewUrl}
-                        trimEnabled={VIDEO_TRIM_TOOL_IDS.has(tool.id)}
-                        trimStart={Number(options.startTime ?? 0)}
-                        trimEnd={Number(options.endTime ?? 0)}
-                        onTrimChange={(nextValues) =>
-                          setOptions((currentOptions) => ({
-                            ...currentOptions,
-                            ...nextValues,
-                          }))
-                        }
-                        captureEnabled={tool.id === 'video-thumbnail-generator'}
-                        captureTime={Number(options.timestamp ?? 0)}
-                        onCaptureTimeChange={(nextValue) => updateOptionValue('timestamp', Number(nextValue.toFixed(3)))}
-                        cropEnabled={tool.id === 'video-crop'}
-                        crop={imageCropRect}
-                        onCropChange={(nextCrop) =>
-                          setOptions((currentOptions) => ({
-                            ...currentOptions,
-                            ...nextCrop,
-                          }))
-                        }
-                        aspectPresetId={String(options.cropPreset ?? 'free')}
-                        onAspectPresetChange={(nextAspectPresetId) => updateOptionValue('cropPreset', nextAspectPresetId)}
-                        testIdPrefix={tool.id === 'video-crop' ? 'video-crop' : 'video-editor'}
-                      />
-                    ) : inputPreviewUrl ? (
-                      <div className="editor-frame">
-                        {previewSourceFile?.type.startsWith('image/') ? (
-                          <img src={inputPreviewUrl} alt={previewSourceFile.name} className="max-h-[24rem] w-full rounded-lg object-contain" />
-                        ) : null}
-                        {previewSourceFile?.type.startsWith('audio/') ? <audio src={inputPreviewUrl} controls className="w-full" /> : null}
-                        {previewSourceFile?.type.startsWith('video/') ? (
-                          <video src={inputPreviewUrl} controls className="max-h-[24rem] w-full rounded-lg" />
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </section>
-                ) : null}
-
-                {!showOptionsPanel && optionMemoryPanel ? <div>{optionMemoryPanel}</div> : null}
-                {!showOptionsPanel ? (
-                  <button type="button" disabled={running} onClick={onProcess} className="btn-primary h-11 w-full">
-                    {running ? <LoaderCircle size={18} className="animate-spin" /> : <Play size={18} />}
-                    {running ? messages.workbench.running : messages.workbench.runTool}
-                  </button>
-                ) : null}
-              </section>
-
-              {showOptionsPanel ? (
-                <section
-                  className={cx(
-                    'workspace-panel p-5 sm:p-6',
-                    !showWideEditorLayout && 'xl:sticky xl:top-[4.5rem] xl:col-span-2 xl:self-start',
-                  )}
-                >
-                  <h2 className="text-[15px] font-semibold text-ink">{messages.workbench.options}</h2>
-                  {optionMemoryPanel ? <div className="mt-4">{optionMemoryPanel}</div> : null}
-                  <div className="mt-5 space-y-5">
-                    {visibleToolOptions.map((option, optionIndex, allOptions) =>
-                      renderOptionField(tool, option, optionIndex, allOptions, options, locale, updateOptionValue),
-                    )}
-                  </div>
-
-                  <button type="button" disabled={running} onClick={onProcess} className="btn-primary mt-6 h-11 w-full">
-                    {running ? <LoaderCircle size={18} className="animate-spin" /> : <Play size={18} />}
-                    {running ? messages.workbench.running : messages.workbench.runTool}
-                  </button>
-                </section>
-              ) : null}
-            </>
-          )}
-        </div>
-
-        {running ? (
+      <div
+        className={cx(
+          'grid grid-cols-1 gap-5 lg:gap-6',
+          !usesDirectInput && showOptionsPanel && 'xl:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] xl:items-start',
+        )}
+      >
+        {usesDirectInput ? (
           <section className="workspace-panel p-5 sm:p-6">
-            <ProgressBar value={progress.percent} label={progress.stage} status="running" />
+            {optionsHeader}
+            {restoredNote}
+            <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">{optionFields}</div>
           </section>
-        ) : null}
-
-        {showResults ? (
-          <section ref={resultsSectionRef} className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-[15px] font-semibold text-ink">{messages.workbench.results}</h2>
-              {results.length > 1 ? (
-                <button type="button" onClick={onDownloadAll} disabled={!results.length} className="btn-ghost disabled:opacity-60">
-                  <Download size={16} />
-                  {messages.workbench.downloadAll}
-                </button>
-              ) : null}
-            </div>
-
-            {error ? (
-              <div role="alert" className="flex items-start gap-3 rounded-2xl border border-danger/25 bg-danger/5 p-4 text-sm text-danger">
-                <AlertCircle size={18} className="mt-px shrink-0" aria-hidden="true" />
-                <p className="min-w-0 break-words">{error}</p>
+        ) : (
+          <>
+            <section className="workspace-panel space-y-4 p-5 sm:p-6">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-[15px] font-semibold text-ink">{messages.workbench.files}</h2>
               </div>
-            ) : null}
 
-            {results.length > 0 ? (
-              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <DropZone
+                files={files}
+                onFiles={setFiles}
+                accept={tool.accept === '*' ? undefined : tool.accept}
+                multiple={Boolean(tool.multiple)}
+                reorderable={REORDERABLE_TOOL_IDS.has(tool.id)}
+                disabled={running}
+                label={dropLabel}
+              />
+
+              {inputStage ? <div className="editor-stage">{inputStage}</div> : null}
+            </section>
+
+            {showOptionsPanel ? (
+              <aside
+                className="workspace-panel p-5 sm:p-6 xl:sticky xl:top-[4.5rem] xl:self-start"
+              >
+                {optionsHeader}
+                {restoredNote}
+                <div className="mt-5 space-y-5">{optionFields}</div>
+              </aside>
+            ) : null}
+          </>
+        )}
+      </div>
+
+      {showResults ? (
+        <section ref={resultsSectionRef} className="scroll-mt-20 space-y-3" aria-live="polite">
+          {error ? (
+            <div role="alert" className="flex items-start gap-3 rounded-2xl border border-danger/25 bg-danger/5 p-4 text-sm text-danger">
+              <AlertCircle size={18} className="mt-px shrink-0" aria-hidden="true" />
+              <p className="min-w-0 break-words">{error}</p>
+            </div>
+          ) : null}
+
+          {results.length > 0 ? (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-[15px] font-semibold text-ink">
+                  {messages.workbench.results}
+                  {results.length > 1 ? <span className="ml-1.5 text-sm font-normal tabular-nums text-ink-faint">{results.length}</span> : null}
+                </h2>
+                {results.length > 1 ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ContinueMenu
+                      toolIds={nextToolIds(results, tool.id)}
+                      getFiles={() => results.map(resultToFile)}
+                      label={messages.workbench.continueAll}
+                    />
+                    <button type="button" onClick={onDownloadAll} className="btn-primary px-3.5 py-2 text-sm">
+                      <Download size={16} aria-hidden="true" />
+                      {messages.workbench.downloadAll}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className={cx('grid grid-cols-1 gap-3', results.length > 1 && 'md:grid-cols-2', compactResults && 'xl:grid-cols-3')}>
                 {results.map((result, index) => {
+                  const isUrlImage = tool.id === 'url-image' && Boolean(result.previewUrl) && result.mimeType.startsWith('image/');
                   const showImageCompare =
                     index === 0 &&
                     Boolean(inputPreviewUrl) &&
@@ -1088,81 +1193,155 @@ function StandardToolWorkbench({
                     Boolean(result.previewUrl) &&
                     result.mimeType.startsWith('image/') &&
                     !IMAGE_COMPARE_EXCLUDED_TOOL_IDS.has(tool.id);
+                  const sourceFile = oneToOneResults ? files[index] : files.length === 1 && results.length === 1 ? files[0] : undefined;
+                  const textPreview = result.textContent
+                    ? result.textContent.length > TEXT_PREVIEW_LIMIT
+                      ? `${result.textContent.slice(0, TEXT_PREVIEW_LIMIT)}\n…`
+                      : result.textContent
+                    : '';
+                  const metadataEntries = getDisplayMetadata(result.metadata, locale);
+                  const metadataFacts = metadataEntries.filter((entry) => !entry.long);
+                  const metadataNotes = metadataEntries.filter((entry) => entry.long);
 
                   return (
                     <ResultCard
-                      key={result.name}
+                      key={`${result.name}-${index}`}
                       fileName={result.name}
                       fileSize={formatMegaBytes(result.blob.size)}
-                      title={messages.workbench.success}
-                      actionLabel={
-                        tool.id === 'url-image' && result.previewUrl && result.mimeType.startsWith('image/')
-                          ? messages.workbench.downloadOriginal
-                          : messages.workbench.download
-                      }
+                      mimeType={result.mimeType}
+                      thumbnailUrl={result.previewUrl && result.mimeType.startsWith('image/') ? result.previewUrl : undefined}
+                      originalBytes={sourceFile?.size}
+                      outputBytes={result.blob.size}
+                      warnWhenLarger={SIZE_REDUCTION_TOOL_IDS.has(tool.id)}
+                      primary={results.length === 1}
+                      actionLabel={isUrlImage ? messages.workbench.downloadOriginal : messages.workbench.download}
                       onDownload={() => downloadBlob(result.blob, result.name)}
+                      actions={
+                        compactResults ? null : (
+                          <ContinueMenu
+                            toolIds={nextToolIds([result], tool.id)}
+                            getFiles={() => [resultToFile(result)]}
+                            label={messages.workbench.continueWith}
+                          />
+                        )
+                      }
                     >
-                      {tool.id === 'url-image' && result.previewUrl && result.mimeType.startsWith('image/') ? (
+                      {isUrlImage && result.previewUrl ? (
                         <UrlImageCropper fileName={result.name} outputMimeType={result.mimeType} previewUrl={result.previewUrl} />
                       ) : null}
                       {showImageCompare && inputPreviewUrl && result.previewUrl ? (
                         <BeforeAfterImageCompare
                           beforeUrl={inputPreviewUrl}
                           afterUrl={result.previewUrl}
-                          title={messages.workbench.comparePreviewTitle}
-                          description={messages.workbench.comparePreviewDescription}
                           beforeLabel={messages.workbench.compareBefore}
                           afterLabel={messages.workbench.compareAfter}
                           sliderLabel={messages.workbench.compareSliderLabel}
                         />
                       ) : null}
-                      {!showImageCompare && tool.id !== 'url-image' && result.previewUrl && result.mimeType.startsWith('image/') ? (
-                        <img src={result.previewUrl} alt={result.name} className="max-h-80 w-full rounded-xl object-contain" />
+                      {!compactResults && !showImageCompare && !isUrlImage && result.previewUrl && result.mimeType.startsWith('image/') ? (
+                        <img src={result.previewUrl} alt={result.name} className="max-h-80 w-full rounded-xl bg-base-subtle object-contain" />
                       ) : null}
-                      {result.previewUrl && result.mimeType.startsWith('video/') ? (
+                      {!compactResults && result.previewUrl && result.mimeType.startsWith('video/') ? (
                         <video src={result.previewUrl} controls className="max-h-80 w-full rounded-xl" />
                       ) : null}
-                      {result.previewUrl && result.mimeType.startsWith('audio/') ? (
+                      {!compactResults && result.previewUrl && result.mimeType.startsWith('audio/') ? (
                         <audio src={result.previewUrl} controls className="w-full" />
                       ) : null}
-                      {result.textContent ? (
-                        <div className="space-y-3">
-                          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-base-subtle/70 px-3 py-2">
-                            <p className="text-xs font-medium text-ink-muted">{messages.workbench.extractedText}</p>
+                      {textPreview ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-xs font-medium text-ink-muted">
+                              {tool.category === 'ocr' ? messages.workbench.extractedText : messages.workbench.resultPreview}
+                            </p>
                             <button
                               type="button"
                               data-testid="result-copy-text"
-                              onClick={() => void onCopyResultText(result.textContent ?? '')}
-                              className="btn-ghost px-3 py-2 text-xs"
+                              onClick={() => void onCopyResultText(result.textContent ?? '', `${result.name}-${index}`)}
+                              className={cx(
+                                'inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors hover:bg-base-subtle',
+                                copied?.key === `${result.name}-${index}`
+                                  ? copied.ok
+                                    ? 'text-ok'
+                                    : 'text-danger'
+                                  : 'text-ink-muted hover:text-ink',
+                              )}
                             >
-                              <Copy size={14} />
-                              {messages.workbench.copyText}
+                              {copied?.key === `${result.name}-${index}` && copied.ok ? (
+                                <Check size={13} aria-hidden="true" />
+                              ) : (
+                                <Copy size={13} aria-hidden="true" />
+                              )}
+                              {copied?.key === `${result.name}-${index}`
+                                ? copied.ok
+                                  ? messages.workbench.copied
+                                  : messages.workbench.copyTextError
+                                : messages.workbench.copyText}
                             </button>
                           </div>
                           <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-xl border border-border bg-base-subtle p-3 font-mono text-xs leading-relaxed text-ink">
-                            {result.textContent}
+                            {textPreview}
                           </pre>
                         </div>
                       ) : null}
-                      {result.metadata ? (
-                        <dl className="grid max-h-64 grid-cols-1 gap-x-6 gap-y-2.5 overflow-auto rounded-xl border border-border bg-base-subtle/60 p-3.5 sm:grid-cols-2">
-                          {Object.entries(result.metadata)
-                            .filter((entry): entry is [string, string | number | boolean] => entry[1] !== null && entry[1] !== undefined)
-                            .map(([key, value]) => (
-                              <div key={key}>
-                                <dt className="text-xs text-ink-faint">{humanizeMetadataKey(key)}</dt>
-                                <dd className="mt-0.5 break-words text-sm text-ink">{formatMetadataValue(value, locale)}</dd>
-                              </div>
-                            ))}
+                      {metadataFacts.length > 0 ? (
+                        <dl className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs">
+                          {metadataFacts.map((entry) => (
+                            <div key={entry.key} className="flex items-baseline gap-1.5">
+                              <dt className="text-ink-faint">{entry.label}</dt>
+                              <dd className="break-words font-medium text-ink">{entry.value}</dd>
+                            </div>
+                          ))}
                         </dl>
                       ) : null}
+                      {metadataNotes.map((entry) => (
+                        <p key={entry.key} className="text-xs leading-relaxed text-ink-muted">
+                          {entry.value}
+                        </p>
+                      ))}
                     </ResultCard>
                   );
                 })}
               </div>
-            ) : null}
-          </section>
-        ) : null}
+            </>
+          ) : null}
+        </section>
+      ) : null}
+
+      <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-20 md:bottom-5">
+        <div className="flex items-center gap-2 rounded-2xl border border-border bg-base-elevated/95 p-2 pl-4 shadow-pop backdrop-blur-md sm:gap-3">
+          <div className="min-w-0 flex-1" aria-live="polite">
+            {running ? (
+              <div>
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="truncate text-ink-muted">{localizeStage(progress.stage, locale) || messages.workbench.statusRunning}</span>
+                  <span className="shrink-0 font-medium tabular-nums text-ink">{Math.round(progress.percent)}%</span>
+                </div>
+                <div
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(progress.percent)}
+                  aria-label={messages.workbench.statusRunning}
+                  className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-base-subtle"
+                >
+                  <div className="h-full rounded-full bg-prime transition-[width] duration-300" style={{ width: `${Math.max(2, Math.min(100, progress.percent))}%` }} />
+                </div>
+              </div>
+            ) : (
+              <p className={cx('truncate text-sm', notice ? 'font-medium text-warn' : 'text-ink-muted')}>{statusText}</p>
+            )}
+          </div>
+          {running ? (
+            <button type="button" onClick={onCancel} className="btn-ghost h-11 shrink-0 px-3.5">
+              <X size={16} aria-hidden="true" />
+              {messages.workbench.cancel}
+            </button>
+          ) : null}
+          <button type="button" disabled={running} onClick={onProcess} className="btn-primary h-11 shrink-0 px-5" data-testid="tool-run-button">
+            {running ? <LoaderCircle size={18} className="animate-spin" aria-hidden="true" /> : <Play size={18} aria-hidden="true" />}
+            {running ? messages.workbench.running : messages.workbench.runTool}
+          </button>
+        </div>
       </div>
     </ToolPageLayout>
   );

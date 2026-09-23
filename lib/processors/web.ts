@@ -1,4 +1,5 @@
 import QRCode from 'qrcode';
+import { decodeImage } from '@/lib/processors/image-decode';
 import { PDFDocument } from 'pdf-lib';
 import { ProcessContext, ProcessedFile } from '@/types/processor';
 import { parseBoolean, parseNumber } from '@/lib/utils';
@@ -6,20 +7,14 @@ import { describeUrlRejection, validateExternalUrl } from '@/lib/url-safety';
 import { detectCms } from '@/lib/cms-detect';
 import { pngDimensions } from '@/lib/media-dimensions';
 
-/**
- * Resolve and SSRF-validate a user-supplied URL before any external request.
- * Preserves the historical empty-input default of example.com so the tool can be
- * demoed without typing, but routes every value through the safety validator.
- */
+/** A validated public http(s) URL; an empty box is an error, not a default site. */
 function resolveExternalUrl(rawValue: unknown): string {
-  const raw = String(rawValue ?? '').trim() || 'https://example.com';
-  const result = validateExternalUrl(raw);
+  const result = validateExternalUrl(String(rawValue ?? '').trim());
   if (!result.ok || !result.url) {
     throw new Error(describeUrlRejection(result.reason));
   }
   return result.url;
 }
-
 function blobFromBytes(bytes: Uint8Array, mimeType: string): Blob {
   return new Blob([Uint8Array.from(bytes).buffer], { type: mimeType });
 }
@@ -385,7 +380,7 @@ export async function processWebTool(ctx: ProcessContext): Promise<ProcessedFile
       const file = files[index];
       onProgress({ percent: (index / files.length) * 100, stage: 'Reading metadata' });
 
-      const bitmap = await createImageBitmap(file);
+      const bitmap = await decodeImage(file);
       const basicMetadata = {
         name: file.name,
         size: file.size,

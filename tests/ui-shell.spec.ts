@@ -183,9 +183,9 @@ test('korean locale also localizes newly added screen tools', async ({ page }) =
   await page.getByRole('button', { name: 'ko' }).click();
 
   await expect(page.getByRole('heading', { level: 1, name: '스크린샷 캡처' })).toBeVisible();
-  // The capture panel's own Korean copy (the decorative category badge that
-  // used to say "화면 녹화" was removed from the workbench).
-  await expect(page.getByRole('main').getByText('스크린샷 대상')).toBeVisible();
+  // The capture panel's own Korean copy.
+  await expect(page.getByRole('main').getByRole('button', { name: '스크린샷 캡처' })).toBeVisible();
+  await expect(page.getByRole('main').getByText('캡처 안내')).toBeVisible();
 });
 
 test('sidebar navigation remains stable after visiting a tool detail page', async ({ page }) => {
@@ -223,7 +223,7 @@ test('legacy audio editor routes redirect to the unified audio editor', async ({
 
   for (const target of redirectTargets) {
     await page.goto(target, { waitUntil: 'commit' });
-    await expect(page).toHaveURL(/\/tools\/audio$/);
+    await expect(page).toHaveURL(/\/tools\/audio(\?intent=[a-z]+)?$/);
   }
 });
 
@@ -288,8 +288,7 @@ test('video crop editor exposes timeline scrubbing, trim handles, and hides lega
     buffer: videoBuffer,
   });
 
-  await expect(page.getByText('Video editor')).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByText('Preview the clip and adjust the edit before you run it.')).toBeVisible();
+  await expect(page.getByTestId('video-crop-editor')).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText('Timeline', { exact: true })).toBeVisible();
   await expect(page.getByText('Crop frame', { exact: true })).toBeVisible();
   await expect(page.getByText('Aspect ratios', { exact: true })).toBeVisible();
@@ -357,11 +356,18 @@ test('video trim uses the timeline editor without duplicate numeric inputs', asy
     buffer: videoBuffer,
   });
 
-  await expect(page.getByText('Video editor')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId('video-editor-editor')).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole('slider', { name: 'Playhead' })).toBeVisible();
   await expect(page.getByRole('slider', { name: 'Trim start' })).toBeVisible();
   await expect(page.getByRole('slider', { name: 'Trim end' })).toBeVisible();
   await expect(page.locator('input[type="number"]')).toHaveCount(0);
+
+  // The selection can also be typed, and the length follows.
+  const endField = page.getByLabel('End', { exact: true });
+  await expect(endField).not.toHaveValue('0:00.00', { timeout: 30_000 });
+  await page.getByLabel('Start', { exact: true }).fill('0:00.50');
+  await page.getByLabel('Start', { exact: true }).press('Enter');
+  await expect(page.getByRole('slider', { name: 'Trim start' })).not.toHaveValue('0');
 });
 
 test('audio editor empty state keeps a single transport bar and hides playback affordances', async ({ page }) => {
@@ -383,7 +389,7 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
 
-  await expect(page).toHaveURL(/\/tools\/audio$/);
+  await expect(page).toHaveURL(/\/tools\/audio(\?intent=[a-z]+)?$/);
   await expect(page.getByRole('main')).toBeVisible();
   await expect(page.getByLabel(/Open audio|오디오 열기/)).toBeVisible();
   await expect(page.getByTestId('audio-transport-bar')).toHaveCount(1);
@@ -801,7 +807,7 @@ test('image resize presets fill both width and height together', async ({ page }
   await expect(page.locator('input[type="number"]').nth(1)).toHaveValue('1920');
 });
 
-test('tool options can save, reapply, and reset a preset', async ({ page }) => {
+test('tool options reset to their defaults', async ({ page }) => {
   await page.goto('/tools/image/image-resize');
 
   const widthInput = page.locator('input[type="number"]').first();
@@ -809,15 +815,6 @@ test('tool options can save, reapply, and reset a preset', async ({ page }) => {
 
   await widthInput.fill('777');
   await heightInput.fill('555');
-
-  await page.getByTestId('tool-save-preset').click();
-
-  await widthInput.fill('320');
-  await heightInput.fill('240');
-
-  await page.getByTestId('tool-apply-preset').click();
-  await expect(widthInput).toHaveValue('777');
-  await expect(heightInput).toHaveValue('555');
 
   await page.getByTestId('tool-reset-options').click();
   await expect(widthInput).toHaveValue('1280');
@@ -882,9 +879,11 @@ test('image crop supports fixed ratios and freeform drag editing before processi
     ),
   });
 
-  await expect(page.getByTestId('image-crop-editor')).toBeVisible();
+  // Editors load on demand; the first dev-server compile can take a while.
+  await expect(page.getByTestId('image-crop-editor')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('image-crop-preset-16-9').click();
-  await expect(page.getByTestId('image-crop-metrics')).toContainText('1200px');
+  await expect(page.getByLabel('Crop width')).toHaveValue('1200');
+  await expect(page.getByLabel('Crop height')).toHaveValue('675');
 
   const selection = page.getByTestId('image-crop-selection');
   const ratioBox = await selection.boundingBox();
@@ -905,9 +904,10 @@ test('image crop supports fixed ratios and freeform drag editing before processi
     const targetX = startX - 140;
     const targetY = startY - 100;
 
-    element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: startX, clientY: startY, button: 0 }));
-    window.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: targetX, clientY: targetY, buttons: 1 }));
-    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: targetX, clientY: targetY, button: 0 }));
+    const pointer = { bubbles: true, pointerId: 1, pointerType: 'touch', isPrimary: true };
+    element.dispatchEvent(new PointerEvent('pointerdown', { ...pointer, clientX: startX, clientY: startY }));
+    window.dispatchEvent(new PointerEvent('pointermove', { ...pointer, clientX: targetX, clientY: targetY }));
+    window.dispatchEvent(new PointerEvent('pointerup', { ...pointer, clientX: targetX, clientY: targetY }));
   });
 
   const resizedBox = await selection.boundingBox();
@@ -934,9 +934,20 @@ test('image crop supports fixed ratios and freeform drag editing before processi
   }
   expect(freeformBox.width).toBeLessThan(stageBox.width);
   expect(freeformBox.height).toBeLessThan(stageBox.height);
+  // The crop box is the only editor: no duplicate option panel.
   await expect(page.getByText('Options')).toHaveCount(0);
-  await expect(page.locator('input[type="number"]')).toHaveCount(0);
+
+  // Typed sizes apply to the box too.
+  await page.getByLabel('Crop width').fill('300');
+  await page.getByLabel('Crop width').press('Enter');
+  await expect(page.getByLabel('Crop width')).toHaveValue('300');
 });
+test('url tools ask for an address instead of capturing a default site', async ({ page }) => {
+  await page.goto('/tools/web/url-image');
+  await page.getByRole('button', { name: 'Run tool' }).click();
+  await expect(page.getByText('Enter a URL to continue.')).toBeVisible();
+});
+
 test('url-based tools start from direct input without showing the upload dropzone', async ({ page }) => {
   await page.goto('/tools/pdf/url-pdf');
 
@@ -972,6 +983,7 @@ test('url pdf captures the full page scroll before generating the pdf', async ({
   await page.route('https://images.weserv.nl/**', (route) => route.fulfill({ status: 404, body: '' }));
 
   await page.goto('/tools/pdf/url-pdf');
+  await page.getByRole('textbox').first().fill('https://example.com');
   await page.getByRole('button', { name: 'Run tool' }).click();
 
   await expect(page.getByText('url-capture.pdf')).toBeVisible({ timeout: 60_000 });
@@ -1008,6 +1020,7 @@ test('url image allows trimming a long captured page before saving', async ({ pa
   await page.route('https://images.weserv.nl/**', (route) => route.fulfill({ status: 404, body: '' }));
 
   await page.goto('/tools/web/url-image');
+  await page.getByRole('textbox').first().fill('https://example.com');
   await page.getByRole('button', { name: 'Run tool' }).click();
 
   await expect(page.getByTestId('url-image-cropper')).toBeVisible({ timeout: 60_000 });
@@ -1027,9 +1040,10 @@ test('url image allows trimming a long captured page before saving', async ({ pa
     const startY = rect.top + rect.height / 2;
     const targetY = startY + 80;
 
-    element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: startX, clientY: startY, button: 0 }));
-    window.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: startX, clientY: targetY, buttons: 1 }));
-    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: startX, clientY: targetY, button: 0 }));
+    const pointer = { bubbles: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0 };
+    element.dispatchEvent(new PointerEvent('pointerdown', { ...pointer, clientX: startX, clientY: startY }));
+    window.dispatchEvent(new PointerEvent('pointermove', { ...pointer, clientX: startX, clientY: targetY }));
+    window.dispatchEvent(new PointerEvent('pointerup', { ...pointer, clientX: startX, clientY: targetY }));
   });
 
   const movedBox = await selection.boundingBox();
@@ -1048,16 +1062,58 @@ test('url image allows trimming a long captured page before saving', async ({ pa
 test('screen capture tools render the browser capture workbench without a file dropzone', async ({ page }) => {
   await page.goto('/tools/screen/screenshot-capture');
 
-  await expect(page.getByText('Screenshot source')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Capture screenshot' })).toBeVisible();
   await expect(page.getByText('Capture notes')).toBeVisible();
   await expect(page.getByText(/Drag files here|Drop files here/)).toHaveCount(0);
 });
 
+test('tool search understands everyday Korean queries', async ({ page }) => {
+  await page.goto('/tools');
+  await page.keyboard.press('Control+k');
+  const search = page.getByRole('searchbox');
+  await expect(search).toBeVisible();
+  // Before typing, common tools are suggested.
+  await expect(page.getByRole('option').first()).toBeVisible();
+
+  await search.fill('pdf합치기');
+  await expect(page.getByRole('option').first()).toContainText('PDF Merge');
+
+  await search.fill('사진 용량 줄이기');
+  await expect(page.getByRole('option').first()).toContainText('Compress Image');
+
+  await search.fill('큐알');
+  await expect(page.getByRole('option').first()).toContainText('QR Code');
+  await search.press('Enter');
+  await expect(page).toHaveURL(/\/tools\/web\/qr-generator$/);
+});
+
+test('the separate screen recorders open the merged recorder with matching settings', async ({ page }) => {
+  await page.goto('/tools/screen/screen-mic-recorder', { waitUntil: 'domcontentloaded' });
+  await expect(page).toHaveURL(/\/tools\/screen\/screen-recorder\?audio=mic$/);
+  await expect(page.getByLabel('Sound')).toHaveValue('mic');
+
+  // Camera options only appear once the camera is switched on.
+  await expect(page.getByLabel('Camera position')).toHaveCount(0);
+  await page.getByLabel('Show my camera').check();
+  await expect(page.getByLabel('Camera position')).toBeVisible();
+});
+
+test('image format converters are one tool with the format preselected', async ({ page }) => {
+  await page.goto('/tools/image/webp-png', { waitUntil: 'domcontentloaded' });
+  await expect(page).toHaveURL(/\/tools\/image\/image-convert\?format=image\/png$/);
+  await expect(page.getByLabel('Convert to')).toHaveValue('image/png');
+});
+
+test('audio shortcuts open the editor for that job', async ({ page }) => {
+  await page.goto('/tools/audio/audio-merge', { waitUntil: 'domcontentloaded' });
+  await expect(page).toHaveURL(/\/tools\/audio\?intent=merge$/);
+  await expect(page.getByText(/Open several audio files at once/)).toBeVisible({ timeout: 60_000 });
+});
+
 test('audio recorder legacy route redirects to the unified editor', async ({ page }) => {
   await page.goto('/tools/audio/audio-recorder', { waitUntil: 'domcontentloaded' });
 
-  await expect(page).toHaveURL(/\/tools\/audio$/);
+  await expect(page).toHaveURL(/\/tools\/audio(\?intent=[a-z]+)?$/);
 });
 
 test.describe('mobile shell', () => {
@@ -1121,7 +1177,7 @@ test.describe('mobile capture flows', () => {
   test('screen recorder keeps mobile guidance visible', async ({ page }) => {
     await page.goto('/tools/screen/screen-recorder');
 
-    await expect(page.getByRole('button', { name: 'Start capture' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Start recording' })).toBeVisible();
     await expect(page.getByText(/On supported mobile browsers, choose This Tab/)).toBeVisible();
   });
 

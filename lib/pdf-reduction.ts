@@ -43,10 +43,10 @@ export function summarizePdfReduction(originalBytes: number, reducedBytes: numbe
   return { useReduced, savedPercent };
 }
 
-export type ReduceMode = 'keep-text' | 'flatten';
+export type ReduceMode = 'keep-text' | 'flatten' | 'structure';
 
 export function resolveReduceMode(value: unknown): ReduceMode {
-  return value === 'keep-text' ? 'keep-text' : 'flatten';
+  return value === 'keep-text' || value === 'structure' ? value : 'flatten';
 }
 
 /**

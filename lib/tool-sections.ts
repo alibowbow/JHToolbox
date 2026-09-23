@@ -35,12 +35,12 @@ export const categorySections: Partial<Record<ToolCategory, CategorySection[]>> 
     {
       id: 'convert',
       title: { en: 'Convert from PDF', ko: 'PDF에서 변환' },
-      toolIds: ['pdf-to-png', 'pdf-to-jpg', 'pdf-to-webp', 'pdf-extract-images', 'pdf-to-word', 'pdf-to-excel', 'pdf-to-hwpx', 'pdf-to-pdfa'],
+      toolIds: ['pdf-to-image', 'pdf-to-word', 'pdf-to-excel', 'pdf-to-hwpx', 'pdf-to-pdfa'],
     },
     {
       id: 'optimize',
       title: { en: 'Compress & optimize', ko: '압축 · 최적화' },
-      toolIds: ['pdf-reduce-size', 'pdf-compress'],
+      toolIds: ['pdf-reduce-size'],
     },
     {
       id: 'utilities',

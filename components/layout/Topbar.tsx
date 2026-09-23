@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronRight, CornerDownLeft, Menu, Search, SearchX, X } from 'lucide-react';
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import type { ToolDefinition } from '@/types/tool';
 import { BrandLink } from '@/components/layout/Brand';
 import { NavigationList } from '@/components/layout/navigation-list';
@@ -16,8 +16,22 @@ import { getLocalizedToolCopy } from '@/lib/tool-localization';
 import { getToolIcon } from '@/lib/tool-icons';
 import { categoryStyles } from '@/lib/tool-presentation';
 import { categories, getBrowsableTools, getToolById } from '@/lib/tool-registry';
+import { getRecentTools } from '@/lib/recent-tools';
+import { buildSearchEntries, searchTools } from '@/lib/tool-search';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { LocaleToggle } from '@/components/ui/LocaleToggle';
+
+/** Common starting points, shown before the user types. */
+const SUGGESTED_TOOL_IDS = [
+  'pdf-merge',
+  'image-compress',
+  'pdf-reduce-size',
+  'image-resize',
+  'video-convert',
+  'ocr-image-to-text',
+  'pdf-to-hwpx',
+  'qr-generator',
+];
 
 export function Topbar() {
   const { locale, messages } = useLocale();
@@ -80,27 +94,39 @@ export function Topbar() {
     };
   }, [menuOpen, searchOpen]);
 
-  const searchResults = useMemo(() => {
-    const normalizedQuery = deferredQuery.trim().toLowerCase();
-    if (!normalizedQuery) {
-      return browseTools.slice(0, 10);
-    }
+  const searchEntries = useMemo(
+    () =>
+      buildSearchEntries(browseTools, getLocalizedToolCopy, (tool) => [
+        getCategoryCopy('en', tool.category).nav,
+        getCategoryCopy('ko', tool.category).nav,
+      ]),
+    [browseTools],
+  );
+  const [recentIds, setRecentIds] = useState<string[]>([]);
 
-    return browseTools
-      .filter((tool) => {
-        const categoryLabel = getCategoryCopy(locale, tool.category).nav.toLowerCase();
-        const localizedTool = getLocalizedToolCopy(tool, locale);
-        return (
-          tool.name.toLowerCase().includes(normalizedQuery) ||
-          tool.description.toLowerCase().includes(normalizedQuery) ||
-          localizedTool.name.toLowerCase().includes(normalizedQuery) ||
-          localizedTool.description.toLowerCase().includes(normalizedQuery) ||
-          tool.tags.some((tag) => tag.toLowerCase().includes(normalizedQuery)) ||
-          categoryLabel.includes(normalizedQuery)
-        );
-      })
-      .slice(0, 12);
-  }, [browseTools, deferredQuery, locale]);
+  useEffect(() => {
+    if (searchOpen) {
+      setRecentIds(getRecentTools());
+    }
+  }, [searchOpen]);
+
+  // Before typing: the user's recent tools, then common starting points.
+  const suggestions = useMemo(() => {
+    const browsable = new Set(browseTools.map((tool) => tool.id));
+    const recent = recentIds.filter((id) => browsable.has(id)).slice(0, 4);
+    const suggested = SUGGESTED_TOOL_IDS.filter((id) => browsable.has(id) && !recent.includes(id)).slice(0, 8 - recent.length);
+    return {
+      recentCount: recent.length,
+      tools: [...recent, ...suggested].map((id) => getToolById(id)).filter((tool): tool is ToolDefinition => Boolean(tool)),
+    };
+  }, [browseTools, recentIds]);
+
+  const searchResults = useMemo(() => {
+    if (!deferredQuery.trim()) {
+      return suggestions.tools;
+    }
+    return searchTools(searchEntries, deferredQuery, { recentIds, popularIds: SUGGESTED_TOOL_IDS }).slice(0, 12);
+  }, [deferredQuery, recentIds, searchEntries, suggestions]);
 
   useEffect(() => {
     setActiveIndex(0);
@@ -294,9 +320,6 @@ export function Topbar() {
                   </div>
                 ) : (
                   <>
-                    {isQueryEmpty ? (
-                      <p className="px-3 pb-1.5 pt-2 text-xs font-semibold text-ink-faint">{messages.topbar.searchSuggested}</p>
-                    ) : null}
                     <div role="listbox" id="tool-search-results" aria-label={messages.topbar.searchLabel}>
                       {searchResults.map((tool, index) => {
                         const Icon = getToolIcon(tool.id, tool.category);
@@ -305,36 +328,50 @@ export function Topbar() {
                         const style = categoryStyles[tool.category];
                         const isActive = index === Math.min(activeIndex, searchResults.length - 1);
 
+                        const sectionTitle = !isQueryEmpty
+                          ? null
+                          : index === 0 && suggestions.recentCount > 0
+                            ? messages.topbar.searchRecent
+                            : index === suggestions.recentCount
+                              ? messages.topbar.searchSuggested
+                              : null;
+
                         return (
-                          <Link
-                            key={tool.id}
-                            ref={(element) => {
-                              itemRefs.current[index] = element;
-                            }}
-                            id={`tool-search-option-${index}`}
-                            role="option"
-                            aria-selected={isActive}
-                            href={`/tools/${tool.category}/${tool.id}`}
-                            onClick={() => setSearchOpen(false)}
-                            onMouseEnter={() => setActiveIndex(index)}
-                            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors ${
-                              isActive ? 'bg-base-subtle' : ''
-                            }`}
-                          >
-                            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] ${style.iconBg} ${style.icon}`}>
-                              <Icon size={17} />
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-medium text-ink">{localizedTool.name}</span>
-                              <span className="block truncate text-xs text-ink-muted">{localizedTool.description}</span>
-                            </span>
-                            <span className="hidden shrink-0 text-xs text-ink-faint sm:block">{category.nav}</span>
-                            <CornerDownLeft
-                              size={14}
-                              aria-hidden="true"
-                              className={`shrink-0 text-ink-faint ${isActive ? 'opacity-100' : 'opacity-0'}`}
-                            />
-                          </Link>
+                          <Fragment key={tool.id}>
+                            {sectionTitle ? (
+                              <p role="presentation" className="px-3 pb-1.5 pt-2.5 text-xs font-semibold text-ink-faint">
+                                {sectionTitle}
+                              </p>
+                            ) : null}
+                            <Link
+                              ref={(element) => {
+                                itemRefs.current[index] = element;
+                              }}
+                              id={`tool-search-option-${index}`}
+                              role="option"
+                              aria-selected={isActive}
+                              href={`/tools/${tool.category}/${tool.id}`}
+                              onClick={() => setSearchOpen(false)}
+                              onMouseEnter={() => setActiveIndex(index)}
+                              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors ${
+                                isActive ? 'bg-base-subtle' : ''
+                              }`}
+                            >
+                              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] ${style.iconBg} ${style.icon}`}>
+                                <Icon size={17} />
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-medium text-ink">{localizedTool.name}</span>
+                                <span className="block truncate text-xs text-ink-muted">{localizedTool.description}</span>
+                              </span>
+                              <span className="hidden shrink-0 text-xs text-ink-faint sm:block">{category.nav}</span>
+                              <CornerDownLeft
+                                size={14}
+                                aria-hidden="true"
+                                className={`shrink-0 text-ink-faint ${isActive ? 'opacity-100' : 'opacity-0'}`}
+                              />
+                            </Link>
+                          </Fragment>
                         );
                       })}
                     </div>

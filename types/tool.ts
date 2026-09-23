@@ -15,6 +15,10 @@ export interface ToolOption {
   step?: number;
   placeholder?: string;
   options?: Array<{ label: string; value: string | number }>;
+  /** Set by an on-page editor rather than typed; never shown as a form field. */
+  hidden?: boolean;
+  /** Only relevant (and shown) while another option has one of these values. */
+  showWhen?: { key: string; equals: Array<string | number | boolean> };
 }
 
 export interface ToolDefinition {

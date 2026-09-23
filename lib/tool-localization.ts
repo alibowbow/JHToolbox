@@ -1,5 +1,5 @@
-import { Locale } from '@/lib/i18n';
-import { ToolDefinition, ToolOption } from '@/types/tool';
+import type { Locale } from '@/lib/i18n';
+import type { ToolDefinition, ToolOption } from '@/types/tool';
 
 const koToolNames: Record<string, string> = {
   'pdf-merge': 'PDF 병합',
@@ -12,6 +12,7 @@ const koToolNames: Record<string, string> = {
   'pdf-compress': 'PDF 구조 최적화',
   'pdf-reduce-size': 'PDF 용량 줄이기',
   'pdf-to-png': 'PDF를 PNG로',
+  'pdf-to-image': 'PDF를 이미지로',
   'pdf-to-jpg': 'PDF를 JPG로',
   'pdf-to-webp': 'PDF를 WEBP로',
   'image-to-pdf': '이미지를 PDF로',
@@ -28,6 +29,7 @@ const koToolNames: Record<string, string> = {
   'image-collage': '콜라주 만들기',
   'image-background-transparent': '단색 배경 제거',
   'image-blur-background': '이미지 블러',
+  'image-convert': '이미지 형식 변환',
   'png-jpg': 'PNG를 JPG로',
   'jpg-png': 'JPG를 PNG로',
   'png-webp': 'PNG를 WEBP로',
@@ -66,7 +68,7 @@ const koToolNames: Record<string, string> = {
   'json-xml': 'JSON을 XML로',
   'xml-csv': 'XML을 CSV로',
   'split-csv': 'CSV 분할',
-  'create-zip': 'ZIP 만들기',
+  'create-zip': 'ZIP 압축',
   'extract-zip': 'ZIP 압축 해제',
   'qr-generator': 'QR 코드 생성기',
   'url-image': '웹페이지를 이미지로',
@@ -77,15 +79,16 @@ const koToolNames: Record<string, string> = {
 
 const koToolDescriptions: Record<string, string> = {
   'pdf-merge': '여러 PDF의 페이지를 확인하고 순서를 정한 뒤 하나의 문서로 병합합니다.',
-  'pdf-split': 'PDF를 페이지 단위의 개별 파일로 분할합니다.',
+  'pdf-split': 'PDF를 페이지마다, 또는 지정한 페이지 범위마다 나눕니다.',
   'pdf-rearrange': 'PDF 페이지의 순서를 바꾸고 필요 없는 페이지를 제거합니다.',
-  'pdf-rotate': 'PDF의 모든 페이지를 같은 각도로 회전합니다.',
+  'pdf-rotate': 'PDF의 전체 또는 고른 페이지만 회전합니다.',
   'pdf-delete-page': '선택한 페이지를 PDF에서 제거합니다.',
   'pdf-add-page-numbers': 'PDF 각 페이지에 페이지 번호를 추가합니다.',
   'pdf-extract-images': 'PDF 각 페이지를 PNG로 렌더링합니다. 내장 이미지 추출이 아니라 페이지 래스터화입니다.',
   'pdf-compress': 'PDF를 콤팩트한 객체 스트림으로 다시 저장합니다. 이미지·폰트 재압축이 아니라, 이미지가 많은 파일은 줄지 않을 수 있습니다.',
   'pdf-reduce-size': 'PDF 용량을 줄입니다. 기본값 "플래튼"은 페이지 전체를 압축 이미지로 다시 렌더링해 확실히 작아지지만 텍스트 선택이 불가능해집니다. "텍스트 유지"는 내장된 JPEG 이미지만 재압축해 텍스트 선택을 유지합니다. 더 작아지지 않으면 원본을 그대로 둡니다.',
   'pdf-to-png': 'PDF 페이지를 PNG 이미지로 변환합니다.',
+  'pdf-to-image': 'PDF 페이지를 JPG·PNG·WEBP 이미지로 저장합니다. 전체 또는 고른 페이지만 저장할 수 있어요.',
   'pdf-to-jpg': 'PDF 페이지를 JPG 이미지로 변환합니다.',
   'pdf-to-webp': 'PDF 페이지를 WEBP 이미지로 변환합니다.',
   'image-to-pdf': '여러 이미지를 한 개의 PDF로 묶습니다.',
@@ -102,6 +105,7 @@ const koToolDescriptions: Record<string, string> = {
   'image-collage': '여러 이미지를 그리드형 콜라주로 배치합니다.',
   'image-background-transparent': '색상 임계값으로 단색·연한 배경을 제거하고 투명 PNG로 내보냅니다. AI 피사체 추출이 아닙니다.',
   'image-blur-background': '이미지 전체에 블러 효과를 적용합니다.',
+  'image-convert': '이미지를 JPG·PNG·WEBP로 바꿉니다. GIF(첫 프레임)·TIFF·SVG·BMP도 열 수 있어요.',
   'png-jpg': 'PNG 파일을 JPG 포맷으로 변환합니다.',
   'jpg-png': 'JPG 파일을 PNG 포맷으로 변환합니다.',
   'png-webp': 'PNG 파일을 WEBP 포맷으로 변환합니다.',
@@ -114,7 +118,7 @@ const koToolDescriptions: Record<string, string> = {
   'tiff-png': 'TIFF 파일을 PNG 포맷으로 변환합니다.',
   'svg-png': 'SVG 파일을 PNG 이미지로 렌더링합니다.',
   'ocr-image-to-text': '이미지 안의 문자를 인식해 텍스트로 추출합니다.',
-  'ocr-pdf-to-text': 'PDF 안의 문자를 추출해 텍스트로 만듭니다.',
+  'ocr-pdf-to-text': 'PDF의 글자를 텍스트로 뽑아냅니다. 글자를 선택할 수 없는 스캔 페이지는 OCR로 읽습니다.',
   'video-to-gif': '비디오를 GIF 애니메이션으로 변환합니다.',
   'video-to-webp': '비디오를 WEBP 애니메이션으로 변환합니다.',
   'mute-video': '비디오에서 오디오 트랙을 제거합니다.',
@@ -153,6 +157,8 @@ const koOptionLabelsByLabel: Record<string, string> = {
   'Pages to keep, in order': '남길 페이지 (적은 순서대로)',
   Rotation: '회전 각도',
   'Pages to delete': '삭제할 페이지',
+  'Page ranges': '페이지 범위',
+  Pages: '페이지',
   'Start number': '시작 번호',
   'Font size': '글자 크기',
   'JPG quality': 'JPG 품질',
@@ -184,6 +190,14 @@ const koOptionLabelsByLabel: Record<string, string> = {
   'White threshold': '화이트 임계값',
   'Blur radius': '블러 강도',
   'OCR language': 'OCR 언어',
+  'Text recognition': '글자 인식 방식',
+  Position: '위치',
+  Sound: '소리',
+  'Show my camera': '내 카메라 함께 녹화',
+  'Convert to': '바꿀 형식',
+  'Image format': '이미지 형식',
+  'Quality (JPG/WEBP)': '품질 (JPG/WEBP)',
+  'Keep aspect ratio (fit inside)': '비율 유지 (크기 안에 맞춤)',
   FPS: 'FPS',
   'CRF (lower = better quality)': 'CRF (낮을수록 고화질)',
   'Rows per file': '파일당 행 수',
@@ -250,6 +264,9 @@ const koChoiceLabels: Record<string, string> = {
   Vertical: '세로',
   'English (eng)': '영어 (eng)',
   'Korean + English (kor+eng)': '한국어 + 영어 (kor+eng)',
+  'Auto (OCR only pages without text)': '자동 (글자 없는 페이지만 OCR)',
+  'OCR every page': '모든 페이지 OCR',
+  'Text layer only (fast)': '텍스트 레이어만 (빠름)',
   'Keep original': '원본 유지',
   'Keep selection': '선택 구간만 남기기',
   'Remove selection': '선택 구간 제거하기',
@@ -259,7 +276,9 @@ const koChoiceLabels: Record<string, string> = {
 
 const koPlaceholders: Record<string, string> = {
   'e.g. 3,1,2 or 4-6 (unlisted pages are removed)': '예: 3,1,2 또는 4~6 (적지 않은 페이지는 빠집니다)',
-  'e.g. 2,5': '예: 2,5',
+  'e.g. 2, 5-7, even': '예: 2, 5-7, 짝수',
+  'Empty = every page; e.g. 1-3, 4-6': '비우면 한 쪽씩; 예: 1-3, 4-6',
+  'Empty = all pages; e.g. 1, 3-5': '비우면 전체; 예: 1, 3-5',
 };
 
 Object.assign(koToolNames, {
@@ -319,7 +338,7 @@ Object.assign(koToolDescriptions, {
   'audio-fade': '오디오 시작과 끝에 부드러운 페이드를 적용합니다.',
   'audio-speed-change': '오디오 속도를 바꾸면서 피치는 최대한 유지합니다.',
   'audio-pitch-change': '오디오 음높이를 반음 단위로 조절합니다.',
-  'screen-recorder': '브라우저에서 화면, 탭, 창을 바로 녹화합니다.',
+  'screen-recorder': '화면·창·탭을 녹화합니다. 화면 소리, 마이크 또는 둘 다 넣을 수 있고, 내 카메라를 구석에 함께 담을 수도 있어요.',
   'screen-audio-recorder': '화면과 시스템 오디오를 함께 녹화합니다.',
   'screen-mic-recorder': '화면과 마이크 음성을 함께 녹화합니다.',
   'screen-camera-recorder': '화면 녹화에 웹캠 오버레이를 합성합니다.',
@@ -373,6 +392,14 @@ Object.assign(koChoiceLabels, {
   'Bottom left': '왼쪽 아래',
   'Bottom right': '오른쪽 아래',
   Enabled: '사용',
+  Center: '가운데',
+  'Same as original': '원본과 같게',
+  'Lossless — rebuild the file structure only': '무손실 — 파일 구조만 다시 정리',
+  'Tiled across the page': '페이지 전체에 반복',
+  'No sound': '소리 없음',
+  'Screen sound (tab or system)': '화면 소리 (탭·시스템)',
+  Microphone: '마이크',
+  'Screen sound + microphone': '화면 소리 + 마이크',
 });
 
 Object.assign(koToolNames, {

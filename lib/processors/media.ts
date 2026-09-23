@@ -1,4 +1,5 @@
 import { getFfmpeg } from '@/lib/processors/ffmpeg-client';
+import { decodeImage } from '@/lib/processors/image-decode';
 import { baseName, extOf, parseNumber } from '@/lib/utils';
 import { toEvenDimension, toEvenOffset } from '@/lib/media-dimensions';
 import { ProcessContext, ProcessedFile } from '@/types/processor';
@@ -386,7 +387,7 @@ async function writeImageFrames(ffmpeg: any, files: File[], dirName: string) {
   await ffmpeg.createDir(dirName);
 
   for (let index = 0; index < files.length; index += 1) {
-    const bitmap = await createImageBitmap(files[index]);
+    const bitmap = await decodeImage(files[index]);
     const canvas = document.createElement('canvas');
     canvas.width = bitmap.width;
     canvas.height = bitmap.height;

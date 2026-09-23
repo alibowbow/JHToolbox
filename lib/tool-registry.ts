@@ -1,4 +1,4 @@
-import { ToolCategoryDefinition, ToolDefinition } from '@/types/tool';
+import type { ToolCategoryDefinition, ToolDefinition } from '@/types/tool';
 
 export const tools: ToolDefinition[] = [
   {
@@ -16,9 +16,19 @@ export const tools: ToolDefinition[] = [
     id: 'pdf-split',
     name: 'PDF Split',
     category: 'pdf',
-    description: 'Split a PDF into one file per page.',
+    description: 'Split a PDF into one file per page, or into the page ranges you list.',
     accept: '.pdf',
+    multiple: true,
     tags: ['pdf', 'split'],
+    options: [
+      {
+        key: 'ranges',
+        label: 'Page ranges',
+        type: 'text',
+        defaultValue: '',
+        placeholder: 'Empty = every page; e.g. 1-3, 4-6',
+      },
+    ],
   },
   {
     id: 'pdf-rearrange',
@@ -43,10 +53,18 @@ export const tools: ToolDefinition[] = [
     id: 'pdf-rotate',
     name: 'PDF Rotate',
     category: 'pdf',
-    description: 'Rotate every page in a PDF.',
+    description: 'Rotate all pages of a PDF, or only the pages you choose.',
     accept: '.pdf',
+    multiple: true,
     tags: ['pdf', 'rotate'],
     options: [
+      {
+        key: 'pages',
+        label: 'Pages',
+        type: 'text',
+        defaultValue: '',
+        placeholder: 'Empty = all pages; e.g. 1, 3-5',
+      },
       {
         key: 'degrees',
         label: 'Rotation',
@@ -66,6 +84,7 @@ export const tools: ToolDefinition[] = [
     category: 'pdf',
     description: 'Remove selected pages from a PDF.',
     accept: '.pdf',
+    multiple: true,
     tags: ['pdf', 'delete'],
     browseGroups: ['trim'],
     options: [
@@ -74,7 +93,7 @@ export const tools: ToolDefinition[] = [
         label: 'Pages to delete',
         type: 'text',
         defaultValue: '',
-        placeholder: 'e.g. 2,5',
+        placeholder: 'e.g. 2, 5-7, even',
       },
     ],
   },
@@ -84,6 +103,7 @@ export const tools: ToolDefinition[] = [
     category: 'pdf',
     description: 'Insert automatic page numbers into a PDF.',
     accept: '.pdf',
+    multiple: true,
     tags: ['pdf', 'numbering', 'pages'],
     browseGroups: ['new'],
     options: [
@@ -129,6 +149,18 @@ export const tools: ToolDefinition[] = [
         label: 'Text',
         type: 'text',
         defaultValue: 'JH Toolbox',
+        showWhen: { key: 'watermarkType', equals: ['text'] },
+      },
+      {
+        key: 'position',
+        label: 'Position',
+        type: 'select',
+        defaultValue: 'center',
+        options: [
+          { label: 'Center', value: 'center' },
+          { label: 'Tiled across the page', value: 'tile' },
+          { label: 'Bottom right', value: 'bottom-right' },
+        ],
       },
       {
         key: 'fontSize',
@@ -137,6 +169,7 @@ export const tools: ToolDefinition[] = [
         defaultValue: 32,
         min: 8,
         max: 160,
+        showWhen: { key: 'watermarkType', equals: ['text'] },
       },
       {
         key: 'opacity',
@@ -162,7 +195,8 @@ export const tools: ToolDefinition[] = [
         defaultValue: 0.24,
         min: 0.05,
         max: 1,
-        step: 0.02,
+        step: 0.01,
+        showWhen: { key: 'watermarkType', equals: ['image'] },
       },
     ],
   },
@@ -170,11 +204,12 @@ export const tools: ToolDefinition[] = [
     id: 'pdf-redact',
     name: 'PDF Redact',
     category: 'pdf',
-    description: 'Cover a fixed rectangle on selected PDF pages with a solid redact box.',
+    description: 'Draw boxes over what must stay private. Those pages are rebuilt as images, so the hidden content is really gone from the file.',
     accept: '.pdf',
     tags: ['pdf', 'redact', 'cover'],
     browseGroups: ['trim'],
     options: [
+      { key: 'regions', label: 'Boxes', type: 'text', defaultValue: '', hidden: true },
       { key: 'pageStart', label: 'Start page', type: 'number', defaultValue: 1, min: 1 },
       { key: 'pageEnd', label: 'End page', type: 'number', defaultValue: 1, min: 1 },
       { key: 'x', label: 'X', type: 'number', defaultValue: 40, min: 0 },
@@ -190,6 +225,8 @@ export const tools: ToolDefinition[] = [
     category: 'pdf',
     description: 'Render each PDF page as a PNG image. This is page rasterization, not embedded-image extraction.',
     accept: '.pdf',
+    multiple: true,
+    hiddenFromBrowse: true,
     tags: ['pdf', 'extract', 'images'],
   },
   {
@@ -198,6 +235,8 @@ export const tools: ToolDefinition[] = [
     category: 'pdf',
     description: 'Re-save a PDF with compact object streams. This is not image/font recompression and may not shrink image-heavy files.',
     accept: '.pdf',
+    multiple: true,
+    hiddenFromBrowse: true,
     tags: ['pdf', 'compress'],
     browseGroups: ['compress'],
   },
@@ -208,6 +247,7 @@ export const tools: ToolDefinition[] = [
     description:
       'Reduce a PDF\'s file size. By default "Flatten" re-renders whole pages to compressed images — reliably smaller, but text becomes non-selectable. "Keep text" instead recompresses only the embedded JPEG images and leaves text selectable. The original is kept if the result would not be smaller.',
     accept: '.pdf',
+    multiple: true,
     tags: ['pdf', 'compress', 'reduce', 'size', 'shrink', 'optimize'],
     browseGroups: ['compress', 'new'],
     options: [
@@ -219,6 +259,7 @@ export const tools: ToolDefinition[] = [
         options: [
           { label: 'Flatten pages to images (smaller — text not selectable)', value: 'flatten' },
           { label: 'Keep text — recompress JPEG images only', value: 'keep-text' },
+          { label: 'Lossless — rebuild the file structure only', value: 'structure' },
         ],
       },
       {
@@ -233,6 +274,7 @@ export const tools: ToolDefinition[] = [
           { label: '200 DPI', value: 200 },
           { label: '300 DPI (sharpest)', value: 300 },
         ],
+        showWhen: { key: 'mode', equals: ['flatten', 'keep-text'] },
       },
       {
         key: 'quality',
@@ -245,8 +287,45 @@ export const tools: ToolDefinition[] = [
           { label: 'Low', value: 0.55 },
           { label: 'Minimum', value: 0.4 },
         ],
+        showWhen: { key: 'mode', equals: ['flatten', 'keep-text'] },
       },
-      { key: 'grayscale', label: 'Grayscale', type: 'checkbox', defaultValue: false },
+      { key: 'grayscale', label: 'Grayscale', type: 'checkbox', defaultValue: false, showWhen: { key: 'mode', equals: ['flatten', 'keep-text'] } },
+    ],
+  },
+  {
+    id: 'pdf-to-image',
+    name: 'PDF to Image',
+    category: 'pdf',
+    description: 'Save PDF pages as JPG, PNG or WEBP images — all pages or only the ones you choose.',
+    accept: '.pdf',
+    multiple: true,
+    tags: ['pdf', 'image', 'convert', 'jpg', 'png', 'webp', 'render'],
+    browseGroups: ['popular', 'convert'],
+    options: [
+      {
+        key: 'format',
+        label: 'Image format',
+        type: 'select',
+        defaultValue: 'image/jpeg',
+        options: [
+          { label: 'JPG', value: 'image/jpeg' },
+          { label: 'PNG', value: 'image/png' },
+          { label: 'WEBP', value: 'image/webp' },
+        ],
+      },
+      {
+        key: 'dpi',
+        label: 'Resolution (DPI)',
+        type: 'select',
+        defaultValue: 150,
+        options: [
+          { label: '96 DPI', value: 96 },
+          { label: '150 DPI (recommended)', value: 150 },
+          { label: '200 DPI', value: 200 },
+          { label: '300 DPI (sharpest)', value: 300 },
+        ],
+      },
+      { key: 'pages', label: 'Pages', type: 'text', defaultValue: '', placeholder: 'Empty = all pages; e.g. 1, 3-5' },
     ],
   },
   {
@@ -255,6 +334,8 @@ export const tools: ToolDefinition[] = [
     category: 'pdf',
     description: 'Convert PDF pages to PNG images.',
     accept: '.pdf',
+    multiple: true,
+    hiddenFromBrowse: true,
     tags: ['pdf', 'png', 'convert'],
   },
   {
@@ -263,6 +344,8 @@ export const tools: ToolDefinition[] = [
     category: 'pdf',
     description: 'Convert PDF pages to JPG images.',
     accept: '.pdf',
+    multiple: true,
+    hiddenFromBrowse: true,
     tags: ['pdf', 'jpg', 'convert'],
     options: [
       {
@@ -282,6 +365,8 @@ export const tools: ToolDefinition[] = [
     category: 'pdf',
     description: 'Convert PDF pages to WEBP images.',
     accept: '.pdf',
+    multiple: true,
+    hiddenFromBrowse: true,
     tags: ['pdf', 'webp', 'convert'],
     options: [
       {
@@ -310,6 +395,7 @@ export const tools: ToolDefinition[] = [
     category: 'pdf',
     description: 'Extract readable PDF text into a DOCX document.',
     accept: '.pdf',
+    multiple: true,
     tags: ['pdf', 'word', 'docx', 'convert'],
     browseGroups: ['convert', 'new'],
   },
@@ -319,6 +405,7 @@ export const tools: ToolDefinition[] = [
     category: 'pdf',
     description: 'Extract readable PDF text into workbook sheets. This is text extraction, not structured table reconstruction.',
     accept: '.pdf',
+    multiple: true,
     tags: ['pdf', 'excel', 'xlsx', 'convert'],
     browseGroups: ['convert', 'new'],
   },
@@ -328,6 +415,7 @@ export const tools: ToolDefinition[] = [
     category: 'pdf',
     description: 'Convert DOCX text documents into browser-generated PDF pages.',
     accept: '.docx',
+    multiple: true,
     tags: ['word', 'docx', 'pdf', 'convert'],
     browseGroups: ['convert', 'new'],
   },
@@ -337,6 +425,7 @@ export const tools: ToolDefinition[] = [
     category: 'pdf',
     description: 'Convert PPTX slide text into a browser-generated PDF handout.',
     accept: '.pptx',
+    multiple: true,
     tags: ['powerpoint', 'pptx', 'pdf', 'convert'],
     browseGroups: ['convert', 'new'],
   },
@@ -346,6 +435,7 @@ export const tools: ToolDefinition[] = [
     category: 'pdf',
     description: 'Render Excel sheet contents into a PDF summary.',
     accept: '.xls,.xlsx',
+    multiple: true,
     tags: ['excel', 'xlsx', 'pdf', 'convert'],
     browseGroups: ['convert', 'new'],
   },
@@ -355,6 +445,7 @@ export const tools: ToolDefinition[] = [
     category: 'pdf',
     description: 'Render an HTML file into a PDF in the browser.',
     accept: '.html,.htm',
+    multiple: true,
     tags: ['html', 'pdf', 'convert'],
     browseGroups: ['convert', 'new'],
     options: [
@@ -392,14 +483,14 @@ export const tools: ToolDefinition[] = [
         ],
       },
       { key: 'pageNumber', label: 'Page number', type: 'number', defaultValue: 1, min: 1 },
-      { key: 'text', label: 'Text', type: 'text', defaultValue: 'Edited with JH Toolbox' },
-      { key: 'fontSize', label: 'Font size', type: 'number', defaultValue: 18, min: 8, max: 96 },
-      { key: 'color', label: 'Color', type: 'color', defaultValue: '#111827' },
+      { key: 'text', label: 'Text', type: 'text', defaultValue: 'Edited with JH Toolbox', showWhen: { key: 'editType', equals: ['text', 'comment'] } },
+      { key: 'fontSize', label: 'Font size', type: 'number', defaultValue: 18, min: 8, max: 96, showWhen: { key: 'editType', equals: ['text', 'comment'] } },
+      { key: 'color', label: 'Color', type: 'color', defaultValue: '#111827', showWhen: { key: 'editType', equals: ['text', 'comment', 'rectangle', 'highlight'] } },
       { key: 'opacity', label: 'Opacity', type: 'range', defaultValue: 0.9, min: 0.05, max: 1, step: 0.05 },
       { key: 'x', label: 'X', type: 'number', defaultValue: 40, min: 0 },
       { key: 'y', label: 'Y', type: 'number', defaultValue: 40, min: 0 },
-      { key: 'width', label: 'Width', type: 'number', defaultValue: 220, min: 24 },
-      { key: 'height', label: 'Height', type: 'number', defaultValue: 72, min: 24 },
+      { key: 'width', label: 'Width', type: 'number', defaultValue: 220, min: 8 },
+      { key: 'height', label: 'Height', type: 'number', defaultValue: 72, min: 8 },
     ],
   },
   {
@@ -423,14 +514,14 @@ export const tools: ToolDefinition[] = [
         ],
       },
       { key: 'pageNumber', label: 'Page number', type: 'number', defaultValue: 1, min: 1 },
-      { key: 'signerName', label: 'Signer name', type: 'text', defaultValue: 'Signed with JH Toolbox' },
-      { key: 'fontSize', label: 'Font size', type: 'number', defaultValue: 22, min: 10, max: 96 },
-      { key: 'color', label: 'Color', type: 'color', defaultValue: '#0f172a' },
-      { key: 'includeDate', label: 'Include date', type: 'checkbox', defaultValue: true },
+      { key: 'signerName', label: 'Signer name', type: 'text', defaultValue: 'Signed with JH Toolbox', showWhen: { key: 'signatureType', equals: ['text'] } },
+      { key: 'fontSize', label: 'Font size', type: 'number', defaultValue: 22, min: 10, max: 96, showWhen: { key: 'signatureType', equals: ['text'] } },
+      { key: 'color', label: 'Color', type: 'color', defaultValue: '#0f172a', showWhen: { key: 'signatureType', equals: ['text'] } },
+      { key: 'includeDate', label: 'Include date', type: 'checkbox', defaultValue: true, showWhen: { key: 'signatureType', equals: ['text'] } },
       { key: 'x', label: 'X', type: 'number', defaultValue: 40, min: 0 },
       { key: 'y', label: 'Y', type: 'number', defaultValue: 40, min: 0 },
-      { key: 'width', label: 'Width', type: 'number', defaultValue: 180, min: 48 },
-      { key: 'height', label: 'Height', type: 'number', defaultValue: 72, min: 32 },
+      { key: 'width', label: 'Width', type: 'number', defaultValue: 180, min: 8 },
+      { key: 'height', label: 'Height', type: 'number', defaultValue: 72, min: 8 },
     ],
   },
   {
@@ -439,6 +530,7 @@ export const tools: ToolDefinition[] = [
     category: 'pdf',
     description: 'Rebuild a parseable PDF into a cleaner browser-saved copy. It cannot recover a severely corrupted or unparseable file.',
     accept: '.pdf',
+    multiple: true,
     tags: ['pdf', 'repair', 'rebuild'],
     browseGroups: ['new'],
   },
@@ -461,6 +553,7 @@ export const tools: ToolDefinition[] = [
     category: 'pdf',
     description: 'Create a PDF/A-style archival copy with rebuilt metadata. Compliance is not certified.',
     accept: '.pdf',
+    multiple: true,
     tags: ['pdf', 'archive', 'pdfa'],
     browseGroups: ['new', 'convert'],
     options: [
@@ -476,6 +569,7 @@ export const tools: ToolDefinition[] = [
     description:
       'Convert between PDF and Hangul (HWPX) in one place — the direction is chosen automatically from the file you drop. PDF → HWPX: "Keep original look" places each page as a full-page image (most accurate; text not editable), "Editable text" extracts text into paragraphs. HWPX → PDF renders the document text into PDF pages (options below apply to PDF → HWPX only).',
     accept: '.pdf,.hwpx',
+    multiple: true,
     tags: ['pdf', 'hwpx', 'hwp', 'hangul', 'convert'],
     browseGroups: ['new', 'convert'],
     options: [
@@ -500,6 +594,7 @@ export const tools: ToolDefinition[] = [
           { label: '200 DPI (recommended)', value: 200 },
           { label: '300 DPI (sharpest)', value: 300 },
         ],
+        showWhen: { key: 'mode', equals: ['fidelity'] },
       },
       {
         key: 'imageFormat',
@@ -510,6 +605,7 @@ export const tools: ToolDefinition[] = [
           { label: 'PNG (sharp text/lines)', value: 'png' },
           { label: 'JPEG (smaller, photos)', value: 'jpeg' },
         ],
+        showWhen: { key: 'mode', equals: ['fidelity'] },
       },
       {
         key: 'jpegQuality',
@@ -521,6 +617,7 @@ export const tools: ToolDefinition[] = [
           { label: 'Medium', value: 0.7 },
           { label: 'Low', value: 0.55 },
         ],
+        showWhen: { key: 'mode', equals: ['fidelity'] },
       },
     ],
   },
@@ -539,18 +636,21 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Resize images to a target width and height.',
     accept: 'image/*',
+    multiple: true,
     tags: ['image', 'resize'],
     browseGroups: ['editor-enabled'],
     previewKind: 'image',
     options: [
       { key: 'width', label: 'Width', type: 'number', defaultValue: 1280, min: 16 },
       { key: 'height', label: 'Height', type: 'number', defaultValue: 720, min: 16 },
+      { key: 'keepAspect', label: 'Keep aspect ratio (fit inside)', type: 'checkbox', defaultValue: true },
       {
         key: 'format',
         label: 'Output format',
         type: 'select',
-        defaultValue: 'image/png',
+        defaultValue: 'original',
         options: [
+          { label: 'Same as original', value: 'original' },
           { label: 'PNG', value: 'image/png' },
           { label: 'JPG', value: 'image/jpeg' },
           { label: 'WEBP', value: 'image/webp' },
@@ -564,6 +664,7 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Reduce image file size with quality control.',
     accept: 'image/*',
+    multiple: true,
     tags: ['image', 'compress'],
     browseGroups: ['popular', 'compress', 'editor-enabled'],
     previewKind: 'image',
@@ -581,8 +682,9 @@ export const tools: ToolDefinition[] = [
         key: 'format',
         label: 'Output format',
         type: 'select',
-        defaultValue: 'image/jpeg',
+        defaultValue: 'original',
         options: [
+          { label: 'Same as original', value: 'original' },
           { label: 'JPG', value: 'image/jpeg' },
           { label: 'WEBP', value: 'image/webp' },
           { label: 'PNG', value: 'image/png' },
@@ -612,6 +714,7 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Flip images horizontally or vertically.',
     accept: 'image/*',
+    multiple: true,
     tags: ['image', 'flip'],
     options: [
       { key: 'horizontal', label: 'Flip horizontally', type: 'checkbox', defaultValue: true },
@@ -624,6 +727,7 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Rotate images by a custom angle.',
     accept: 'image/*',
+    multiple: true,
     tags: ['image', 'rotate'],
     options: [
       { key: 'degrees', label: 'Rotation', type: 'number', defaultValue: 90, min: 0, max: 360 },
@@ -635,6 +739,7 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Apply a pixelation effect to images.',
     accept: 'image/*',
+    multiple: true,
     tags: ['image', 'pixelate'],
     options: [
       { key: 'size', label: 'Pixel block size', type: 'number', defaultValue: 10, min: 2, max: 80 },
@@ -646,6 +751,7 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Overlay text onto an image.',
     accept: 'image/*',
+    multiple: true,
     tags: ['image', 'text'],
     options: [
       { key: 'text', label: 'Text', type: 'text', defaultValue: 'JH Toolbox' },
@@ -661,6 +767,7 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Add a border around an image.',
     accept: 'image/*',
+    multiple: true,
     tags: ['image', 'border'],
     options: [
       { key: 'size', label: 'Border size', type: 'number', defaultValue: 16, min: 1, max: 200 },
@@ -721,6 +828,7 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Remove a solid or near-solid background by color threshold and export a transparent PNG. This is not AI subject cutout.',
     accept: 'image/*',
+    multiple: true,
     tags: ['image', 'transparent', 'mask', 'background'],
     browseGroups: ['new', 'editor-enabled'],
     previewKind: 'image',
@@ -734,6 +842,7 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Apply a blur effect across the full image.',
     accept: 'image/*',
+    multiple: true,
     tags: ['image', 'blur'],
     browseGroups: ['editor-enabled'],
     previewKind: 'image',
@@ -747,6 +856,7 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Enlarge an image with high-quality Lanczos resampling. This interpolates existing pixels — it is not AI super-resolution.',
     accept: 'image/*',
+    multiple: true,
     tags: ['image', 'upscale', 'enlarge', 'resize'],
     browseGroups: ['new', 'editor-enabled'],
     previewKind: 'image',
@@ -766,8 +876,9 @@ export const tools: ToolDefinition[] = [
         key: 'format',
         label: 'Output format',
         type: 'select',
-        defaultValue: 'image/png',
+        defaultValue: 'original',
         options: [
+          { label: 'Same as original', value: 'original' },
           { label: 'PNG', value: 'image/png' },
           { label: 'JPG', value: 'image/jpeg' },
           { label: 'WEBP', value: 'image/webp' },
@@ -796,11 +907,11 @@ export const tools: ToolDefinition[] = [
           { label: 'Image', value: 'image' },
         ],
       },
-      { key: 'text', label: 'Text', type: 'text', defaultValue: 'JH Toolbox' },
-      { key: 'fontSize', label: 'Font size', type: 'number', defaultValue: 42, min: 8, max: 240 },
-      { key: 'color', label: 'Text color', type: 'color', defaultValue: '#ffffff' },
+      { key: 'text', label: 'Text', type: 'text', defaultValue: 'JH Toolbox', showWhen: { key: 'watermarkType', equals: ['text'] } },
+      { key: 'fontSize', label: 'Font size', type: 'number', defaultValue: 42, min: 8, max: 240, showWhen: { key: 'watermarkType', equals: ['text'] } },
+      { key: 'color', label: 'Text color', type: 'color', defaultValue: '#ffffff', showWhen: { key: 'watermarkType', equals: ['text'] } },
       { key: 'opacity', label: 'Opacity', type: 'range', defaultValue: 0.5, min: 0.05, max: 1, step: 0.05 },
-      { key: 'scale', label: 'Scale', type: 'range', defaultValue: 0.24, min: 0.08, max: 1, step: 0.02 },
+      { key: 'scale', label: 'Scale', type: 'range', defaultValue: 0.24, min: 0.08, max: 1, step: 0.02, showWhen: { key: 'watermarkType', equals: ['image'] } },
       { key: 'x', label: 'X', type: 'number', defaultValue: 20, min: 0 },
       { key: 'y', label: 'Y', type: 'number', defaultValue: 20, min: 0 },
     ],
@@ -811,6 +922,7 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Extract the dominant colors from an image and generate palette swatches.',
     accept: 'image/*',
+    multiple: true,
     tags: ['image', 'palette', 'colors'],
     browseGroups: ['new', 'editor-enabled'],
     previewKind: 'image',
@@ -822,6 +934,7 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Auto-adjust brightness, contrast, and clarity for a cleaner result.',
     accept: 'image/*',
+    multiple: true,
     tags: ['image', 'enhance', 'contrast'],
     browseGroups: ['new', 'editor-enabled'],
     previewKind: 'image',
@@ -831,8 +944,9 @@ export const tools: ToolDefinition[] = [
         key: 'format',
         label: 'Output format',
         type: 'select',
-        defaultValue: 'image/jpeg',
+        defaultValue: 'original',
         options: [
+          { label: 'Same as original', value: 'original' },
           { label: 'JPG', value: 'image/jpeg' },
           { label: 'PNG', value: 'image/png' },
           { label: 'WEBP', value: 'image/webp' },
@@ -841,11 +955,37 @@ export const tools: ToolDefinition[] = [
     ],
   },
   {
+    id: 'image-convert',
+    name: 'Convert Image Format',
+    category: 'image',
+    description: 'Convert images to JPG, PNG or WEBP. Also opens GIF (first frame), TIFF, SVG and BMP.',
+    accept: 'image/*,.tif,.tiff,.svg',
+    multiple: true,
+    tags: ['image', 'convert', 'format', 'jpg', 'jpeg', 'png', 'webp', 'gif', 'tiff', 'svg', 'bmp'],
+    browseGroups: ['popular', 'convert'],
+    options: [
+      {
+        key: 'format',
+        label: 'Convert to',
+        type: 'select',
+        defaultValue: 'image/jpeg',
+        options: [
+          { label: 'JPG', value: 'image/jpeg' },
+          { label: 'PNG', value: 'image/png' },
+          { label: 'WEBP', value: 'image/webp' },
+        ],
+      },
+      { key: 'quality', label: 'Quality (JPG/WEBP)', type: 'range', defaultValue: 0.9, min: 0.5, max: 1, step: 0.05, showWhen: { key: 'format', equals: ['image/jpeg', 'image/webp'] } },
+    ],
+  },
+  {
     id: 'png-jpg',
     name: 'PNG to JPG',
     category: 'image',
     description: 'Convert PNG images to JPG.',
     accept: '.png',
+    multiple: true,
+    hiddenFromBrowse: true,
     tags: ['png', 'jpg', 'convert'],
   },
   {
@@ -854,6 +994,8 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Convert JPG images to PNG.',
     accept: '.jpg,.jpeg',
+    multiple: true,
+    hiddenFromBrowse: true,
     tags: ['jpg', 'png', 'convert'],
   },
   {
@@ -862,6 +1004,8 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Convert PNG images to WEBP.',
     accept: '.png',
+    multiple: true,
+    hiddenFromBrowse: true,
     tags: ['png', 'webp', 'convert'],
   },
   {
@@ -870,6 +1014,8 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Convert WEBP images to PNG.',
     accept: '.webp',
+    multiple: true,
+    hiddenFromBrowse: true,
     tags: ['webp', 'png', 'convert'],
   },
   {
@@ -878,6 +1024,8 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Convert WEBP images to JPG.',
     accept: '.webp',
+    multiple: true,
+    hiddenFromBrowse: true,
     tags: ['webp', 'jpg', 'convert'],
   },
   {
@@ -886,6 +1034,8 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Convert JPG images to WEBP.',
     accept: '.jpg,.jpeg',
+    multiple: true,
+    hiddenFromBrowse: true,
     tags: ['jpg', 'webp', 'convert'],
   },
   {
@@ -894,6 +1044,8 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Convert the first frame of a GIF to JPG (animation is not preserved).',
     accept: '.gif',
+    multiple: true,
+    hiddenFromBrowse: true,
     tags: ['gif', 'jpg', 'convert'],
   },
   {
@@ -902,6 +1054,8 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Convert the first frame of a GIF to PNG (animation is not preserved).',
     accept: '.gif',
+    multiple: true,
+    hiddenFromBrowse: true,
     tags: ['gif', 'png', 'convert'],
   },
   {
@@ -910,6 +1064,8 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Convert TIFF images to JPG.',
     accept: '.tif,.tiff',
+    multiple: true,
+    hiddenFromBrowse: true,
     tags: ['tiff', 'jpg', 'convert'],
   },
   {
@@ -918,6 +1074,8 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Convert TIFF images to PNG.',
     accept: '.tif,.tiff',
+    multiple: true,
+    hiddenFromBrowse: true,
     tags: ['tiff', 'png', 'convert'],
   },
   {
@@ -926,6 +1084,8 @@ export const tools: ToolDefinition[] = [
     category: 'image',
     description: 'Convert SVG images to PNG.',
     accept: '.svg',
+    multiple: true,
+    hiddenFromBrowse: true,
     tags: ['svg', 'png', 'convert'],
   },
   {
@@ -934,6 +1094,7 @@ export const tools: ToolDefinition[] = [
     category: 'ocr',
     description: 'Extract text from images with OCR.',
     accept: 'image/*',
+    multiple: true,
     tags: ['ocr', 'text'],
     options: [
       {
@@ -952,9 +1113,33 @@ export const tools: ToolDefinition[] = [
     id: 'ocr-pdf-to-text',
     name: 'PDF to Text',
     category: 'ocr',
-    description: 'Extract visible text from a PDF.',
+    description: 'Extract the text of a PDF. Scanned pages without selectable text are read with OCR.',
     accept: '.pdf',
+    multiple: true,
     tags: ['ocr', 'pdf', 'text'],
+    options: [
+      {
+        key: 'ocrMode',
+        label: 'Text recognition',
+        type: 'select',
+        defaultValue: 'auto',
+        options: [
+          { label: 'Auto (OCR only pages without text)', value: 'auto' },
+          { label: 'OCR every page', value: 'always' },
+          { label: 'Text layer only (fast)', value: 'never' },
+        ],
+      },
+      {
+        key: 'lang',
+        label: 'OCR language',
+        type: 'select',
+        defaultValue: 'kor+eng',
+        options: [
+          { label: 'Korean + English (kor+eng)', value: 'kor+eng' },
+          { label: 'English (eng)', value: 'eng' },
+        ],
+      },
+    ],
   },
   {
     id: 'video-to-gif',
@@ -992,6 +1177,7 @@ export const tools: ToolDefinition[] = [
     category: 'video',
     description: 'Remove the audio track from a video.',
     accept: 'video/*',
+    multiple: true,
     tags: ['video', 'mute'],
     browseGroups: ['new', 'editor-enabled'],
     previewKind: 'video',
@@ -1006,6 +1192,7 @@ export const tools: ToolDefinition[] = [
     category: 'video',
     description: 'Extract audio from a video file.',
     accept: 'video/*',
+    multiple: true,
     tags: ['video', 'audio', 'extract'],
     browseGroups: ['new', 'editor-enabled'],
     previewKind: 'video',
@@ -1020,6 +1207,7 @@ export const tools: ToolDefinition[] = [
     category: 'video',
     description: 'Compress video with CRF-based quality control.',
     accept: 'video/*',
+    multiple: true,
     tags: ['video', 'compress'],
     browseGroups: ['compress'],
     previewKind: 'video',
@@ -1035,6 +1223,7 @@ export const tools: ToolDefinition[] = [
     category: 'video',
     description: 'Change playback speed for a video file.',
     accept: 'video/*',
+    multiple: true,
     tags: ['video', 'speed', 'tempo'],
     browseGroups: ['new', 'editor-enabled'],
     previewKind: 'video',
@@ -1109,6 +1298,7 @@ export const tools: ToolDefinition[] = [
     category: 'video',
     description: 'Resize video resolution to a specific width and height.',
     accept: 'video/*',
+    multiple: true,
     tags: ['video', 'resize', 'scale'],
     browseGroups: ['new', 'editor-enabled'],
     previewKind: 'video',
@@ -1156,6 +1346,7 @@ export const tools: ToolDefinition[] = [
     category: 'video',
     description: 'Reverse video playback and audio when available.',
     accept: 'video/*',
+    multiple: true,
     tags: ['video', 'reverse'],
     browseGroups: ['new'],
     previewKind: 'video',
@@ -1212,8 +1403,8 @@ export const tools: ToolDefinition[] = [
           { label: 'Animated WEBP', value: 'webp' },
         ],
       },
-      { key: 'fps', label: 'FPS', type: 'number', defaultValue: 12, min: 5, max: 30 },
-      { key: 'width', label: 'Width', type: 'number', defaultValue: 640, min: 120, max: 1920 },
+      { key: 'fps', label: 'FPS', type: 'number', defaultValue: 12, min: 5, max: 30, showWhen: { key: 'outputFormat', equals: ['gif', 'webp'] } },
+      { key: 'width', label: 'Width', type: 'number', defaultValue: 640, min: 120, max: 1920, showWhen: { key: 'outputFormat', equals: ['gif', 'webp'] } },
       { key: 'startTime', label: 'Start time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
       { key: 'endTime', label: 'End time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
     ],
@@ -1250,6 +1441,7 @@ export const tools: ToolDefinition[] = [
     category: 'video',
     description: 'Adjust GIF playback speed.',
     accept: '.gif',
+    multiple: true,
     tags: ['gif', 'speed'],
     browseGroups: ['new'],
     previewKind: 'image',
@@ -1275,6 +1467,7 @@ export const tools: ToolDefinition[] = [
     category: 'video',
     description: 'Reverse an animated GIF.',
     accept: '.gif',
+    multiple: true,
     tags: ['gif', 'reverse'],
     browseGroups: ['new'],
     previewKind: 'image',
@@ -1285,6 +1478,7 @@ export const tools: ToolDefinition[] = [
     category: 'video',
     description: 'Extract every frame from a GIF as PNG images.',
     accept: '.gif',
+    multiple: true,
     tags: ['gif', 'frames', 'extract'],
     browseGroups: ['new', 'capture'],
     previewKind: 'image',
@@ -1578,12 +1772,50 @@ export const tools: ToolDefinition[] = [
     id: 'screen-recorder',
     name: 'Screen Recorder',
     category: 'screen',
-    description: 'Record an entire screen, browser tab, or app window with live preview.',
+    description: 'Record a screen, window or browser tab — with its sound, your microphone, or both, and your camera in a corner if you like.',
     accept: '*',
-    tags: ['screen', 'record', 'capture'],
+    tags: ['screen', 'record', 'capture', 'audio', 'microphone', 'camera'],
     browseGroups: ['new', 'capture', 'editor-enabled'],
     inputMode: 'capture',
     previewKind: 'video',
+    options: [
+      {
+        key: 'audio',
+        label: 'Sound',
+        type: 'select',
+        defaultValue: 'none',
+        options: [
+          { label: 'No sound', value: 'none' },
+          { label: 'Screen sound (tab or system)', value: 'system' },
+          { label: 'Microphone', value: 'mic' },
+          { label: 'Screen sound + microphone', value: 'both' },
+        ],
+      },
+      { key: 'camera', label: 'Show my camera', type: 'checkbox', defaultValue: false },
+      {
+        key: 'cameraPosition',
+        label: 'Camera position',
+        type: 'select',
+        defaultValue: 'bottom-right',
+        options: [
+          { label: 'Top left', value: 'top-left' },
+          { label: 'Top right', value: 'top-right' },
+          { label: 'Bottom left', value: 'bottom-left' },
+          { label: 'Bottom right', value: 'bottom-right' },
+        ],
+        showWhen: { key: 'camera', equals: [true] },
+      },
+      {
+        key: 'cameraScale',
+        label: 'Camera size',
+        type: 'range',
+        defaultValue: 0.24,
+        min: 0.12,
+        max: 0.42,
+        step: 0.02,
+        showWhen: { key: 'camera', equals: [true] },
+      },
+    ],
   },
   {
     id: 'screen-audio-recorder',
@@ -1591,6 +1823,7 @@ export const tools: ToolDefinition[] = [
     category: 'screen',
     description: 'Record screen video together with system audio when the browser allows it.',
     accept: '*',
+    hiddenFromBrowse: true,
     tags: ['screen', 'record', 'audio'],
     browseGroups: ['new', 'capture', 'editor-enabled'],
     inputMode: 'capture',
@@ -1602,6 +1835,7 @@ export const tools: ToolDefinition[] = [
     category: 'screen',
     description: 'Record the screen and mix in microphone audio.',
     accept: '*',
+    hiddenFromBrowse: true,
     tags: ['screen', 'record', 'microphone'],
     browseGroups: ['new', 'capture', 'editor-enabled'],
     inputMode: 'capture',
@@ -1613,6 +1847,7 @@ export const tools: ToolDefinition[] = [
     category: 'screen',
     description: 'Record the screen with a webcam overlay composited in the browser.',
     accept: '*',
+    hiddenFromBrowse: true,
     tags: ['screen', 'camera', 'overlay'],
     browseGroups: ['new', 'capture', 'editor-enabled'],
     inputMode: 'capture',
@@ -1715,6 +1950,7 @@ export const tools: ToolDefinition[] = [
     category: 'file',
     description: 'Convert CSV files to JSON.',
     accept: '.csv',
+    multiple: true,
     tags: ['csv', 'json'],
   },
   {
@@ -1723,6 +1959,7 @@ export const tools: ToolDefinition[] = [
     category: 'file',
     description: 'Convert JSON files to CSV.',
     accept: '.json',
+    multiple: true,
     tags: ['json', 'csv'],
   },
   {
@@ -1731,6 +1968,7 @@ export const tools: ToolDefinition[] = [
     category: 'file',
     description: 'Convert Excel spreadsheets to CSV.',
     accept: '.xls,.xlsx',
+    multiple: true,
     tags: ['excel', 'csv'],
   },
   {
@@ -1739,6 +1977,7 @@ export const tools: ToolDefinition[] = [
     category: 'file',
     description: 'Convert CSV files to Excel workbooks.',
     accept: '.csv',
+    multiple: true,
     tags: ['csv', 'excel'],
   },
   {
@@ -1747,6 +1986,7 @@ export const tools: ToolDefinition[] = [
     category: 'file',
     description: 'Convert XML files to JSON.',
     accept: '.xml',
+    multiple: true,
     tags: ['xml', 'json'],
   },
   {
@@ -1755,6 +1995,7 @@ export const tools: ToolDefinition[] = [
     category: 'file',
     description: 'Convert JSON files to XML.',
     accept: '.json',
+    multiple: true,
     tags: ['json', 'xml'],
   },
   {
@@ -1763,6 +2004,7 @@ export const tools: ToolDefinition[] = [
     category: 'file',
     description: 'Convert XML data to CSV.',
     accept: '.xml',
+    multiple: true,
     tags: ['xml', 'csv'],
   },
   {
@@ -1771,6 +2013,7 @@ export const tools: ToolDefinition[] = [
     category: 'file',
     description: 'Split a CSV into multiple files by row count.',
     accept: '.csv',
+    multiple: true,
     tags: ['csv', 'split'],
     options: [
       { key: 'rowsPerFile', label: 'Rows per file', type: 'number', defaultValue: 1000, min: 10 },
@@ -1792,6 +2035,7 @@ export const tools: ToolDefinition[] = [
     category: 'file',
     description: 'Extract files from a ZIP archive.',
     accept: '.zip',
+    multiple: true,
     tags: ['zip', 'extract'],
   },
   {
@@ -1860,6 +2104,7 @@ export const tools: ToolDefinition[] = [
     category: 'web',
     description: 'Inspect metadata embedded in image files.',
     accept: 'image/*',
+    multiple: true,
     tags: ['image', 'metadata'],
   },
 ];
@@ -1885,6 +2130,7 @@ export const categories: ToolCategoryDefinition[] = [
       'pdf-extract-images',
       'pdf-compress',
       'pdf-reduce-size',
+      'pdf-to-image',
       'pdf-to-png',
       'pdf-to-jpg',
       'pdf-to-webp',
@@ -1908,6 +2154,7 @@ export const categories: ToolCategoryDefinition[] = [
     tools: [
       'image-resize',
       'image-compress',
+      'image-convert',
       'image-crop',
       'image-flip',
       'image-rotate',
@@ -2029,7 +2276,6 @@ export const categories: ToolCategoryDefinition[] = [
 ];
 
 const toolById = new Map(tools.map((tool) => [tool.id, tool]));
-const quickStartToolIds = ['pdf-merge', 'image-compress', 'audio-convert', 'video-to-gif', 'url-pdf'] as const;
 
 export function getToolById(toolId: string): ToolDefinition | undefined {
   return toolById.get(toolId);
@@ -2066,8 +2312,4 @@ export function getBrowsableTools(): ToolDefinition[] {
 
 export function getToolsByBrowseGroup(group: NonNullable<ToolDefinition['browseGroups']>[number]): ToolDefinition[] {
   return getBrowsableTools().filter((tool) => tool.browseGroups?.includes(group));
-}
-
-export function getQuickStartTools(): ToolDefinition[] {
-  return quickStartToolIds.map((toolId) => getToolById(toolId)).filter((tool): tool is ToolDefinition => Boolean(tool));
 }

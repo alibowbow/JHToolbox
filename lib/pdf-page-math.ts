@@ -97,3 +97,101 @@ export function resolveRearrangeOrder(orderRaw: string, pageCount: number): Rear
   }
   return { order, removedPages, invalidEntries };
 }
+
+export interface PageSelection {
+  /** 0-based page indices, ascending and unique. */
+  indices: number[];
+  /** Entries that are not pages (or ranges) of this document. */
+  invalidEntries: string[];
+}
+
+const PAGE_KEYWORDS: Record<string, (pageCount: number) => number[]> = {
+  all: (count) => Array.from({ length: count }, (_, index) => index),
+  odd: (count) => Array.from({ length: count }, (_, index) => index).filter((index) => index % 2 === 0),
+  even: (count) => Array.from({ length: count }, (_, index) => index).filter((index) => index % 2 === 1),
+  last: (count) => (count > 0 ? [count - 1] : []),
+};
+const KOREAN_PAGE_KEYWORDS: Record<string, string> = { 전체: 'all', 모두: 'all', 홀수: 'odd', 짝수: 'even', 마지막: 'last' };
+
+function pageKeyword(entry: string): string | undefined {
+  const key = KOREAN_PAGE_KEYWORDS[entry] ?? entry.toLowerCase();
+  return key in PAGE_KEYWORDS ? key : undefined;
+}
+
+/**
+ * Resolve a set of pages such as "2, 5-7", "3~1", "odd", "홀수" or "last".
+ * Order and duplicates do not matter (unlike rearranging); entries that are
+ * not pages of the document are reported for the caller to surface.
+ */
+export function resolvePageSelection(raw: string, pageCount: number): PageSelection {
+  const selected = new Set<number>();
+  const invalidEntries: string[] = [];
+  const inRange = (pageNumber: number) => pageNumber >= 1 && pageNumber <= pageCount;
+
+  const normalized = raw.replace(/\s*[-~]\s*/g, '-');
+  for (const entry of normalized.split(/[\s,]+/).filter(Boolean)) {
+    const keyword = pageKeyword(entry);
+    const range = /^(\d+)-(\d+)$/.exec(entry);
+    if (keyword) {
+      PAGE_KEYWORDS[keyword](pageCount).forEach((index) => selected.add(index));
+    } else if (range && inRange(Number(range[1])) && inRange(Number(range[2]))) {
+      const from = Math.min(Number(range[1]), Number(range[2]));
+      const to = Math.max(Number(range[1]), Number(range[2]));
+      for (let pageNumber = from; pageNumber <= to; pageNumber += 1) {
+        selected.add(pageNumber - 1);
+      }
+    } else if (/^\d+$/.test(entry) && inRange(Number(entry))) {
+      selected.add(Number(entry) - 1);
+    } else {
+      invalidEntries.push(entry);
+    }
+  }
+
+  return { indices: [...selected].sort((left, right) => left - right), invalidEntries };
+}
+
+export interface SplitPlan {
+  /** Each output file's 0-based page indices, in reading order. */
+  groups: Array<{ label: string; indices: number[] }>;
+  invalidEntries: string[];
+}
+
+/**
+ * Resolve how to split a document: an empty value makes one file per page;
+ * "1-3, 4-6, 7" makes one file per comma-separated group.
+ */
+export function resolveSplitPlan(raw: string, pageCount: number): SplitPlan {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return {
+      groups: Array.from({ length: pageCount }, (_, index) => ({ label: String(index + 1), indices: [index] })),
+      invalidEntries: [],
+    };
+  }
+
+  const groups: SplitPlan['groups'] = [];
+  const invalidEntries: string[] = [];
+  for (const part of trimmed.split(',').map((item) => item.trim()).filter(Boolean)) {
+    const selection = resolvePageSelection(part, pageCount);
+    invalidEntries.push(...selection.invalidEntries);
+    if (selection.indices.length > 0 && selection.invalidEntries.length === 0) {
+      groups.push({ label: part.replace(/\s*[-~]\s*/g, '-'), indices: selection.indices });
+    }
+  }
+  return { groups, invalidEntries };
+}
+
+/** 0-based indices → "1-3, 5" (the format resolvePageSelection reads back). */
+export function formatPageSelection(indices: number[]): string {
+  const pages = [...new Set(indices)].filter((index) => Number.isInteger(index) && index >= 0).sort((left, right) => left - right);
+  const parts: string[] = [];
+  for (let start = 0; start < pages.length; ) {
+    let end = start;
+    while (end + 1 < pages.length && pages[end + 1] === pages[end] + 1) {
+      end += 1;
+    }
+    parts.push(end > start ? `${pages[start] + 1}-${pages[end] + 1}` : String(pages[start] + 1));
+    start = end + 1;
+  }
+  return parts.join(', ');
+}

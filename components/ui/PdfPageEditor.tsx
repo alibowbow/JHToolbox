@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { GripVertical, LoaderCircle, Trash2 } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { formatMegaBytes } from '@/lib/i18n';
-import { getPdfJs } from '@/lib/processors/pdfjs-client';
+import { openPdfDocument } from '@/lib/processors/pdfjs-client';
 import { cx } from '@/lib/utils';
 
 export interface PdfEditorPage {
@@ -85,16 +85,12 @@ export function PdfPageEditor({ files, mode, onChange }: PdfPageEditorProps) {
       setError(null);
 
       try {
-        const pdfjs = await getPdfJs();
         const nextPages: PdfEditorPage[] = [];
 
         for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
           const file = files[fileIndex];
           const data = new Uint8Array(await file.arrayBuffer());
-          const documentHandle = await pdfjs.getDocument({
-            data,
-            useWorkerFetch: false,
-          }).promise;
+          const documentHandle = await openPdfDocument(data);
 
           for (let pageNumber = 1; pageNumber <= documentHandle.numPages; pageNumber += 1) {
             const page = await documentHandle.getPage(pageNumber);
@@ -110,6 +106,10 @@ export function PdfPageEditor({ files, mode, onChange }: PdfPageEditorProps) {
               totalPages: documentHandle.numPages,
               previewUrl,
             });
+            // Show pages as they render instead of after the whole document.
+            if (!cancelled && nextPages.length % 4 === 0) {
+              setPages([...nextPages]);
+            }
           }
         }
 
