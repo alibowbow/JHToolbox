@@ -28,7 +28,7 @@ export function ToolPageLayout({
       >
         <div className="flex items-start gap-4">
           <div
-            className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.25rem] border border-border/70 bg-base-elevated shadow-card ${iconColor}`}
+            className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.25rem] border border-border bg-base-elevated shadow-card ${iconColor}`}
           >
             <Icon size={26} />
           </div>

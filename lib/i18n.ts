@@ -119,6 +119,8 @@ export const dictionaries = {
       mergeDescription: 'Combine files and control sequence before processing.',
       captureTitle: 'Capture',
       captureDescription: 'Start directly from URL capture and generation workflows.',
+      cardOpen: 'Open workspace',
+      cardReady: 'Ready',
     },
     categoryPage: {
       summaryLabel: 'Category overview',
@@ -166,6 +168,7 @@ export const dictionaries = {
       batchReady: 'Batch-ready',
       singleFile: 'Single file',
       removeFile: 'Remove file',
+      unsupportedFilesSkipped: 'Skipped files this tool cannot open',
       statusIdle: 'Waiting',
       statusRunning: 'Running',
       statusDone: 'Done',
@@ -391,6 +394,8 @@ export const dictionaries = {
       mergeDescription: '합치기 전에 순서와 구성을 먼저 확인합니다.',
       captureTitle: '캡처',
       captureDescription: 'URL 입력부터 바로 시작하는 생성 및 캡처 흐름입니다.',
+      cardOpen: '작업 공간 열기',
+      cardReady: '바로 사용',
     },
     categoryPage: {
       summaryLabel: '카테고리 개요',
@@ -438,6 +443,7 @@ export const dictionaries = {
       batchReady: '여러 파일 지원',
       singleFile: '단일 파일',
       removeFile: '파일 제거',
+      unsupportedFilesSkipped: '이 도구에서 열 수 없는 파일은 제외했습니다',
       statusIdle: '대기 중',
       statusRunning: '실행 중',
       statusDone: '완료',

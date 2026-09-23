@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { ProcessContext, ProcessedFile } from '@/types/processor';
 import { ZIP_LIMITS, checkZipBomb, dedupeEntryName, sanitizeZipEntryName } from '@/lib/zip-safety';
+import { UTF8_BOM, decodeTextBytes } from '@/lib/text-encoding';
 
 type WorkerFile = {
   name: string;
@@ -60,7 +61,7 @@ async function callDataWorker(
           id,
           toolId,
           fileName: file.name,
-          text: await file.text(),
+          text: decodeTextBytes(new Uint8Array(await file.arrayBuffer())).text,
           options,
         });
         return;
@@ -83,9 +84,13 @@ async function callDataWorker(
 }
 
 function normalizeWorkerFile(file: WorkerFile): ProcessedFile {
+  // Excel assumes the system code page (CP949 on Korean Windows) for a CSV
+  // without a BOM, which garbles UTF-8 Korean text. Only the downloaded bytes
+  // carry the BOM; the preview/copy text stays clean.
+  const csvPrefix = file.encoding === 'text' && file.mimeType.startsWith('text/csv') ? [UTF8_BOM] : [];
   const blob =
     file.encoding === 'text'
-      ? new Blob([file.data as string], { type: file.mimeType })
+      ? new Blob([...csvPrefix, file.data as string], { type: file.mimeType })
       : new Blob([file.data as ArrayBuffer], { type: file.mimeType });
 
   const previewUrl = file.mimeType.startsWith('image/') ? URL.createObjectURL(blob) : undefined;

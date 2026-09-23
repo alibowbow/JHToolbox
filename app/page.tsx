@@ -54,7 +54,7 @@ export default function HomePage() {
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="surface-glow relative overflow-hidden rounded-[2.5rem] border border-border/60 p-8 shadow-panel sm:p-12 backdrop-blur-xl"
+        className="surface-glow relative overflow-hidden rounded-[2.5rem] border border-border p-8 shadow-panel sm:p-12 backdrop-blur-xl"
       >
         <div className="absolute inset-0 bg-grid-faint opacity-40 mix-blend-overlay" />
         <div className="relative z-10 grid gap-10 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.7fr)] lg:items-end">
@@ -80,7 +80,7 @@ export default function HomePage() {
                 {messages.home.primaryCta}
                 <ArrowRight size={18} />
               </Link>
-              <a href="#recent-tools" className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-border/60 bg-base-subtle/50 px-6 font-medium text-ink transition-all hover:bg-base-elevated hover:border-border/80 hover:-translate-y-0.5">
+              <a href="#recent-tools" className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-border bg-base-subtle/50 px-6 font-medium text-ink transition-all hover:bg-base-elevated hover:border-border-bright hover:-translate-y-0.5">
                 {messages.home.secondaryCta}
                 <ChevronDown size={18} />
               </a>
@@ -150,7 +150,7 @@ export default function HomePage() {
                 <Link href={`/tools/${category.id}`}>
                   <div className={`card group h-full ${style.border} bg-gradient-to-br ${style.gradient} p-5 transition-all`}>
                     <div className="flex items-start justify-between gap-3">
-                      <div className={`flex h-10 w-10 items-center justify-center rounded-xl border border-border/70 ${style.iconBg} ${style.icon}`}>
+                      <div className={`flex h-10 w-10 items-center justify-center rounded-xl border border-border ${style.iconBg} ${style.icon}`}>
                         <Icon size={20} />
                       </div>
                       <span className="badge border border-border bg-base-subtle text-ink-muted">

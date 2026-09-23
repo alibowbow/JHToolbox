@@ -24,7 +24,7 @@ export function ProgressBar({ value, label, status = 'idle' }: ProgressBarProps)
           <span className="rounded-full border border-border bg-base-subtle px-2 py-1 font-mono text-ink-faint">{Math.round(value)}%</span>
         </div>
       ) : null}
-      <div className="h-2.5 overflow-hidden rounded-full border border-border/60 bg-base-subtle">
+      <div className="h-2.5 overflow-hidden rounded-full border border-border bg-base-subtle">
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${value}%` }}

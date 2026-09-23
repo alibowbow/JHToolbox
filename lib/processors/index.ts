@@ -77,6 +77,7 @@ const MEDIA_TOOLS = new Set([
   'extract-audio',
   'video-compress',
   'video-convert',
+  'video-trim',
   'video-speed-change',
   'video-crop',
   'video-resize',
@@ -119,6 +120,12 @@ const DATA_TOOLS = new Set([
 ]);
 
 const WEB_TOOLS = new Set(['qr-generator', 'url-image', 'url-pdf', 'detect-cms', 'image-metadata']);
+
+const ROUTED_TOOL_SETS = [PDF_TOOLS, HWPX_TOOLS, IMAGE_TOOLS, OCR_TOOLS, MEDIA_TOOLS, DATA_TOOLS, WEB_TOOLS];
+
+export function isRoutedTool(toolId: string): boolean {
+  return ROUTED_TOOL_SETS.some((set) => set.has(toolId));
+}
 
 export async function runTool(ctx: ProcessContext): Promise<ProcessedFile[]> {
   if (PDF_TOOLS.has(ctx.toolId)) {

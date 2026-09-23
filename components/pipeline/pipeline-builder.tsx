@@ -289,7 +289,7 @@ export function PipelineBuilder() {
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       <div className="workspace-panel p-6 sm:p-7">
         <div className="flex items-start gap-4">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.25rem] border border-border/70 bg-base-elevated text-prime shadow-card">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.25rem] border border-border bg-base-elevated text-prime shadow-card">
             <Workflow size={26} />
           </div>
           <div>

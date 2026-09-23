@@ -19,39 +19,43 @@ export function Tabs({
 }) {
   const [active, setActive] = useState(tabs[0]?.id);
 
+  // Restore the saved tab (localStorage is unavailable during static render) and
+  // keep the selection valid when the tab list changes. This must not depend on
+  // `active`: re-reading storage on every selection change would race the write
+  // and bounce the view between the old and new tab indefinitely.
   useEffect(() => {
     if (!tabs.length) {
       return;
     }
 
+    let saved: string | null = null;
     if (storageKey) {
       try {
-        const saved = localStorage.getItem(storageKey);
-        if (saved && tabs.some((tab) => tab.id === saved)) {
-          setActive(saved);
-          return;
-        }
+        saved = localStorage.getItem(storageKey);
       } catch {
-        // Ignore storage errors and fall back to the first tab.
+        // Ignore storage errors and fall back to the current or first tab.
       }
     }
 
-    if (!active || !tabs.some((tab) => tab.id === active)) {
-      setActive(tabs[0].id);
-    }
-  }, [active, storageKey, tabs]);
+    setActive((current) => {
+      if (saved && tabs.some((tab) => tab.id === saved)) {
+        return saved;
+      }
+      return current && tabs.some((tab) => tab.id === current) ? current : tabs[0].id;
+    });
+  }, [storageKey, tabs]);
 
-  useEffect(() => {
-    if (!storageKey || !active) {
+  const selectTab = (id: string) => {
+    setActive(id);
+    if (!storageKey) {
       return;
     }
-
     try {
-      localStorage.setItem(storageKey, active);
+      localStorage.setItem(storageKey, id);
     } catch {
       // Ignore persistence errors in private browsing or locked storage.
     }
-  }, [active, storageKey]);
+  };
 
   return (
     <div className="space-y-6">
@@ -60,7 +64,7 @@ export function Tabs({
           <button
             key={tab.id}
             type="button"
-            onClick={() => setActive(tab.id)}
+            onClick={() => selectTab(tab.id)}
             className={`relative rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
               active === tab.id ? 'text-ink' : 'text-ink-muted hover:text-ink'
             }`}
@@ -68,7 +72,7 @@ export function Tabs({
             {active === tab.id ? (
               <motion.div
                 layoutId="tab-active"
-                className="absolute inset-0 rounded-xl border border-border/60 bg-base-elevated"
+                className="absolute inset-0 rounded-xl border border-border bg-base-elevated"
                 style={{ zIndex: -1 }}
                 transition={{ type: 'spring', stiffness: 500, damping: 40 }}
               />

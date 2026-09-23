@@ -7,9 +7,9 @@ export function Sidebar() {
   const { messages } = useLocale();
 
   return (
-    <aside className="glass-outline hidden h-screen w-[280px] shrink-0 flex-col border-r border-border/50 bg-base-subtle/30 md:flex">
+    <aside className="glass-outline hidden h-screen w-[280px] shrink-0 flex-col border-r border-border bg-base-subtle/30 md:flex">
       <div className="px-5 pb-5 pt-6">
-        <div className="workspace-panel overflow-hidden p-6 border-border/40 shadow-sm bg-base-elevated/50 backdrop-blur-xl">
+        <div className="workspace-panel overflow-hidden p-6 border-border shadow-sm bg-base-elevated/50 backdrop-blur-xl">
           <p className="workspace-kicker text-[10px]">{messages.shell.workspace}</p>
           <div className="mt-3 flex items-center justify-between gap-3">
             <span className="font-display text-2xl font-bold tracking-tight text-ink">

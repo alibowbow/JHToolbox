@@ -4,7 +4,9 @@ import { useId, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { File, Upload, X } from 'lucide-react';
 import { formatMegaBytes } from '@/lib/i18n';
+import { partitionByAccept } from '@/lib/file-accept';
 import { useLocale } from '@/components/providers/locale-provider';
+import { toast } from '@/components/ui/Toast';
 
 interface DropZoneProps {
   onFiles: (files: File[]) => void;
@@ -29,6 +31,18 @@ export function DropZone({ onFiles, accept, multiple = false, label, files, disa
     onFiles(nextFiles);
   };
 
+  // Drag-and-drop bypasses `accept`, and the picker's "All files" option can too.
+  const addFiles = (incoming: File[]) => {
+    const { accepted, rejected } = partitionByAccept(incoming, accept);
+    if (rejected.length > 0) {
+      toast.error(`${messages.workbench.unsupportedFilesSkipped}: ${rejected.map((file) => file.name).join(', ')}`);
+    }
+    if (accepted.length === 0) {
+      return;
+    }
+    pushFiles(multiple ? [...currentFiles, ...accepted] : accepted.slice(0, 1));
+  };
+
   return (
     <div className="space-y-3">
       <motion.label
@@ -43,14 +57,13 @@ export function DropZone({ onFiles, accept, multiple = false, label, files, disa
           event.preventDefault();
           setIsDragging(false);
           if (disabled) return;
-          const droppedFiles = Array.from(event.dataTransfer.files);
-          pushFiles(multiple ? [...currentFiles, ...droppedFiles] : droppedFiles.slice(0, 1));
+          addFiles(Array.from(event.dataTransfer.files));
         }}
         className={`editor-stage flex flex-col items-center justify-center gap-4 border-2 border-dashed p-8 text-center transition-colors sm:p-10 ${
           disabled
             ? 'cursor-not-allowed opacity-50'
             : `cursor-pointer ${isDragging ? 'border-prime bg-prime/10' : 'border-border-bright hover:border-prime/40'}`
-        }`}
+        } has-[:focus-visible]:border-prime has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-prime`}
       >
         <motion.div
           animate={isDragging ? { y: -4 } : { y: 0 }}
@@ -71,10 +84,9 @@ export function DropZone({ onFiles, accept, multiple = false, label, files, disa
           accept={accept}
           multiple={multiple}
           disabled={disabled}
-          className="hidden"
+          className="sr-only"
           onChange={(event) => {
-            const nextFiles = Array.from(event.target.files ?? []);
-            pushFiles(multiple ? [...currentFiles, ...nextFiles] : nextFiles.slice(0, 1));
+            addFiles(Array.from(event.target.files ?? []));
             event.target.value = '';
           }}
         />

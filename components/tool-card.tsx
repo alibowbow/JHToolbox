@@ -10,7 +10,7 @@ import { categoryIcons, categoryStyles } from '@/lib/tool-presentation';
 import { ToolDefinition } from '@/types/tool';
 
 export function ToolCard({ tool, categoryId }: { tool: ToolDefinition; categoryId?: ToolDefinition['category'] }) {
-  const { locale } = useLocale();
+  const { locale, messages } = useLocale();
   const displayCategoryId = categoryId ?? tool.category;
   const Icon = categoryIcons[displayCategoryId];
   const style = categoryStyles[displayCategoryId];
@@ -18,18 +18,19 @@ export function ToolCard({ tool, categoryId }: { tool: ToolDefinition; categoryI
   const localizedTool = getLocalizedToolCopy(tool, locale);
 
   return (
-    <Link href={`/tools/${displayCategoryId}/${tool.id}`} className="block h-full">
+    <Link href={`/tools/${displayCategoryId}/${tool.id}`} className="block h-full rounded-[1.5rem]">
       <motion.article
+        tabIndex={-1}
         whileHover={{ y: -6, scale: 1.01 }}
         whileTap={{ scale: 0.98 }}
         transition={{ type: "spring", stiffness: 400, damping: 25 }}
-        className={`card group flex h-full flex-col gap-5 rounded-[1.5rem] border border-border/40 hover:border-border/80 bg-base-elevated hover:shadow-panel hover:bg-gradient-to-br ${style.gradient} p-6 transition-all duration-300`}
+        className={`card group flex h-full flex-col gap-5 rounded-[1.5rem] border border-border hover:border-border-bright bg-base-elevated hover:shadow-panel hover:bg-gradient-to-br ${style.gradient} p-6 transition-all duration-300`}
       >
         <div className="flex items-start justify-between gap-3">
-          <div className={`flex h-12 w-12 items-center justify-center rounded-2xl border border-border/50 bg-base-subtle ${style.icon} transition-colors duration-300 group-hover:${style.iconBg}`}>
+          <div className={`flex h-12 w-12 items-center justify-center rounded-2xl border border-border bg-base-subtle ${style.icon} transition-colors duration-300 ${style.iconHoverBg}`}>
             <Icon size={20} />
           </div>
-          <span className={`badge border border-border/40 bg-transparent group-hover:${style.badge} transition-colors duration-300`}>{category.nav}</span>
+          <span className={`badge border border-border bg-transparent ${style.badgeHover} transition-colors duration-300`}>{category.nav}</span>
         </div>
 
         <div className="space-y-3">
@@ -40,9 +41,9 @@ export function ToolCard({ tool, categoryId }: { tool: ToolDefinition; categoryI
           <p className="text-sm leading-relaxed text-ink-muted">{localizedTool.description}</p>
         </div>
 
-        <div className="mt-auto flex items-center justify-between border-t border-border/30 pt-4 text-[11px] uppercase tracking-[0.18em] text-ink-faint">
-          <span>Open workspace</span>
-          <span className="text-prime">Ready</span>
+        <div className="mt-auto flex items-center justify-between border-t border-border pt-4 text-[11px] uppercase tracking-[0.18em] text-ink-faint">
+          <span>{messages.directory.cardOpen}</span>
+          <span className="text-prime">{messages.directory.cardReady}</span>
         </div>
       </motion.article>
     </Link>

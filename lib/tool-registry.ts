@@ -32,10 +32,10 @@ export const tools: ToolDefinition[] = [
     options: [
       {
         key: 'order',
-        label: 'Page order',
+        label: 'Pages to keep, in order',
         type: 'text',
         defaultValue: '',
-        placeholder: 'e.g. 3,1,2',
+        placeholder: 'e.g. 3,1,2 or 4-6 (unlisted pages are removed)',
       },
     ],
   },
@@ -648,7 +648,7 @@ export const tools: ToolDefinition[] = [
     accept: 'image/*',
     tags: ['image', 'text'],
     options: [
-      { key: 'text', label: 'Text', type: 'text', defaultValue: 'TinyWow Tools' },
+      { key: 'text', label: 'Text', type: 'text', defaultValue: 'JH Toolbox' },
       { key: 'fontSize', label: 'Font size', type: 'number', defaultValue: 42, min: 8, max: 240 },
       { key: 'color', label: 'Text color', type: 'color', defaultValue: '#ffffff' },
       { key: 'x', label: 'X position', type: 'number', defaultValue: 20, min: 0 },
@@ -940,10 +940,10 @@ export const tools: ToolDefinition[] = [
         key: 'lang',
         label: 'OCR language',
         type: 'select',
-        defaultValue: 'eng',
+        defaultValue: 'kor+eng',
         options: [
-          { label: 'English (eng)', value: 'eng' },
           { label: 'Korean + English (kor+eng)', value: 'kor+eng' },
+          { label: 'English (eng)', value: 'eng' },
         ],
       },
     ],

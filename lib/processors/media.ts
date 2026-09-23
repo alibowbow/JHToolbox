@@ -1116,7 +1116,7 @@ export async function processMediaTool(ctx: ProcessContext): Promise<ProcessedFi
 
   const preset = presets[toolId];
   if (!preset) {
-    return [];
+    throw new Error('Unsupported tool.');
   }
 
   onProgress({ percent: 2, stage: 'Loading ffmpeg.wasm' });

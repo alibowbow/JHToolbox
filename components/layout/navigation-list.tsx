@@ -41,8 +41,9 @@ export function NavigationList({
             : getCategoryCopy(locale, key).nav;
 
         return (
-          <Link key={href} href={href} onClick={onNavigate}>
+          <Link key={href} href={href} onClick={onNavigate} className="block rounded-2xl">
             <motion.div
+              tabIndex={-1}
               whileHover={{ x: 2 }}
               whileTap={{ scale: 0.98 }}
               className={`relative flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-medium transition-colors ${

@@ -23,6 +23,7 @@ const config: Config = {
           DEFAULT: 'rgb(var(--color-prime) / 1)',
           dim: 'rgb(var(--color-prime-dim) / 1)',
           glow: 'rgb(var(--color-prime) / 0.2)',
+          contrast: 'rgb(var(--color-prime-contrast) / 1)',
         },
         accent: {
           DEFAULT: 'rgb(var(--color-accent) / 1)',
@@ -55,6 +56,7 @@ const config: Config = {
         'glow-prime': '0 0 24px 0 rgb(var(--color-prime) / 0.22)',
         'glow-accent': '0 0 24px 0 rgb(var(--color-accent) / 0.22)',
         card: 'var(--shadow-card)',
+        panel: 'var(--shadow-panel)',
       },
       borderRadius: {
         xl2: '1rem',
