@@ -2,7 +2,15 @@
  * Executable check for lib/pdf-page-math.ts (PDF rotate + delete page logic).
  *   node --experimental-strip-types scripts/checks/pdf-page-math.check.mjs
  */
-import { normalizePdfRotation, resolveDeletablePages, resolveRearrangeOrder } from '../../lib/pdf-page-math.ts';
+import {
+  normalizePdfRotation,
+  resolveDeletablePages,
+  resolvePageSelection,
+  resolveRearrangeOrder,
+  resolveSplitPlan,
+  formatPageSelection,
+} from '../../lib/pdf-page-math.ts';
+import { groupRegionsByPage, parseRegions, serializeRegions } from '../../lib/pdf-regions.ts';
 
 let pass = 0;
 let fail = 0;
@@ -89,6 +97,51 @@ check('NaN delta -> treated 0', normalizePdfRotation(0, NaN) === 0);
   const junk = resolveRearrangeOrder('abc,2-9,1.5', 5);
   check('non-numeric / bad range / decimal all reported', eqArr(junk.invalidEntries, ['abc', '2-9', '1.5']));
   check('all-invalid order keeps nothing (caller must refuse)', junk.order.length === 0);
+}
+
+// resolvePageSelection: sets of pages for delete / rotate
+{
+  const pick = (raw, count) => resolvePageSelection(raw, count);
+  check('range 2-3 selects both pages', eqArr(pick('2-3', 5).indices, [1, 2]));
+  check('mixed list sorted and unique', eqArr(pick('5, 2-3, 3', 5).indices, [1, 2, 4]));
+  check('tilde and reversed range', eqArr(pick('4~2', 5).indices, [1, 2, 3]));
+  check('odd pages', eqArr(pick('odd', 5).indices, [0, 2, 4]));
+  check('Korean even pages', eqArr(pick('짝수', 5).indices, [1, 3]));
+  check('last page', eqArr(pick('마지막', 7).indices, [6]));
+  check('all pages', pick('전체', 3).indices.length === 3);
+  const bad = pick('2, 9, x', 5);
+  check('invalid entries reported', eqArr(bad.invalidEntries, ['9', 'x']) && eqArr(bad.indices, [1]));
+  check('empty selects nothing', pick('  ', 5).indices.length === 0);
+}
+
+// resolveSplitPlan: one file per page, or per comma-separated group
+{
+  const each = resolveSplitPlan('', 3);
+  check('empty splits every page', each.groups.length === 3 && eqArr(each.groups[2].indices, [2]));
+  const ranged = resolveSplitPlan('1-2, 3~5, 6', 6);
+  check('ranges become files', ranged.groups.length === 3 && eqArr(ranged.groups[1].indices, [2, 3, 4]));
+  check('range labels normalized', ranged.groups[1].label === '3-5');
+  const wrong = resolveSplitPlan('1-2, 8', 4);
+  check('split reports invalid group', eqArr(wrong.invalidEntries, ['8']) && wrong.groups.length === 1);
+}
+
+// formatPageSelection round-trips with resolvePageSelection
+{
+  check('runs collapse to ranges', formatPageSelection([0, 1, 2, 4, 6, 7]) === '1-3, 5, 7-8');
+  check('unsorted and duplicate input', formatPageSelection([3, 1, 3]) === '2, 4');
+  check('empty selection', formatPageSelection([]) === '');
+  check('round trip', eqArr(resolvePageSelection(formatPageSelection([0, 2, 3, 9]), 10).indices, [0, 2, 3, 9]));
+}
+
+// Redaction regions (fractions of the displayed page)
+{
+  const regions = parseRegions('[{"page":2,"x":0.1,"y":0.2,"w":0.5,"h":0.1},{"page":0,"x":0,"y":0,"w":1,"h":1},{"page":1,"x":0.9,"y":0.9,"w":0.5,"h":0.5},"junk"]');
+  check('valid regions kept, junk dropped', regions.length === 2);
+  check('region clipped to the page', Math.abs(regions[1].w - 0.1) < 1e-9 && Math.abs(regions[1].h - 0.1) < 1e-9);
+  check('bad JSON yields nothing', parseRegions('{oops').length === 0);
+  const grouped = groupRegionsByPage([...regions, { page: 9, x: 0, y: 0, w: 0.1, h: 0.1 }], 3);
+  check('grouped by page, sorted, out-of-range dropped', eqArr([...grouped.keys()], [1, 2]));
+  check('round-trips through JSON', parseRegions(serializeRegions(regions)).length === 2);
 }
 
 console.log(`\npdf-page-math: ${pass} passed, ${fail} failed`);

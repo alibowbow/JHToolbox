@@ -63,3 +63,20 @@ export async function getFfmpeg(onProgress?: (ratio: number) => void) {
 
   return await ffmpegLoadPromise;
 }
+
+/**
+ * Stops a running ffmpeg job (the user cancelled). The worker cannot be
+ * interrupted any other way; the next job loads a fresh instance, and the
+ * core files come from Cache Storage, so that is quick.
+ */
+export function terminateFfmpeg() {
+  const current = ffmpegRef;
+  ffmpegRef = null;
+  ffmpegLoadPromise = null;
+  ffmpegProgressHandler = null;
+  try {
+    current?.ffmpeg?.terminate?.();
+  } catch {
+    // Already stopped.
+  }
+}

@@ -2,11 +2,14 @@
 
 import { useState } from 'react';
 
+/**
+ * Original on the left, result on the right of a divider the user drags. A
+ * transparent range input covers the image, so mouse, touch and keyboard all
+ * move the divider without custom pointer code.
+ */
 export function BeforeAfterImageCompare({
   beforeUrl,
   afterUrl,
-  title,
-  description,
   beforeLabel,
   afterLabel,
   sliderLabel,
@@ -14,8 +17,6 @@ export function BeforeAfterImageCompare({
 }: {
   beforeUrl: string;
   afterUrl: string;
-  title: string;
-  description: string;
   beforeLabel: string;
   afterLabel: string;
   sliderLabel: string;
@@ -24,51 +25,42 @@ export function BeforeAfterImageCompare({
   const [position, setPosition] = useState(50);
 
   return (
-    <div className="space-y-4" data-testid={testIdPrefix}>
-      <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-border bg-base-subtle/70 px-4 py-3">
-        <div>
-          <p className="text-sm font-semibold text-ink">{title}</p>
-          <p className="mt-1 text-xs text-ink-muted">{description}</p>
-        </div>
-        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-faint">
-          <span className="rounded-full border border-border bg-base-elevated px-2 py-1">{beforeLabel}</span>
-          <span className="rounded-full border border-prime/30 bg-prime/10 px-2 py-1 text-prime">{afterLabel}</span>
+    <div
+      className="checkerboard relative h-[22rem] w-full select-none overflow-hidden rounded-xl border border-border"
+      data-testid={testIdPrefix}
+    >
+      <img src={beforeUrl} alt={beforeLabel} className="pointer-events-none absolute inset-0 h-full w-full object-contain" />
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{ clipPath: `inset(0 0 0 ${position}%)` }}
+        data-testid={`${testIdPrefix}-after-layer`}
+      >
+        <img src={afterUrl} alt={afterLabel} className="absolute inset-0 h-full w-full object-contain" />
+      </div>
+
+      <div className="pointer-events-none absolute inset-y-0" style={{ left: `${position}%` }} aria-hidden="true">
+        <div className="absolute inset-y-0 -ml-px w-0.5 bg-white shadow-[0_0_0_1px_rgba(15,23,42,0.25)]" />
+        <div className="absolute left-0 top-1/2 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/80 bg-base-elevated text-ink-muted shadow-pop">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 3 1.5 7 5 11M9 3l3.5 4L9 11" />
+          </svg>
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border bg-base-subtle">
-        <div className="relative h-[22rem] w-full bg-base-elevated" data-testid={`${testIdPrefix}-stage`}>
-          <img src={beforeUrl} alt={beforeLabel} className="absolute inset-0 h-full w-full object-contain" />
-          <div
-            className="absolute inset-0 overflow-hidden"
-            style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }}
-            data-testid={`${testIdPrefix}-after-layer`}
-          >
-            <img src={afterUrl} alt={afterLabel} className="absolute inset-0 h-full w-full object-contain" />
-          </div>
+      <span className="pointer-events-none absolute left-2 top-2 rounded-md bg-black/55 px-2 py-0.5 text-[11px] font-medium text-white">{beforeLabel}</span>
+      <span className="pointer-events-none absolute right-2 top-2 rounded-md bg-prime px-2 py-0.5 text-[11px] font-medium text-prime-contrast">{afterLabel}</span>
 
-          <div className="pointer-events-none absolute inset-y-0" style={{ left: `calc(${position}% - 1px)` }}>
-            <div className="absolute inset-y-0 w-0.5 bg-white/90 shadow-[0_0_0_1px_rgba(15,23,42,0.16)]" />
-            <div className="absolute left-1/2 top-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/70 bg-base-elevated/95 text-xs font-semibold text-ink shadow-lg">
-              {position}%
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <label className="block">
-        <span className="text-xs font-medium uppercase tracking-[0.04em] text-ink-faint">{sliderLabel}</span>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          step={1}
-          value={position}
-          onChange={(event) => setPosition(Number(event.target.value))}
-          className="mt-3 w-full accent-prime"
-          data-testid={`${testIdPrefix}-slider`}
-        />
-      </label>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={1}
+        value={position}
+        onChange={(event) => setPosition(Number(event.target.value))}
+        aria-label={sliderLabel}
+        className="absolute inset-0 h-full w-full cursor-ew-resize opacity-0"
+        data-testid={`${testIdPrefix}-slider`}
+      />
     </div>
   );
 }

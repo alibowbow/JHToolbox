@@ -1,23 +1,22 @@
 'use client';
 
-import { Pause, Play, RotateCcw, SkipBack } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { ArrowLeftToLine, ArrowRightToLine, Pause, Play, RotateCcw, SkipBack, Volume2, VolumeX } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
-import { cx } from '@/lib/utils';
+import { CropStage } from '@/components/ui/CropStage';
 import {
-  buildRectFromAnchor,
   clamp,
   cropEquals,
-  formatEditorTime,
   getCropFromAspectRatio,
   getFullFrameCrop,
   normalizeCropRect,
-  normalizeTrimRange,
-  type ResizeHandle,
-  type VideoAspectPreset,
-  type VideoCropRect,
-  type VideoFrameSize,
-} from '@/components/ui/video-editor-utils';
+  type CropRect,
+  type FrameSize,
+} from '@/components/ui/crop-math';
+import { formatEditorTime, normalizeTrimRange, parseEditorTime, resolveMediaDuration } from '@/components/ui/video-editor-utils';
+import { cx } from '@/lib/utils';
+
+export type VideoCropRect = CropRect;
 
 type VideoTimelineEditorProps = {
   file: File;
@@ -30,591 +29,622 @@ type VideoTimelineEditorProps = {
   captureTime?: number;
   onCaptureTimeChange?: (nextValue: number) => void;
   cropEnabled?: boolean;
-  crop: VideoCropRect;
-  onCropChange?: (nextCrop: VideoCropRect) => void;
+  crop: CropRect;
+  onCropChange?: (nextCrop: CropRect) => void;
   aspectPresetId?: string;
   onAspectPresetChange?: (nextAspectPresetId: string) => void;
   onVideoReady?: (metadata: { duration: number; width: number; height: number }) => void;
   testIdPrefix?: string;
 };
 
-function aspectRatioMatches(crop: VideoCropRect, ratio: number) {
-  if (!crop.width || !crop.height) {
-    return false;
-  }
+const FILMSTRIP_FRAMES = 10;
+const MIN_SELECTION = 0.05;
 
-  return Math.abs(crop.width / crop.height - ratio) < 0.02;
+const COPY = {
+  en: {
+    editor: 'Video editor',
+    play: 'Play',
+    pause: 'Pause',
+    restart: 'Back to start',
+    mute: 'Mute',
+    unmute: 'Unmute',
+    setStart: 'Start here',
+    setEnd: 'End here',
+    setStartTitle: 'Set the start to the playhead (I)',
+    setEndTitle: 'Set the end to the playhead (O)',
+    start: 'Start',
+    end: 'End',
+    length: 'Length',
+    captureAt: 'Capture at',
+    shortcuts: 'Space: play · ←/→: 0.1 s (Shift: 1 s) · I/O: set start/end',
+  },
+  ko: {
+    editor: '동영상 편집기',
+    play: '재생',
+    pause: '일시정지',
+    restart: '처음으로',
+    mute: '음소거',
+    unmute: '소리 켜기',
+    setStart: '여기서 시작',
+    setEnd: '여기서 끝',
+    setStartTitle: '재생 위치를 시작점으로 (I)',
+    setEndTitle: '재생 위치를 끝점으로 (O)',
+    start: '시작',
+    end: '끝',
+    length: '길이',
+    captureAt: '캡처 위치',
+    shortcuts: 'Space: 재생 · ←/→: 0.1초 (Shift: 1초) · I/O: 시작/끝 지정',
+  },
+} as const;
+
+/** Evenly spaced still frames for the timeline, read from a hidden video. */
+function useFilmstrip(previewUrl: string, duration: number, size: FrameSize) {
+  const [frames, setFrames] = useState<string[]>([]);
+
+  useEffect(() => {
+    setFrames([]);
+    if (!duration || !size.width || !size.height) {
+      return;
+    }
+
+    let cancelled = false;
+    const probe = document.createElement('video');
+    probe.muted = true;
+    probe.playsInline = true;
+    probe.preload = 'auto';
+    probe.src = previewUrl;
+    const canvas = document.createElement('canvas');
+    canvas.height = 96;
+    canvas.width = Math.max(2, Math.round((canvas.height * size.width) / size.height));
+    const context = canvas.getContext('2d');
+
+    const waitFor = (eventName: string) =>
+      new Promise<void>((resolve, reject) => {
+        const done = () => {
+          window.clearTimeout(timer);
+          probe.removeEventListener(eventName, done);
+          resolve();
+        };
+        const timer = window.setTimeout(() => {
+          probe.removeEventListener(eventName, done);
+          reject(new Error('timeout'));
+        }, 4000);
+        probe.addEventListener(eventName, done);
+      });
+
+    void (async () => {
+      if (!context) {
+        return;
+      }
+      if (probe.readyState < 2) {
+        await waitFor('loadeddata');
+      }
+      for (let index = 0; index < FILMSTRIP_FRAMES && !cancelled; index += 1) {
+        const seeked = waitFor('seeked');
+        probe.currentTime = ((index + 0.5) / FILMSTRIP_FRAMES) * duration;
+        await seeked;
+        if (cancelled) {
+          return;
+        }
+        context.drawImage(probe, 0, 0, canvas.width, canvas.height);
+        const frame = canvas.toDataURL('image/jpeg', 0.7);
+        setFrames((current) => [...current, frame]);
+      }
+    })()
+      .catch(() => undefined)
+      .finally(() => {
+        probe.removeAttribute('src');
+        probe.load();
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [duration, previewUrl, size.height, size.width]);
+
+  return frames;
 }
 
-export function VideoTimelineEditor({
-  file,
-  previewUrl,
-  trimEnabled = false,
-  trimStart,
-  trimEnd,
-  onTrimChange,
-  captureEnabled = false,
-  captureTime = 0,
-  onCaptureTimeChange,
-  cropEnabled = false,
-  crop,
-  onCropChange,
-  aspectPresetId = 'free',
-  onAspectPresetChange,
-  onVideoReady,
-  testIdPrefix = 'video-editor',
-}: VideoTimelineEditorProps) {
+/** "m:ss.cc" text box; commits on Enter or blur and reverts on nonsense. */
+function TimeField({
+  label,
+  value,
+  onCommit,
+  disabled = false,
+}: {
+  label: string;
+  value: number;
+  onCommit: (seconds: number) => void;
+  disabled?: boolean;
+}) {
+  const [draft, setDraft] = useState(formatEditorTime(value));
+  const focusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!focusedRef.current) {
+      setDraft(formatEditorTime(value));
+    }
+  }, [value]);
+
+  const commit = () => {
+    const seconds = parseEditorTime(draft);
+    if (seconds === null) {
+      setDraft(formatEditorTime(value));
+      return;
+    }
+    onCommit(seconds);
+  };
+
+  return (
+    <label className="block min-w-0">
+      <span className="block text-xs text-ink-faint">{label}</span>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={draft}
+        disabled={disabled}
+        onFocus={() => {
+          focusedRef.current = true;
+        }}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => {
+          focusedRef.current = false;
+          commit();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            commit();
+          }
+        }}
+        className="input-surface mt-1 h-9 w-full font-mono text-sm tabular-nums disabled:opacity-50"
+      />
+    </label>
+  );
+}
+
+export function VideoTimelineEditor(props: VideoTimelineEditorProps) {
+  const {
+    previewUrl,
+    trimEnabled = false,
+    trimStart,
+    trimEnd,
+    onTrimChange,
+    captureEnabled = false,
+    captureTime = 0,
+    onCaptureTimeChange,
+    cropEnabled = false,
+    crop,
+    onCropChange,
+    aspectPresetId = 'free',
+    onAspectPresetChange,
+    testIdPrefix = 'video-editor',
+  } = props;
   const { locale, messages } = useLocale();
+  const copy = COPY[locale];
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const stageRef = useRef<HTMLDivElement | null>(null);
-  const cleanupInteractionRef = useRef<(() => void) | null>(null);
-  const [videoSize, setVideoSize] = useState<VideoFrameSize>({ width: 0, height: 0 });
+  const propsRef = useRef(props);
+  propsRef.current = props;
+  const durationRef = useRef(0);
+  const [videoSize, setVideoSize] = useState<FrameSize>({ width: 0, height: 0 });
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [selectedAspectId, setSelectedAspectId] = useState(aspectPresetId);
+  const [muted, setMuted] = useState(false);
+  const [aspectId, setAspectId] = useState(aspectPresetId);
+  const frames = useFilmstrip(previewUrl, duration, videoSize);
 
-  const aspectPresets = useMemo<VideoAspectPreset[]>(
+  const aspectPresets = useMemo(
     () => [
-      { id: 'free', label: messages.workbench.ratioPresetFree, ratio: null },
+      { id: 'free', label: messages.workbench.ratioPresetFree, ratio: null as number | null },
       { id: 'square', label: messages.workbench.ratioPresetSquare, ratio: 1 },
       { id: 'landscape', label: messages.workbench.ratioPresetLandscape, ratio: 16 / 9 },
       { id: '4-3', label: '4:3', ratio: 4 / 3 },
-      { id: '2-3', label: '2:3', ratio: 2 / 3 },
       { id: '3-4', label: '3:4', ratio: 3 / 4 },
       { id: 'portrait', label: messages.workbench.ratioPresetPortrait, ratio: 9 / 16 },
     ],
-    [
-      messages.workbench.ratioPresetFree,
-      messages.workbench.ratioPresetLandscape,
-      messages.workbench.ratioPresetPortrait,
-      messages.workbench.ratioPresetSquare,
-    ],
+    [messages.workbench],
   );
-
+  const aspectRatio = aspectPresets.find((preset) => preset.id === aspectId)?.ratio ?? null;
+  const safeDuration = Math.max(duration, MIN_SELECTION);
+  const trim = normalizeTrimRange(trimStart, trimEnd, duration || trimEnd || 1);
   const normalizedCrop = useMemo(() => normalizeCropRect(crop, videoSize), [crop, videoSize]);
-  const normalizedTrim = useMemo(() => normalizeTrimRange(trimStart, trimEnd, duration || trimEnd || 1), [duration, trimEnd, trimStart]);
-  const safeDuration = Math.max(duration, normalizedTrim.endTime, 0.05);
-  const playheadPercent = safeDuration ? Math.round((clamp(currentTime, 0, safeDuration) / safeDuration) * 100) : 0;
-  const trimStartPercent = safeDuration ? Math.round((normalizedTrim.startTime / safeDuration) * 100) : 0;
-  const trimEndPercent = safeDuration ? Math.round((normalizedTrim.endTime / safeDuration) * 100) : 100;
-  const selectionDuration = Math.max(0, normalizedTrim.endTime - normalizedTrim.startTime);
-  const capturePercent = safeDuration ? Math.round((clamp(captureTime, 0, safeDuration) / safeDuration) * 100) : 0;
-  const currentAspectRatio = aspectPresets.find((preset) => preset.id === selectedAspectId)?.ratio ?? null;
-  const playLabel = locale === 'ko' ? '재생' : 'Play';
-  const pauseLabel = locale === 'ko' ? '일시정지' : 'Pause';
-  const replayLabel = locale === 'ko' ? '처음으로' : 'Restart';
-  const playSelectionLabel = locale === 'ko' ? '선택 구간 재생' : 'Play selection';
+  // Until the length is known, times cannot be placed on the timeline.
+  const ready = duration > 0;
+  const percentOf = (seconds: number) => Number(clamp((seconds / safeDuration) * 100, 0, 100).toFixed(2));
 
   useEffect(() => {
-    setSelectedAspectId(aspectPresetId);
+    setAspectId(aspectPresetId);
   }, [aspectPresetId]);
 
   useEffect(() => {
-    return () => {
-      cleanupInteractionRef.current?.();
-      cleanupInteractionRef.current = null;
-    };
+    if (videoRef.current) {
+      videoRef.current.muted = muted;
+    }
+  }, [muted]);
+
+  // Per-file values start fresh for every new video: full length, full frame.
+  const metadataHandledRef = useRef(false);
+  const handleLoadedMetadata = async () => {
+    const video = videoRef.current;
+    if (!video || metadataHandledRef.current) {
+      return;
+    }
+    metadataHandledRef.current = true;
+    const size = { width: video.videoWidth, height: video.videoHeight };
+    setVideoSize(size);
+    const resolved = await resolveMediaDuration(video);
+    if (videoRef.current !== video) {
+      return;
+    }
+    durationRef.current = resolved;
+    setDuration(resolved);
+
+    const latest = propsRef.current;
+    latest.onVideoReady?.({ duration: resolved, width: size.width, height: size.height });
+    if (latest.trimEnabled && latest.onTrimChange) {
+      latest.onTrimChange(normalizeTrimRange(0, resolved, resolved || 1));
+    }
+    if (latest.captureEnabled) {
+      const start = clamp(latest.captureTime ?? 0, 0, resolved);
+      video.currentTime = start;
+      setCurrentTime(start);
+      latest.onCaptureTimeChange?.(Number(start.toFixed(3)));
+    }
+    if (latest.cropEnabled && latest.onCropChange) {
+      latest.onCropChange(getFullFrameCrop(size));
+    }
+  };
+
+  // A small local file can finish loading before React attaches the element's
+  // handlers (the editor is loaded lazily), and then "loadedmetadata" is never
+  // seen. Catch that case on mount.
+  useEffect(() => {
+    if ((videoRef.current?.readyState ?? 0) >= 1) {
+      void handleLoadedMetadata();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per mounted video (the editor is keyed by file)
   }, []);
 
+  // The browser can learn the real length later than expected; follow it,
+  // and stretch a selection that still spans the whole clip.
+  const handleDurationChange = () => {
+    const next = videoRef.current?.duration ?? 0;
+    if (!Number.isFinite(next) || next <= 0 || Math.abs(next - durationRef.current) < 0.01) {
+      return;
+    }
+    const previous = durationRef.current;
+    durationRef.current = next;
+    setDuration(next);
+    const latest = propsRef.current;
+    if (latest.trimEnabled && latest.onTrimChange && (previous === 0 || Math.abs(latest.trimEnd - previous) < 0.01 || latest.trimEnd <= 0)) {
+      latest.onTrimChange(normalizeTrimRange(latest.trimStart, next, next));
+    }
+  };
+
+  // Smooth playhead while playing; playback stays inside the selection.
   useEffect(() => {
-    const videoElement = videoRef.current;
-    if (!videoElement) {
+    if (!isPlaying) {
       return;
     }
-
-    const handleLoadedMetadata = () => {
-      const nextDuration = Number.isFinite(videoElement.duration) ? videoElement.duration : 0;
-      const nextSize = {
-        width: videoElement.videoWidth,
-        height: videoElement.videoHeight,
-      };
-
-      setDuration(nextDuration);
-      setVideoSize(nextSize);
-      onVideoReady?.({ duration: nextDuration, width: nextSize.width, height: nextSize.height });
-
-      if (trimEnabled && onTrimChange) {
-        const nextTrim = normalizeTrimRange(trimStart, trimEnd || nextDuration, nextDuration || 1);
-        if (nextTrim.startTime !== normalizedTrim.startTime || nextTrim.endTime !== normalizedTrim.endTime) {
-          onTrimChange(nextTrim);
+    let frame = 0;
+    const tick = () => {
+      const video = videoRef.current;
+      if (video) {
+        const latest = propsRef.current;
+        if (latest.trimEnabled) {
+          const range = normalizeTrimRange(latest.trimStart, latest.trimEnd, durationRef.current || 1);
+          if (video.currentTime >= range.endTime - 0.01) {
+            video.pause();
+            video.currentTime = range.endTime;
+          }
         }
+        setCurrentTime(video.currentTime);
       }
-
-      if (captureEnabled && onCaptureTimeChange) {
-        const nextCapture = Number(clamp(captureTime, 0, nextDuration || 0).toFixed(3));
-        if (nextCapture !== Number(captureTime.toFixed(3))) {
-          onCaptureTimeChange(nextCapture);
-        }
-      }
-
-      if (cropEnabled && onCropChange) {
-        const nextCrop = normalizeCropRect(crop.width && crop.height ? crop : getFullFrameCrop(nextSize), nextSize);
-        if (!cropEquals(nextCrop, normalizedCrop)) {
-          onCropChange(nextCrop);
-        }
-      }
+      frame = requestAnimationFrame(tick);
     };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [isPlaying]);
 
-    const handleTimeUpdate = () => {
-      const nextTime = videoElement.currentTime;
-      setCurrentTime(nextTime);
-
-      if (captureEnabled && onCaptureTimeChange) {
-        onCaptureTimeChange(Number(nextTime.toFixed(3)));
-      }
-
-      if (trimEnabled && nextTime > normalizedTrim.endTime + 0.01) {
-        videoElement.pause();
-        videoElement.currentTime = normalizedTrim.endTime;
-        setCurrentTime(normalizedTrim.endTime);
-      }
-    };
-
-    const handlePlay = () => setIsPlaying(true);
-    const handlePause = () => setIsPlaying(false);
-
-    videoElement.addEventListener('loadedmetadata', handleLoadedMetadata);
-    videoElement.addEventListener('timeupdate', handleTimeUpdate);
-    videoElement.addEventListener('play', handlePlay);
-    videoElement.addEventListener('pause', handlePause);
-
-    if (videoElement.readyState >= 1 && videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
-      handleLoadedMetadata();
+  const seekTo = (seconds: number) => {
+    const video = videoRef.current;
+    const target = clamp(seconds, 0, safeDuration);
+    if (video) {
+      video.currentTime = target;
     }
-
-    return () => {
-      videoElement.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      videoElement.removeEventListener('timeupdate', handleTimeUpdate);
-      videoElement.removeEventListener('play', handlePlay);
-      videoElement.removeEventListener('pause', handlePause);
-    };
-  }, [
-    captureEnabled,
-    captureTime,
-    crop,
-    cropEnabled,
-    normalizedCrop,
-    normalizedTrim.endTime,
-    normalizedTrim.startTime,
-    onCaptureTimeChange,
-    onCropChange,
-    onTrimChange,
-    onVideoReady,
-    trimEnabled,
-    trimEnd,
-    trimStart,
-  ]);
-
-  useEffect(() => {
-    const matchingPreset = aspectPresets.find((preset) => (preset.ratio ? aspectRatioMatches(normalizedCrop, preset.ratio) : false));
-    if (!matchingPreset && selectedAspectId !== 'free' && cropEnabled) {
-      setSelectedAspectId('free');
+    setCurrentTime(target);
+    if (captureEnabled) {
+      onCaptureTimeChange?.(Number(target.toFixed(3)));
     }
-  }, [aspectPresets, cropEnabled, normalizedCrop, selectedAspectId]);
+  };
 
-  const commitTrim = (nextStartTime: number, nextEndTime: number) => {
-    if (!onTrimChange) {
+  const togglePlay = () => {
+    const video = videoRef.current;
+    if (!video) {
       return;
     }
-
-    const nextTrim = normalizeTrimRange(nextStartTime, nextEndTime, safeDuration);
-    if (nextTrim.startTime !== normalizedTrim.startTime || nextTrim.endTime !== normalizedTrim.endTime) {
-      onTrimChange(nextTrim);
-    }
-  };
-
-  const commitCrop = (nextCrop: VideoCropRect) => {
-    if (!onCropChange) {
+    if (!video.paused) {
+      video.pause();
       return;
     }
+    if (trimEnabled && (video.currentTime < trim.startTime - 0.01 || video.currentTime >= trim.endTime - 0.02)) {
+      video.currentTime = trim.startTime;
+    }
+    void video.play().catch(() => undefined);
+  };
 
-    const safeCrop = normalizeCropRect(nextCrop, videoSize);
-    if (!cropEquals(safeCrop, normalizedCrop)) {
-      onCropChange(safeCrop);
+  const commitTrim = (start: number, end: number) => {
+    const next = normalizeTrimRange(start, end, safeDuration);
+    if (next.startTime !== trim.startTime || next.endTime !== trim.endTime) {
+      onTrimChange?.(next);
     }
   };
 
-  const seekToTime = (nextTime: number) => {
-    const videoElement = videoRef.current;
-    const safeTime = clamp(nextTime, 0, safeDuration);
-    if (videoElement) {
-      videoElement.currentTime = safeTime;
-    }
-    setCurrentTime(safeTime);
-    if (captureEnabled && onCaptureTimeChange) {
-      onCaptureTimeChange(Number(safeTime.toFixed(3)));
+  const commitCrop = (next: CropRect) => {
+    const safe = normalizeCropRect(next, videoSize);
+    if (!cropEquals(safe, normalizedCrop)) {
+      onCropChange?.(safe);
     }
   };
 
-  const togglePlayback = async () => {
-    const videoElement = videoRef.current;
-    if (!videoElement) {
+  const chooseAspect = (id: string, ratio: number | null) => {
+    setAspectId(id);
+    onAspectPresetChange?.(id);
+    if (!videoSize.width) {
       return;
     }
-
-    if (isPlaying) {
-      videoElement.pause();
-      return;
-    }
-
-    if (trimEnabled && currentTime >= normalizedTrim.endTime) {
-      videoElement.currentTime = normalizedTrim.startTime;
-      setCurrentTime(normalizedTrim.startTime);
-    }
-
-    await videoElement.play().catch(() => undefined);
+    commitCrop(ratio ? getCropFromAspectRatio(videoSize, ratio, normalizedCrop) : getFullFrameCrop(videoSize));
   };
 
-  const playSelection = async () => {
-    const videoElement = videoRef.current;
-    if (!videoElement) {
-      return;
-    }
-
-    videoElement.currentTime = trimEnabled ? normalizedTrim.startTime : 0;
-    setCurrentTime(videoElement.currentTime);
-    await videoElement.play().catch(() => undefined);
-  };
-
-  const handlePlayheadChange = (nextPercent: number) => {
-    seekToTime((safeDuration * nextPercent) / 100);
-  };
-
-  const handleTrimStartChange = (nextPercent: number) => {
-    const nextStartTime = (safeDuration * nextPercent) / 100;
-    commitTrim(nextStartTime, normalizedTrim.endTime);
-  };
-
-  const handleTrimEndChange = (nextPercent: number) => {
-    const nextEndTime = (safeDuration * nextPercent) / 100;
-    commitTrim(normalizedTrim.startTime, nextEndTime);
-  };
-
-  const getPointInFrame = (clientX: number, clientY: number) => {
-    const stageElement = stageRef.current;
-    if (!stageElement || !videoSize.width || !videoSize.height) {
-      return null;
-    }
-
-    const bounds = stageElement.getBoundingClientRect();
-    const x = clamp(((clientX - bounds.left) / Math.max(bounds.width, 1)) * videoSize.width, 0, videoSize.width);
-    const y = clamp(((clientY - bounds.top) / Math.max(bounds.height, 1)) * videoSize.height, 0, videoSize.height);
-    return { x, y };
-  };
-
-  const runMouseInteraction = (onMove: (point: { x: number; y: number }) => void) => {
-    cleanupInteractionRef.current?.();
-
-    const handleMouseMove = (event: MouseEvent) => {
-      const point = getPointInFrame(event.clientX, event.clientY);
-      if (!point) {
-        return;
-      }
-
-      onMove(point);
-    };
-
-    const cleanup = () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-      if (cleanupInteractionRef.current === cleanup) {
-        cleanupInteractionRef.current = null;
-      }
-    };
-
-    const handleMouseUp = () => {
-      cleanup();
-    };
-
-    cleanupInteractionRef.current = cleanup;
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-  };
-
-  const startMoveCrop = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!cropEnabled || event.button !== 0) {
-      return;
-    }
-
-    event.preventDefault();
-    const startPoint = getPointInFrame(event.clientX, event.clientY);
-    if (!startPoint) {
-      return;
-    }
-
-    const startCrop = normalizedCrop;
-    runMouseInteraction((point) => {
-      const deltaX = point.x - startPoint.x;
-      const deltaY = point.y - startPoint.y;
-
-      commitCrop({
-        ...startCrop,
-        x: clamp(startCrop.x + deltaX, 0, Math.max(0, videoSize.width - startCrop.width)),
-        y: clamp(startCrop.y + deltaY, 0, Math.max(0, videoSize.height - startCrop.height)),
-      });
-    });
-  };
-
-  const startResizeCrop = (handle: ResizeHandle) => (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!cropEnabled || event.button !== 0) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    const anchor =
-      handle === 'nw'
-        ? { x: normalizedCrop.x + normalizedCrop.width, y: normalizedCrop.y + normalizedCrop.height }
-        : handle === 'ne'
-          ? { x: normalizedCrop.x, y: normalizedCrop.y + normalizedCrop.height }
-          : handle === 'sw'
-            ? { x: normalizedCrop.x + normalizedCrop.width, y: normalizedCrop.y }
-            : { x: normalizedCrop.x, y: normalizedCrop.y };
-
-    runMouseInteraction((point) => {
-      commitCrop(buildRectFromAnchor(anchor, point, videoSize, currentAspectRatio));
-    });
-  };
-
-  const startDrawCrop = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!cropEnabled || event.button !== 0 || (event.target as HTMLElement).dataset.cropInteractive === 'true') {
-      return;
-    }
-
-    event.preventDefault();
-    const anchor = getPointInFrame(event.clientX, event.clientY);
-    if (!anchor) {
-      return;
-    }
-
-    runMouseInteraction((point) => {
-      commitCrop(buildRectFromAnchor(anchor, point, videoSize, currentAspectRatio));
-    });
-  };
-
-  const handleAspectPresetClick = (preset: VideoAspectPreset) => {
-    setSelectedAspectId(preset.id);
-    onAspectPresetChange?.(preset.id);
-
-    if (!cropEnabled || !videoSize.width || !videoSize.height) {
-      return;
-    }
-
-    if (!preset.ratio) {
-      commitCrop(getFullFrameCrop(videoSize));
-      return;
-    }
-
-    commitCrop(getCropFromAspectRatio(videoSize, preset.ratio, normalizedCrop));
-  };
-
-  const handleReset = () => {
-    seekToTime(0);
+  const reset = () => {
+    seekTo(0);
     if (trimEnabled) {
       commitTrim(0, safeDuration);
     }
-    if (captureEnabled && onCaptureTimeChange) {
-      onCaptureTimeChange(0);
-    }
     if (cropEnabled) {
-      commitCrop(getFullFrameCrop(videoSize));
-      setSelectedAspectId('free');
-      onAspectPresetChange?.('free');
+      chooseAspect('free', null);
     }
   };
 
-  const left = videoSize.width ? (normalizedCrop.x / videoSize.width) * 100 : 0;
-  const top = videoSize.height ? (normalizedCrop.y / videoSize.height) * 100 : 0;
-  const width = videoSize.width ? (normalizedCrop.width / videoSize.width) * 100 : 0;
-  const height = videoSize.height ? (normalizedCrop.height / videoSize.height) * 100 : 0;
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.tagName === 'INPUT' || target.tagName === 'BUTTON' || target.getAttribute('role') === 'group') {
+      return;
+    }
+    const step = event.shiftKey ? 1 : 0.1;
+    if (event.key === ' ' || event.key === 'k') {
+      event.preventDefault();
+      togglePlay();
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault();
+      seekTo(currentTime + (event.key === 'ArrowLeft' ? -step : step));
+    } else if (trimEnabled && (event.key === 'i' || event.key === 'I')) {
+      commitTrim(Math.min(currentTime, trim.endTime - MIN_SELECTION), trim.endTime);
+    } else if (trimEnabled && (event.key === 'o' || event.key === 'O')) {
+      commitTrim(trim.startTime, Math.max(currentTime, trim.startTime + MIN_SELECTION));
+    }
+  };
+
+  const startPercent = percentOf(trim.startTime);
+  const endPercent = percentOf(trim.endTime);
+  const video = (
+    <video
+      ref={videoRef}
+      src={previewUrl}
+      preload="metadata"
+      playsInline
+      onLoadedMetadata={() => void handleLoadedMetadata()}
+      onDurationChange={handleDurationChange}
+      onPlay={() => setIsPlaying(true)}
+      onPause={() => {
+        setIsPlaying(false);
+        const current = videoRef.current?.currentTime ?? 0;
+        setCurrentTime(current);
+        if (captureEnabled) {
+          onCaptureTimeChange?.(Number(current.toFixed(3)));
+        }
+      }}
+      onClick={cropEnabled ? undefined : togglePlay}
+      className={cx('block max-h-[28rem] max-w-full', !cropEnabled && 'mx-auto cursor-pointer')}
+    />
+  );
 
   return (
-    <div className="space-y-4" data-testid={`${testIdPrefix}-editor`}>
-      <div className="rounded-xl border border-border bg-base-elevated p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-ink">{messages.workbench.videoEditorTitle}</p>
-            <p className="mt-1 text-xs text-ink-muted">{messages.workbench.videoEditorDescription}</p>
-          </div>
-          <button type="button" onClick={handleReset} className="btn-ghost px-3 py-2 text-xs">
-            <RotateCcw size={14} />
-            {messages.workbench.resetEditor}
+    <div
+      tabIndex={0}
+      aria-label={copy.editor}
+      onKeyDown={handleKeyDown}
+      className="space-y-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-prime focus-visible:ring-offset-2 focus-visible:ring-offset-base-elevated"
+      data-testid={`${testIdPrefix}-editor`}
+    >
+      <div className="overflow-hidden rounded-xl bg-black">
+        {cropEnabled ? (
+          <CropStage
+            frameSize={videoSize}
+            crop={normalizedCrop}
+            aspectRatio={aspectRatio}
+            onChange={commitCrop}
+            testIdPrefix={testIdPrefix}
+            label={messages.workbench.cropFrame}
+          >
+            {video}
+          </CropStage>
+        ) : (
+          video
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button type="button" onClick={() => seekTo(trimEnabled ? trim.startTime : 0)} aria-label={copy.restart} title={copy.restart} className="btn-ghost h-9 w-9 p-0">
+          <SkipBack size={15} />
+        </button>
+        <button type="button" onClick={togglePlay} aria-label={isPlaying ? copy.pause : copy.play} className="btn-primary h-9 w-9 p-0">
+          {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+        </button>
+        <button type="button" onClick={() => setMuted((value) => !value)} aria-label={muted ? copy.unmute : copy.mute} title={muted ? copy.unmute : copy.mute} className="btn-ghost h-9 w-9 p-0">
+          {muted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+        </button>
+        <span className="ml-1 font-mono text-sm tabular-nums text-ink">
+          {formatEditorTime(currentTime)}
+          <span className="text-ink-faint"> / {formatEditorTime(duration)}</span>
+        </span>
+        <div className="ml-auto flex flex-wrap items-center gap-1.5">
+          {trimEnabled ? (
+            <>
+              <button
+                type="button"
+                onClick={() => commitTrim(Math.min(currentTime, trim.endTime - MIN_SELECTION), trim.endTime)}
+                disabled={!ready}
+                title={copy.setStartTitle}
+                className="btn-ghost h-9 px-2.5 text-xs"
+              >
+                <ArrowLeftToLine size={14} />
+                {copy.setStart}
+              </button>
+              <button
+                type="button"
+                onClick={() => commitTrim(trim.startTime, Math.max(currentTime, trim.startTime + MIN_SELECTION))}
+                disabled={!ready}
+                title={copy.setEndTitle}
+                className="btn-ghost h-9 px-2.5 text-xs"
+              >
+                <ArrowRightToLine size={14} />
+                {copy.setEnd}
+              </button>
+            </>
+          ) : null}
+          <button type="button" onClick={reset} aria-label={messages.workbench.resetEditor} title={messages.workbench.resetEditor} className="btn-ghost h-9 w-9 p-0">
+            <RotateCcw size={15} />
           </button>
         </div>
-        <p className="mt-3 text-xs text-ink-muted">{messages.workbench.previewGuidance}</p>
       </div>
 
-      <div className="rounded-xl border border-border bg-base-elevated p-3">
-        <div className="max-h-[34rem] overflow-auto rounded-xl border border-border bg-base-subtle">
-          <div ref={stageRef} className="relative mx-auto w-fit max-w-full select-none" onMouseDown={startDrawCrop} data-testid={`${testIdPrefix}-stage`}>
-            <video
-              ref={videoRef}
-              src={previewUrl}
-              preload="metadata"
-              playsInline
-              muted
-              className="block max-h-[30rem] max-w-full rounded-lg"
+      <div>
+        <div className="mb-1.5 flex items-center justify-between gap-3 text-xs text-ink-faint">
+          <span>{messages.workbench.timeline}</span>
+          {captureEnabled ? (
+            <span className="font-medium tabular-nums text-ink">
+              {copy.captureAt} {formatEditorTime(captureTime)}
+            </span>
+          ) : (
+            <span className="hidden sm:inline">{copy.shortcuts}</span>
+          )}
+        </div>
+        <div className="relative h-14 overflow-hidden rounded-lg bg-base-subtle">
+          <div className="absolute inset-0 flex" aria-hidden="true">
+            {frames.map((frame, index) => (
+              <img key={index} src={frame} alt="" className="h-full min-w-0 flex-1 object-cover" />
+            ))}
+          </div>
+          {trimEnabled ? (
+            <>
+              <div className="pointer-events-none absolute inset-y-0 left-0 bg-black/60" style={{ width: `${startPercent}%` }} />
+              <div className="pointer-events-none absolute inset-y-0 right-0 bg-black/60" style={{ width: `${100 - endPercent}%` }} />
+              <div
+                className="pointer-events-none absolute inset-y-0 rounded-md border-2 border-prime"
+                style={{ left: `${startPercent}%`, width: `${Math.max(0, endPercent - startPercent)}%` }}
+              />
+            </>
+          ) : null}
+          <div
+            className="pointer-events-none absolute inset-y-0 w-0.5 -translate-x-1/2 bg-white shadow-[0_0_0_1px_rgba(15,23,42,0.4)]"
+            style={{ left: `${percentOf(currentTime)}%` }}
+          />
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={0.1}
+            value={percentOf(currentTime)}
+            onChange={(event) => seekTo((Number(event.target.value) / 100) * safeDuration)}
+            aria-label={messages.workbench.playhead}
+            disabled={!ready}
+            aria-valuetext={formatEditorTime(currentTime)}
+            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          />
+        </div>
+        {trimEnabled ? (
+          <div className="relative mt-1 h-8">
+            <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-base-subtle" />
+            <div
+              className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-prime"
+              style={{ left: `${startPercent}%`, width: `${Math.max(0, endPercent - startPercent)}%` }}
             />
-
-            {cropEnabled && videoSize.width && videoSize.height ? (
-              <div className="absolute inset-0 cursor-crosshair">
-                <div
-                  data-testid={`${testIdPrefix}-selection`}
-                  data-crop-interactive="true"
-                  className="absolute cursor-move rounded-xl border-2 border-cyan-300 bg-cyan-400/12 shadow-[0_0_0_9999px_rgba(15,23,42,0.58)]"
-                  style={{
-                    left: `${left}%`,
-                    top: `${top}%`,
-                    width: `${width}%`,
-                    height: `${height}%`,
-                  }}
-                  onMouseDown={startMoveCrop}
-                >
-                  <div className="pointer-events-none absolute left-3 top-3 rounded-full border border-cyan-200 bg-base-elevated/95 px-2 py-1 text-[11px] font-medium text-cyan-700">
-                    {normalizedCrop.width} x {normalizedCrop.height}
-                  </div>
-
-                  {(['nw', 'ne', 'sw', 'se'] as ResizeHandle[]).map((handle) => (
-                    <div
-                      key={handle}
-                      data-testid={`${testIdPrefix}-handle-${handle}`}
-                      data-crop-interactive="true"
-                      className={cx(
-                        'absolute h-4 w-4 rounded-full border-2 border-white bg-cyan-500 shadow-sm',
-                        handle === 'nw' && '-left-2 -top-2 cursor-nwse-resize',
-                        handle === 'ne' && '-right-2 -top-2 cursor-nesw-resize',
-                        handle === 'sw' && '-bottom-2 -left-2 cursor-nesw-resize',
-                        handle === 'se' && '-bottom-2 -right-2 cursor-nwse-resize',
-                      )}
-                      onMouseDown={startResizeCrop(handle)}
-                    />
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-border bg-base-elevated p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.timeline}</p>
-            <p className="mt-1 text-xs text-ink-muted">{messages.workbench.trimRangeHint}</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => seekToTime(0)} className="btn-ghost px-3 py-2 text-xs">
-              <SkipBack size={14} />
-              {replayLabel}
-            </button>
-            {trimEnabled ? (
-              <button type="button" onClick={() => void playSelection()} className="btn-ghost px-3 py-2 text-xs">
-                <Play size={14} />
-                {playSelectionLabel}
-              </button>
-            ) : null}
-            <button type="button" onClick={() => void togglePlayback()} className="btn-ghost px-3 py-2 text-xs">
-              {isPlaying ? <Pause size={14} /> : <Play size={14} />}
-              {isPlaying ? pauseLabel : playLabel}
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <div className="rounded-xl border border-border bg-base-subtle px-3 py-3">
-            <p className="text-[11px] uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.currentTime}</p>
-            <p className="mt-2 text-sm font-semibold text-ink">{formatEditorTime(currentTime)}</p>
-          </div>
-          <div className="rounded-xl border border-border bg-base-subtle px-3 py-3">
-            <p className="text-[11px] uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.duration}</p>
-            <p className="mt-2 text-sm font-semibold text-ink">{formatEditorTime(safeDuration)}</p>
-          </div>
-          <div className="rounded-xl border border-border bg-base-subtle px-3 py-3">
-            <p className="text-[11px] uppercase tracking-[0.04em] text-ink-faint">
-              {captureEnabled ? messages.workbench.currentTime : messages.workbench.playhead}
-            </p>
-            <p className="mt-2 text-sm font-semibold text-ink">{formatEditorTime(captureEnabled ? captureTime : selectionDuration)}</p>
-          </div>
-        </div>
-
-        <div className="mt-4 space-y-3">
-          <label className="block">
-            <span className="text-xs font-medium uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.playhead}</span>
             <input
               type="range"
               min={0}
               max={100}
-              step={1}
-              value={playheadPercent}
-              onChange={(event) => handlePlayheadChange(Number(event.target.value))}
-              className="mt-3 w-full accent-prime"
-              aria-label={messages.workbench.playhead}
+              step={0.1}
+              value={startPercent}
+              onChange={(event) => {
+                const start = Math.min((Number(event.target.value) / 100) * safeDuration, trim.endTime - MIN_SELECTION);
+                commitTrim(start, trim.endTime);
+                seekTo(start);
+              }}
+              aria-label={messages.workbench.trimStart}
+            disabled={!ready}
+              aria-valuetext={formatEditorTime(trim.startTime)}
+              className="dual-range"
             />
-          </label>
-
-          {trimEnabled ? (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <label className="block">
-                <span className="text-xs font-medium uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.trimStart}</span>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={1}
-                  value={trimStartPercent}
-                  onChange={(event) => handleTrimStartChange(Number(event.target.value))}
-                  className="mt-3 w-full accent-prime"
-                  aria-label={messages.workbench.trimStart}
-                />
-              </label>
-              <label className="block">
-                <span className="text-xs font-medium uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.trimEnd}</span>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={1}
-                  value={trimEndPercent}
-                  onChange={(event) => handleTrimEndChange(Number(event.target.value))}
-                  className="mt-3 w-full accent-prime"
-                  aria-label={messages.workbench.trimEnd}
-                />
-              </label>
-            </div>
-          ) : null}
-        </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={0.1}
+              value={endPercent}
+              onChange={(event) => {
+                const end = Math.max((Number(event.target.value) / 100) * safeDuration, trim.startTime + MIN_SELECTION);
+                commitTrim(trim.startTime, end);
+                seekTo(end);
+              }}
+              aria-label={messages.workbench.trimEnd}
+            disabled={!ready}
+              aria-valuetext={formatEditorTime(trim.endTime)}
+              className="dual-range"
+            />
+          </div>
+        ) : null}
       </div>
 
-      {cropEnabled ? (
-        <div className="space-y-4">
-          <div className="rounded-xl border border-border bg-base-elevated p-4">
-            <p className="text-xs uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.cropFrame}</p>
-            <p className="mt-1 text-xs text-ink-muted">{messages.workbench.cropFrameHint}</p>
+      {trimEnabled ? (
+        <div className="grid grid-cols-3 gap-2">
+          <TimeField label={copy.start} value={trim.startTime} disabled={!ready} onCommit={(seconds) => commitTrim(seconds, trim.endTime)} />
+          <TimeField label={copy.end} value={trim.endTime} disabled={!ready} onCommit={(seconds) => commitTrim(trim.startTime, seconds)} />
+          <div className="min-w-0">
+            <span className="block text-xs text-ink-faint">{copy.length}</span>
+            <p className="mt-1 flex h-9 items-center font-mono text-sm font-semibold tabular-nums text-ink">
+              {formatEditorTime(trim.endTime - trim.startTime)}
+            </p>
           </div>
+        </div>
+      ) : null}
 
-          <div className="rounded-xl border border-border bg-base-elevated p-4">
-            <p className="text-xs uppercase tracking-[0.04em] text-ink-faint">{messages.workbench.ratioPresets}</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {aspectPresets.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  data-testid={`${testIdPrefix}-preset-${preset.id}`}
-                  onClick={() => handleAspectPresetClick(preset)}
-                  className={cx(
-                    'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-                    selectedAspectId === preset.id
-                      ? 'border-prime/60 bg-prime/10 text-prime'
-                      : 'border-border bg-base-subtle text-ink-muted hover:border-border-bright hover:text-ink',
-                  )}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-          </div>
+      {cropEnabled ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-xs text-ink-faint">{messages.workbench.ratioPresets}</span>
+          {aspectPresets.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              data-testid={`${testIdPrefix}-preset-${preset.id}`}
+              aria-pressed={aspectId === preset.id}
+              onClick={() => chooseAspect(preset.id, preset.ratio)}
+              className={cx(
+                'rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+                aspectId === preset.id
+                  ? 'border-prime/50 bg-prime/10 text-prime'
+                  : 'border-border bg-base-elevated text-ink-muted hover:border-border-bright hover:text-ink',
+              )}
+            >
+              {preset.label}
+            </button>
+          ))}
+          <span className="ml-auto flex items-center gap-1.5 text-xs text-ink-faint">
+            <span>{messages.workbench.cropFrame}</span>
+            <span className="font-medium tabular-nums text-ink">
+              {normalizedCrop.width}×{normalizedCrop.height}
+            </span>
+          </span>
         </div>
       ) : null}
     </div>

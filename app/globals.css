@@ -142,6 +142,57 @@
 }
 
 @layer components {
+  /* Two range inputs sharing one track (trim start and end). Only the thumbs
+     take pointer input, so either handle can be dragged, by touch as well. */
+  .dual-range {
+    @apply pointer-events-none absolute inset-0 m-0 h-full w-full appearance-none bg-transparent;
+  }
+  .dual-range::-webkit-slider-runnable-track {
+    background: transparent;
+  }
+  .dual-range::-moz-range-track {
+    background: transparent;
+  }
+  .dual-range::-webkit-slider-thumb {
+    pointer-events: auto;
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 26px;
+    border-radius: 5px;
+    border: 2px solid rgb(var(--color-base-elevated));
+    background: rgb(var(--color-prime));
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    cursor: ew-resize;
+  }
+  .dual-range::-moz-range-thumb {
+    pointer-events: auto;
+    width: 14px;
+    height: 26px;
+    border-radius: 5px;
+    border: 2px solid rgb(var(--color-base-elevated));
+    background: rgb(var(--color-prime));
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    cursor: ew-resize;
+  }
+  @media (pointer: coarse) {
+    .dual-range::-webkit-slider-thumb {
+      width: 22px;
+      height: 32px;
+    }
+    .dual-range::-moz-range-thumb {
+      width: 22px;
+      height: 32px;
+    }
+  }
+
+  /* Neutral checkerboard behind images, so transparency is visible. */
+  .checkerboard {
+    background-color: rgb(var(--color-base-elevated));
+    background-image: repeating-conic-gradient(rgb(var(--color-base-subtle)) 0% 25%, transparent 0% 50%);
+    background-size: 16px 16px;
+  }
+
   .card {
     @apply rounded-2xl border border-border bg-base-elevated;
     box-shadow: var(--shadow-card);

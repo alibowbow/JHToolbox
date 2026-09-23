@@ -22,6 +22,7 @@ const PDF_TOOLS = new Set([
   'pdf-to-png',
   'pdf-to-jpg',
   'pdf-to-webp',
+  'pdf-to-image',
   'pdf-to-word',
   'pdf-to-excel',
   'word-to-pdf',
@@ -54,6 +55,7 @@ const IMAGE_TOOLS = new Set([
   'image-watermark',
   'image-color-palette-extract',
   'image-auto-enhance',
+  'image-convert',
   'png-jpg',
   'jpg-png',
   'png-webp',
@@ -123,11 +125,49 @@ const WEB_TOOLS = new Set(['qr-generator', 'url-image', 'url-pdf', 'detect-cms',
 
 const ROUTED_TOOL_SETS = [PDF_TOOLS, HWPX_TOOLS, IMAGE_TOOLS, OCR_TOOLS, MEDIA_TOOLS, DATA_TOOLS, WEB_TOOLS];
 
+/**
+ * Tools that work on one input at a time. Given several files, they run once
+ * per file and the results are listed together, so any of them can batch.
+ */
+const PER_FILE_TOOLS = new Set([
+  'pdf-split',
+  'pdf-rotate',
+  'pdf-delete-page',
+  'pdf-add-page-numbers',
+  'pdf-extract-images',
+  'pdf-compress',
+  'pdf-reduce-size',
+  'pdf-to-png',
+  'pdf-to-jpg',
+  'pdf-to-webp',
+  'pdf-to-image',
+  'pdf-to-word',
+  'pdf-to-excel',
+  'word-to-pdf',
+  'powerpoint-to-pdf',
+  'excel-to-pdf',
+  'html-to-pdf',
+  'pdf-repair',
+  'pdf-to-pdfa',
+  'pdf-to-hwpx',
+  'hwpx-to-pdf',
+  'mute-video',
+  'extract-audio',
+  'video-compress',
+  'video-speed-change',
+  'video-resize',
+  'video-reverse',
+  'gif-speed-change',
+  'gif-reverse',
+  'gif-frame-extract',
+  'extract-zip',
+]);
+
 export function isRoutedTool(toolId: string): boolean {
   return ROUTED_TOOL_SETS.some((set) => set.has(toolId));
 }
 
-export async function runTool(ctx: ProcessContext): Promise<ProcessedFile[]> {
+async function dispatchTool(ctx: ProcessContext): Promise<ProcessedFile[]> {
   if (PDF_TOOLS.has(ctx.toolId)) {
     const { processPdfTool } = await import('@/lib/processors/pdf');
     return await processPdfTool(ctx);
@@ -164,4 +204,53 @@ export async function runTool(ctx: ProcessContext): Promise<ProcessedFile[]> {
   }
 
   throw new Error('Unsupported tool.');
+}
+
+async function runEachFile(ctx: ProcessContext): Promise<ProcessedFile[]> {
+  const results: ProcessedFile[] = [];
+  const count = ctx.files.length;
+  for (let index = 0; index < count; index += 1) {
+    ctx.signal?.throwIfAborted();
+    results.push(
+      ...(await dispatchTool({
+        ...ctx,
+        files: [ctx.files[index]],
+        onProgress: (progress) =>
+          ctx.onProgress({ percent: ((index + Math.min(100, progress.percent) / 100) / count) * 100, stage: progress.stage }),
+      })),
+    );
+  }
+  return results;
+}
+
+function abortError() {
+  return new DOMException('The operation was aborted.', 'AbortError');
+}
+
+/**
+ * Runs a tool. When `ctx.signal` aborts, the returned promise rejects right
+ * away with an AbortError; ffmpeg jobs are terminated, and other processors
+ * finish in the background with their output discarded.
+ */
+export async function runTool(ctx: ProcessContext): Promise<ProcessedFile[]> {
+  const { signal } = ctx;
+  if (signal?.aborted) {
+    throw abortError();
+  }
+
+  const work = PER_FILE_TOOLS.has(ctx.toolId) && ctx.files.length > 1 ? runEachFile(ctx) : dispatchTool(ctx);
+  if (!signal) {
+    return await work;
+  }
+
+  return await new Promise<ProcessedFile[]>((resolve, reject) => {
+    const onAbort = () => {
+      if (MEDIA_TOOLS.has(ctx.toolId)) {
+        void import('@/lib/processors/ffmpeg-client').then(({ terminateFfmpeg }) => terminateFfmpeg());
+      }
+      reject(abortError());
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+  });
 }

@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import { XMLBuilder, XMLParser } from 'fast-xml-parser';
 import { sanitizeRowsForSpreadsheet } from '../spreadsheet-safety';
 import { clampPositiveInteger } from '../option-schema';
+import { findRecords, prepareXmlDocument, recordsToTable } from '../data-shapes';
 
 type WorkerRequest = {
   id: number;
@@ -34,21 +35,12 @@ type WorkerResponse =
       error: string;
     };
 
-function rowsFromXml(obj: unknown): Record<string, unknown>[] {
-  if (Array.isArray(obj)) {
-    return obj.filter((item) => typeof item === 'object' && item !== null) as Record<string, unknown>[];
-  }
+const baseOf = (fileName: string) => fileName.replace(/\.[^/.]+$/, '');
 
-  if (obj && typeof obj === 'object') {
-    const values = Object.values(obj as Record<string, unknown>);
-    const rowArray = values.find((value) => Array.isArray(value));
-    if (Array.isArray(rowArray)) {
-      return rowArray.filter((item) => typeof item === 'object' && item !== null) as Record<string, unknown>[];
-    }
-    return [obj as Record<string, unknown>];
-  }
-
-  return [{ value: obj as string }];
+/** CSV with every column any record has; nested fields become "a.b" columns. */
+function recordsToCsv(document: unknown): string {
+  const table = recordsToTable(findRecords(document));
+  return Papa.unparse({ fields: table.columns, data: sanitizeRowsForSpreadsheet(table.rows) });
 }
 
 function handle(request: WorkerRequest): WorkerFile[] {
@@ -69,31 +61,35 @@ function handle(request: WorkerRequest): WorkerFile[] {
 
   if (request.toolId === 'json-csv') {
     const json = JSON.parse(request.text ?? '[]');
-    const rows = Array.isArray(json) ? json : [json];
-    const csv = Papa.unparse(sanitizeRowsForSpreadsheet(rows));
     return [
       {
-        name: request.fileName.replace(/\.[^/.]+$/, '') + '.csv',
+        name: baseOf(request.fileName) + '.csv',
         mimeType: 'text/csv;charset=utf-8',
-        data: csv,
+        data: recordsToCsv(json),
         encoding: 'text',
       },
     ];
   }
 
   if (request.toolId === 'excel-csv') {
-    const wb = XLSX.read(request.buffer, { type: 'array' });
-    const sheetName = wb.SheetNames[0];
-    const aoa = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, blankrows: false }) as unknown[][];
-    const csv = Papa.unparse(sanitizeRowsForSpreadsheet(aoa) as string[][]);
-    return [
-      {
-        name: request.fileName.replace(/\.[^/.]+$/, '') + '.csv',
+    // Every sheet becomes a CSV; values are written as Excel displays them
+    // (dates as dates, not serial numbers).
+    const wb = XLSX.read(request.buffer, { type: 'array', cellDates: true });
+    const sheets = wb.SheetNames.filter((sheetName) => wb.Sheets[sheetName]?.['!ref']);
+    return (sheets.length > 0 ? sheets : wb.SheetNames.slice(0, 1)).map((sheetName) => {
+      const aoa = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {
+        header: 1,
+        blankrows: false,
+        raw: false,
+        defval: '',
+      }) as unknown[][];
+      return {
+        name: sheets.length > 1 ? `${baseOf(request.fileName)}-${sheetName}.csv` : `${baseOf(request.fileName)}.csv`,
         mimeType: 'text/csv;charset=utf-8',
-        data: csv,
-        encoding: 'text',
-      },
-    ];
+        data: Papa.unparse(sanitizeRowsForSpreadsheet(aoa) as string[][]),
+        encoding: 'text' as const,
+      };
+    });
   }
 
   if (request.toolId === 'csv-excel') {
@@ -129,10 +125,10 @@ function handle(request: WorkerRequest): WorkerFile[] {
 
   if (request.toolId === 'json-xml') {
     const parsed = JSON.parse(request.text ?? '{}');
-    const xml = builder.build(parsed);
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n${builder.build(prepareXmlDocument(parsed))}`;
     return [
       {
-        name: request.fileName.replace(/\.[^/.]+$/, '') + '.xml',
+        name: baseOf(request.fileName) + '.xml',
         mimeType: 'application/xml',
         data: xml,
         encoding: 'text',
@@ -141,15 +137,11 @@ function handle(request: WorkerRequest): WorkerFile[] {
   }
 
   if (request.toolId === 'xml-csv') {
-    const parsed = parser.parse(request.text ?? '');
-    const rows = rowsFromXml(parsed);
-    const csv = Papa.unparse(sanitizeRowsForSpreadsheet(rows));
-
     return [
       {
-        name: request.fileName.replace(/\.[^/.]+$/, '') + '.csv',
+        name: baseOf(request.fileName) + '.csv',
         mimeType: 'text/csv;charset=utf-8',
-        data: csv,
+        data: recordsToCsv(parser.parse(request.text ?? '')),
         encoding: 'text',
       },
     ];
@@ -177,7 +169,7 @@ function handle(request: WorkerRequest): WorkerFile[] {
     return out;
   }
 
-  throw new Error('지원하지 않는 데이터 도구입니다.');
+  throw new Error('Unsupported tool.');
 }
 
 const globalScope = self as unknown as DedicatedWorkerGlobalScope;
@@ -192,7 +184,7 @@ globalScope.onmessage = (event: MessageEvent<WorkerRequest>) => {
 
     globalScope.postMessage(response, transferables);
   } catch (cause) {
-    const error = cause instanceof Error ? cause.message : '데이터 처리 실패';
+    const error = cause instanceof Error ? cause.message : 'The file could not be converted.';
     const response: WorkerResponse = { id: event.data.id, ok: false, error };
     globalScope.postMessage(response);
   }

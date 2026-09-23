@@ -3,6 +3,7 @@ import picaFactory from 'pica';
 import { ProcessContext, ProcessedFile } from '@/types/processor';
 import { baseName, parseBoolean, parseNumber } from '@/lib/utils';
 import { tileBoundaries } from '@/lib/tile-math';
+import { decodeImage, preferredOutputType } from '@/lib/processors/image-decode';
 
 const pica = picaFactory();
 
@@ -13,9 +14,7 @@ function mimeExt(mimeType: string): string {
   return 'png';
 }
 
-async function toBitmap(file: Blob): Promise<ImageBitmap> {
-  return await createImageBitmap(file);
-}
+const toBitmap = decodeImage;
 
 function canvas(width: number, height: number): HTMLCanvasElement {
   const c = document.createElement('canvas');
@@ -41,7 +40,7 @@ async function canvasBlob(source: HTMLCanvasElement, mimeType = 'image/png', qua
     encodable.toBlob(
       (blob) => {
         if (!blob) {
-          reject(new Error('이미지 Blob 생성에 실패했습니다.'));
+          reject(new Error('Failed to create a canvas blob.'));
           return;
         }
         resolve(blob);
@@ -57,10 +56,12 @@ async function exportCanvas(
   originalName: string,
   mimeType = 'image/png',
   quality = 0.92,
+  suffix = '',
 ): Promise<ProcessedFile> {
   const blob = await canvasBlob(source, mimeType, quality);
   const ext = mimeExt(mimeType);
-  const name = `${baseName(originalName)}.${ext}`;
+  // A suffix keeps the result from being mistaken for (or saved over) the original.
+  const name = `${baseName(originalName)}${suffix ? `-${suffix}` : ''}.${ext}`;
 
   return {
     name,
@@ -69,16 +70,26 @@ async function exportCanvas(
   };
 }
 
-async function resizeWithPica(file: File, width: number, height: number, mimeType: string): Promise<ProcessedFile> {
+async function resizeWithPica(
+  file: File,
+  width: number,
+  height: number,
+  mimeType: string,
+  { keepAspect = false, suffix = '' }: { keepAspect?: boolean; suffix?: string } = {},
+): Promise<ProcessedFile> {
   const bitmap = await toBitmap(file);
   const from = canvas(bitmap.width, bitmap.height);
   from.getContext('2d')!.drawImage(bitmap, 0, 0);
 
-  const target = canvas(width, height);
+  // Fit inside width × height without distorting the picture.
+  const fit = keepAspect ? Math.min(width / bitmap.width, height / bitmap.height) : 1;
+  const targetWidth = keepAspect ? Math.max(1, Math.round(bitmap.width * fit)) : width;
+  const targetHeight = keepAspect ? Math.max(1, Math.round(bitmap.height * fit)) : height;
+  const target = canvas(targetWidth, targetHeight);
   await pica.resize(from, target);
   bitmap.close();
 
-  return await exportCanvas(target, file.name, mimeType, 0.92);
+  return await exportCanvas(target, file.name, mimeType, 0.92, suffix || `${target.width}x${target.height}`);
 }
 
 function clampRect(x: number, y: number, width: number, height: number, maxW: number, maxH: number) {
@@ -110,56 +121,40 @@ function splitTargets(toolId: string): { mimeType: string; quality: number } | n
   return null;
 }
 
-function getOutputMime(options: Record<string, string | number | boolean>, fallback: string): string {
+/** The chosen output type; "original" (the default) keeps the input's format. */
+function getOutputMime(options: Record<string, string | number | boolean>, file: Blob): string {
   const format = options.format;
   if (typeof format === 'string' && format.startsWith('image/')) {
     return format;
   }
-  return fallback;
+  return preferredOutputType(file);
 }
 
-async function addTextWithFabricFallback(
-  source: HTMLCanvasElement,
+/**
+ * Draws text with its top-left corner at (x, y) — the same point the live
+ * preview shows. Uses the page's font stack so Hangul renders everywhere.
+ */
+function drawTextOverlay(
+  target: HTMLCanvasElement,
   text: string,
   fontSize: number,
   color: string,
   x: number,
   y: number,
   opacity = 1,
-): Promise<void> {
-  try {
-    const fabricAny: any = await import('fabric');
-    const staticCanvas = new fabricAny.StaticCanvas(null, {
-      width: source.width,
-      height: source.height,
-    });
-    const bg = new fabricAny.Image(source, {
-      left: 0,
-      top: 0,
-    });
-    staticCanvas.add(bg);
-    const txt = new fabricAny.Text(text, { left: x, top: y, fill: color, fontSize, opacity });
-    staticCanvas.add(txt);
-    staticCanvas.renderAll();
-
-    const output = staticCanvas.toCanvasElement();
-    const ctx = source.getContext('2d');
-    if (ctx) {
-      ctx.clearRect(0, 0, source.width, source.height);
-      ctx.drawImage(output, 0, 0);
-    }
-  } catch {
-    const ctx = source.getContext('2d');
-    if (!ctx) {
-      return;
-    }
-    ctx.save();
-    ctx.globalAlpha = opacity;
-    ctx.fillStyle = color;
-    ctx.font = `${fontSize}px sans-serif`;
-    ctx.fillText(text, x, y);
-    ctx.restore();
+) {
+  const context = target.getContext('2d');
+  if (!context) {
+    return;
   }
+  const family = getComputedStyle(document.body).fontFamily || 'system-ui, sans-serif';
+  context.save();
+  context.globalAlpha = opacity;
+  context.fillStyle = color;
+  context.font = `700 ${fontSize}px ${family}`;
+  context.textBaseline = 'top';
+  text.split('\n').forEach((line, index) => context.fillText(line, x, y + index * fontSize * 1.25));
+  context.restore();
 }
 
 function clampByte(value: number) {
@@ -306,6 +301,18 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
     throw new Error('Select at least one image file.');
   }
 
+  if (toolId === 'image-convert') {
+    const format = String(options.format ?? 'image/jpeg');
+    const mimeType = format === 'image/png' || format === 'image/webp' ? format : 'image/jpeg';
+    const quality = Math.min(1, Math.max(0.5, parseNumber(options.quality, 0.9)));
+    const out: ProcessedFile[] = [];
+    for (let index = 0; index < files.length; index += 1) {
+      onProgress({ percent: (index / files.length) * 100, stage: '이미지 변환 중' });
+      out.push(await convertFormat(files[index], mimeType, quality));
+    }
+    return out;
+  }
+
   const conversionTarget = splitTargets(toolId);
   if (conversionTarget) {
     const out: ProcessedFile[] = [];
@@ -319,30 +326,30 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
   if (toolId === 'image-resize') {
     const width = parseNumber(options.width, 1280);
     const height = parseNumber(options.height, 720);
-    const mimeType = getOutputMime(options, 'image/png');
+    const keepAspect = parseBoolean(options.keepAspect, true);
 
     const output: ProcessedFile[] = [];
     for (let index = 0; index < files.length; index += 1) {
       onProgress({ percent: (index / files.length) * 100, stage: '리사이즈 처리 중' });
-      output.push(await resizeWithPica(files[index], width, height, mimeType));
+      output.push(await resizeWithPica(files[index], width, height, getOutputMime(options, files[index]), { keepAspect }));
     }
     return output;
   }
 
   if (toolId === 'image-compress') {
     const quality = parseNumber(options.quality, 0.75);
-    const mimeType = getOutputMime(options, 'image/jpeg');
 
     const out: ProcessedFile[] = [];
     for (let index = 0; index < files.length; index += 1) {
       onProgress({ percent: (index / files.length) * 100, stage: '압축 중' });
+      const mimeType = getOutputMime(options, files[index]);
       const compressed = await imageCompression(files[index], {
         initialQuality: Math.max(0.1, Math.min(1, quality)),
         fileType: mimeType,
         useWebWorker: true,
       });
       out.push({
-        name: `${baseName(files[index].name)}.${mimeExt(mimeType)}`,
+        name: `${baseName(files[index].name)}-compressed.${mimeExt(mimeType)}`,
         blob: compressed,
         mimeType,
       });
@@ -364,7 +371,7 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
       const c = canvas(rect.width, rect.height);
       c.getContext('2d')!.drawImage(bitmap, rect.x, rect.y, rect.width, rect.height, 0, 0, rect.width, rect.height);
       bitmap.close();
-      out.push(await exportCanvas(c, files[index].name, 'image/png', 1));
+      out.push(await exportCanvas(c, files[index].name, preferredOutputType(files[index]), 0.92, 'cropped'));
     }
 
     return out;
@@ -388,7 +395,7 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
       ctx2d.restore();
       bitmap.close();
 
-      out.push(await exportCanvas(c, files[index].name, 'image/png', 1));
+      out.push(await exportCanvas(c, files[index].name, preferredOutputType(files[index]), 0.92, 'flipped'));
     }
 
     return out;
@@ -412,7 +419,7 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
       ctx2d.rotate(radians);
       ctx2d.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2);
       bitmap.close();
-      out.push(await exportCanvas(c, files[index].name, 'image/png', 1));
+      out.push(await exportCanvas(c, files[index].name, preferredOutputType(files[index]), 0.92, 'rotated'));
     }
 
     return out;
@@ -438,7 +445,7 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
       ctx2d.imageSmoothingEnabled = false;
       ctx2d.drawImage(temp, 0, 0, smallW, smallH, 0, 0, bitmap.width, bitmap.height);
       bitmap.close();
-      out.push(await exportCanvas(c, files[index].name, 'image/png', 1));
+      out.push(await exportCanvas(c, files[index].name, preferredOutputType(files[index]), 0.92, 'pixelated'));
     }
 
     return out;
@@ -458,8 +465,8 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
       const c = canvas(bitmap.width, bitmap.height);
       c.getContext('2d')!.drawImage(bitmap, 0, 0);
       bitmap.close();
-      await addTextWithFabricFallback(c, text, fontSize, color, x, y);
-      out.push(await exportCanvas(c, files[index].name, 'image/png', 1));
+      drawTextOverlay(c, text, fontSize, color, x, y);
+      out.push(await exportCanvas(c, files[index].name, preferredOutputType(files[index]), 0.92, 'text'));
     }
 
     return out;
@@ -479,7 +486,7 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
       ctx2d.fillRect(0, 0, c.width, c.height);
       ctx2d.drawImage(bitmap, borderSize, borderSize);
       bitmap.close();
-      out.push(await exportCanvas(c, files[index].name, 'image/png', 1));
+      out.push(await exportCanvas(c, files[index].name, preferredOutputType(files[index]), 0.92, 'border'));
     }
 
     return out;
@@ -514,10 +521,11 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
         const c = canvas(tileW, tileH);
         c.getContext('2d')!.drawImage(bitmap, sx, sy, tileW, tileH, 0, 0, tileW, tileH);
 
+        const tileType = preferredOutputType(source);
         out.push({
-          name: `${baseName(source.name)}-r${r + 1}-c${cIdx + 1}.png`,
-          blob: await canvasBlob(c, 'image/png', 1),
-          mimeType: 'image/png',
+          name: `${baseName(source.name)}-r${r + 1}-c${cIdx + 1}.${mimeExt(tileType)}`,
+          blob: await canvasBlob(c, tileType, 0.92),
+          mimeType: tileType,
         });
       }
     }
@@ -632,7 +640,7 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
         }
       }
       ctx2d.putImageData(imageData, 0, 0);
-      out.push(await exportCanvas(c, files[index].name, 'image/png', 1));
+      out.push(await exportCanvas(c, files[index].name, 'image/png', 1, 'transparent'));
     }
 
     return out;
@@ -651,7 +659,7 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
       ctx2d.drawImage(bmp, 0, 0);
       ctx2d.filter = 'none';
       bmp.close();
-      out.push(await exportCanvas(c, files[index].name, 'image/png', 1));
+      out.push(await exportCanvas(c, files[index].name, preferredOutputType(files[index]), 0.92, 'blurred'));
     }
 
     return out;
@@ -659,13 +667,16 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
 
   if (toolId === 'image-upscale') {
     const scale = Math.max(2, parseNumber(options.scale, 2));
-    const mimeType = getOutputMime(options, 'image/png');
     const out: ProcessedFile[] = [];
 
     for (let index = 0; index < files.length; index += 1) {
       const bitmap = await toBitmap(files[index]);
       onProgress({ percent: (index / files.length) * 100, stage: 'Upscaling image' });
-      out.push(await resizeWithPica(files[index], bitmap.width * scale, bitmap.height * scale, mimeType));
+      out.push(
+        await resizeWithPica(files[index], bitmap.width * scale, bitmap.height * scale, getOutputMime(options, files[index]), {
+          suffix: `${scale}x`,
+        }),
+      );
       bitmap.close();
     }
 
@@ -713,10 +724,10 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
           ctx2d.drawImage(watermarkBitmap, x, y, targetWidth, targetHeight);
           ctx2d.restore();
         } else {
-          await addTextWithFabricFallback(c, text, fontSize, color, x, y + fontSize, opacity);
+          drawTextOverlay(c, text, fontSize, color, x, y, opacity);
         }
 
-        out.push(await exportCanvas(c, baseFiles[index].name, 'image/png', 1));
+        out.push(await exportCanvas(c, baseFiles[index].name, preferredOutputType(baseFiles[index]), 0.92, 'watermarked'));
       }
     } finally {
       watermarkBitmap?.close();
@@ -776,7 +787,6 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
 
   if (toolId === 'image-auto-enhance') {
     const strength = Math.max(0.1, Math.min(1.5, parseNumber(options.strength, 0.75)));
-    const mimeType = getOutputMime(options, 'image/jpeg');
     const out: ProcessedFile[] = [];
 
     for (let index = 0; index < files.length; index += 1) {
@@ -810,7 +820,7 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
       const enhanced = ctx2d.getImageData(0, 0, c.width, c.height);
       applySharpen(enhanced, strength);
       ctx2d.putImageData(enhanced, 0, 0);
-      out.push(await exportCanvas(c, files[index].name, mimeType, 0.92));
+      out.push(await exportCanvas(c, files[index].name, getOutputMime(options, files[index]), 0.92, 'enhanced'));
     }
 
     return out;

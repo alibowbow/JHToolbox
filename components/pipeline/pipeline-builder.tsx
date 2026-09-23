@@ -9,6 +9,7 @@ import { toast } from '@/components/ui/Toast';
 import { useLocale } from '@/components/providers/locale-provider';
 import { runTool } from '@/lib/processors';
 import { runPipeline } from '@/lib/pipeline/engine';
+import { localizeErrorMessage, localizeStage } from '@/lib/error-messages';
 import { deletePipeline, listPipelines, savePipeline } from '@/lib/pipeline/storage';
 import type { Pipeline, PipelineProgress, PipelineRunResult } from '@/lib/pipeline/types';
 import { getBrowsableTools, getToolById } from '@/lib/tool-registry';
@@ -19,7 +20,7 @@ import {
   getLocalizedPlaceholder,
   getLocalizedToolCopy,
 } from '@/lib/tool-localization';
-import { normalizeToolOptions } from '@/lib/option-schema';
+import { isOptionApplicable, normalizeToolOptions } from '@/lib/option-schema';
 import { cx, downloadBlob, safeFileName } from '@/lib/utils';
 import { dedupeFileName } from '@/lib/filename-safety';
 import type { ProcessedFile } from '@/types/processor';
@@ -134,7 +135,7 @@ export function PipelineBuilder() {
   const [recipes, setRecipes] = useState<Pipeline[]>([]);
   const [recipeName, setRecipeName] = useState('');
   const uidRef = useRef(0);
-  const signalRef = useRef<{ aborted: boolean } | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const tools = useMemo(pipelineTools, []);
 
@@ -195,8 +196,8 @@ export function PipelineBuilder() {
       toast.error(t.addFilesFirst);
       return;
     }
-    const signal = { aborted: false };
-    signalRef.current = signal;
+    const controller = new AbortController();
+    abortRef.current = controller;
     setRunning(true);
     setResult(null);
     setProgress(null);
@@ -207,27 +208,19 @@ export function PipelineBuilder() {
         runStep: runTool,
         acceptForTool: (id) => getToolById(id)?.accept,
         onProgress: setProgress,
-        signal,
+        signal: controller.signal,
       });
       setResult(outcome);
-      if (outcome.ok) {
-        toast.success(t.done);
-      } else {
-        const failedTool = outcome.failedStepIndex != null ? outcome.steps[outcome.failedStepIndex] : null;
-        toast.error(failedTool?.error ?? t.cancelled);
-      }
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : t.cancelled);
+      toast.error(localizeErrorMessage(cause, locale));
     } finally {
       setRunning(false);
-      signalRef.current = null;
+      abortRef.current = null;
     }
   };
 
   const onCancel = () => {
-    if (signalRef.current) {
-      signalRef.current.aborted = true;
-    }
+    abortRef.current?.abort();
   };
 
   const onSave = () => {
@@ -246,7 +239,6 @@ export function PipelineBuilder() {
       steps: steps.map((step) => ({ toolId: step.toolId, options: step.options })),
     });
     refreshRecipes();
-    toast.success(t.savedToast);
   };
 
   const loadRecipe = (pipeline: Pipeline) => {
@@ -266,7 +258,6 @@ export function PipelineBuilder() {
   const onDeleteRecipe = (id: string) => {
     deletePipeline(id);
     refreshRecipes();
-    toast.success(t.deletedToast);
   };
 
   const onDownloadAll = async (outputs: ProcessedFile[]) => {
@@ -352,7 +343,7 @@ export function PipelineBuilder() {
           <ol className="space-y-3">
             {steps.map((step, index) => {
               const tool = getToolById(step.toolId);
-              const options = tool?.options ?? [];
+              const options = (tool?.options ?? []).filter((option) => !option.hidden && isOptionApplicable(option, step.options));
               return (
                 <li key={step.uid} className="workspace-section p-4">
                   <div className="flex items-center justify-between gap-3">
@@ -360,10 +351,7 @@ export function PipelineBuilder() {
                       <span className="flex h-7 w-7 items-center justify-center rounded-full bg-prime/10 text-xs font-semibold text-prime">
                         {index + 1}
                       </span>
-                      <div>
-                        <h3 className="text-sm font-semibold text-ink">{toolName(step.toolId)}</h3>
-                        {tool?.accept ? <p className="text-[11px] font-mono text-ink-faint">{tool.accept}</p> : null}
-                      </div>
+                      <h3 className="text-sm font-semibold text-ink">{toolName(step.toolId)}</h3>
                     </div>
                     <div className="flex items-center gap-1">
                       <button type="button" aria-label={t.moveUp} disabled={running || index === 0} onClick={() => moveStep(index, -1)} className="rounded-lg border border-border p-1.5 text-ink-muted hover:border-border-bright disabled:opacity-40">
@@ -391,9 +379,7 @@ export function PipelineBuilder() {
                         />
                       ))}
                     </div>
-                  ) : (
-                    <p className="mt-2 text-xs text-ink-faint">{t.noOptions}</p>
-                  )}
+                  ) : null}
                 </li>
               );
             })}
@@ -433,7 +419,7 @@ export function PipelineBuilder() {
             <span className="text-ink-muted">
               {progress ? `${t.stepLabel} ${progress.stepIndex + 1}/${progress.totalSteps} · ${toolName(progress.toolId)}` : ''}
             </span>
-            <span className="text-ink-faint">{progress?.stage}</span>
+            <span className="text-ink-faint">{progress ? localizeStage(progress.stage, locale) : ''}</span>
           </div>
           <ProgressBar value={progress?.overallPercent ?? 0} status={running ? 'running' : 'done'} />
         </section>
@@ -465,9 +451,9 @@ export function PipelineBuilder() {
                 {stepResult.ok ? (
                   <span className="text-ink-muted">→ {stepResult.outputCount} {t.stepProduced}</span>
                 ) : (
-                  <span className="text-danger">{t.failedAtStep}: {stepResult.error}</span>
+                  <span className="text-danger">{localizeErrorMessage(stepResult.error ?? '', locale)}</span>
                 )}
-                {stepResult.warning ? <span className="text-warn">⚠ {stepResult.warning}</span> : null}
+                {stepResult.warning ? <span className="text-warn">{localizeErrorMessage(stepResult.warning, locale)}</span> : null}
               </li>
             ))}
           </ol>

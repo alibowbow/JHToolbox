@@ -1,4 +1,4 @@
-import { getPdfJs } from '@/lib/processors/pdfjs-client';
+import { openPdfDocument } from '@/lib/processors/pdfjs-client';
 import type { RasterDocument, RasterPage } from '@/lib/document-model/types';
 import { writeRasterHwpx } from '@/lib/hwpx/package-writer';
 import { HWPX_MIME } from '@/lib/hwpx/xml-builders';
@@ -28,9 +28,8 @@ export async function convertPdfToFidelityHwpx(
   options: FidelityOptions,
   onProgress: (percent: number, stage: string) => void,
 ): Promise<{ blob: Blob; pageCount: number }> {
-  const pdfjsLib = await getPdfJs();
   const input = new Uint8Array(await file.arrayBuffer());
-  const doc = await pdfjsLib.getDocument({ data: input, useWorkerFetch: false }).promise;
+  const doc = await openPdfDocument(input);
 
   try {
     const scale = options.dpi / 72;

@@ -2,6 +2,8 @@ import JSZip from 'jszip';
 import { ProcessContext, ProcessedFile } from '@/types/processor';
 import { ZIP_LIMITS, checkZipBomb, dedupeEntryName, sanitizeZipEntryName } from '@/lib/zip-safety';
 import { UTF8_BOM, decodeTextBytes } from '@/lib/text-encoding';
+import { dedupeFileName, safeFileName } from '@/lib/filename-safety';
+import { baseName } from '@/lib/utils';
 
 type WorkerFile = {
   name: string;
@@ -51,7 +53,7 @@ async function callDataWorker(
 
     worker.onerror = (event) => {
       finish();
-      reject(event.error ?? new Error('Worker 실행 오류'));
+      reject(event.error ?? new Error('The background worker stopped unexpectedly.'));
     };
 
     const run = async () => {
@@ -113,11 +115,16 @@ export async function processDataTool(ctx: ProcessContext): Promise<ProcessedFil
   const { toolId, files, options, onProgress } = ctx;
 
   if (toolId === 'create-zip') {
+    if (!files.length) {
+      throw new Error('Select at least one file to process.');
+    }
     const zip = new JSZip();
     const totalFiles = Math.max(files.length, 1);
+    // Two files with the same name must not overwrite each other in the archive.
+    const seenNames = new Set<string>();
     files.forEach((file, index) => {
       onProgress({ percent: (index / totalFiles) * 100, stage: 'ZIP 생성 중' });
-      zip.file(file.name, file);
+      zip.file(dedupeFileName(safeFileName(file.name, 'file'), seenNames), file);
     });
 
     const blob = await zip.generateAsync(
@@ -127,9 +134,10 @@ export async function processDataTool(ctx: ProcessContext): Promise<ProcessedFil
 
     return [
       {
-        name: 'archive.zip',
+        name: files.length === 1 ? `${baseName(files[0].name)}.zip` : 'archive.zip',
         blob,
         mimeType: 'application/zip',
+        metadata: { entries: files.length },
       },
     ];
   }
