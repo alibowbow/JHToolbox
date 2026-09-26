@@ -26,6 +26,7 @@ import { receiveHandedOffFiles } from '@/lib/file-handoff';
 import { partitionByAccept } from '@/lib/file-accept';
 import { nextToolIds } from '@/lib/next-tools';
 import { getDisplayMetadata, localizeErrorMessage, localizeStage } from '@/lib/error-messages';
+import { isCaptureError } from '@/lib/capture-failure';
 import { runTool } from '@/lib/processors';
 import { getToolIcon } from '@/lib/tool-icons';
 import { categoryStyles } from '@/lib/tool-presentation';
@@ -51,8 +52,10 @@ const BrowserCaptureWorkbench = dynamic(
   { ssr: false },
 );
 const DataFilePreview = dynamic(() => import('@/components/ui/DataFilePreview').then((mod) => mod.DataFilePreview), { ssr: false });
+const CaptureFallback = dynamic(() => import('@/components/tool-ui/capture-fallback').then((mod) => mod.CaptureFallback), { ssr: false });
 
 const OPTIONAL_FILE_TOOLS = new Set(['qr-generator', 'url-image', 'url-pdf', 'detect-cms']);
+const CAPTURE_TOOL_IDS = new Set(['url-image', 'url-pdf']);
 const PDF_EDITOR_TOOLS = new Set(['pdf-merge', 'pdf-rearrange']);
 const CUSTOM_OPTIONS_IN_PREVIEW_TOOLS = new Set(['pdf-rearrange', 'image-crop', 'video-trim', 'video-crop']);
 const IMAGE_COMPARE_EXCLUDED_TOOL_IDS = new Set([
@@ -495,6 +498,15 @@ function resultToFile(result: ProcessedFile) {
   return new File([result.blob], result.name, { type: result.mimeType });
 }
 
+/** Object URLs for results the browser can show (image, video, audio). */
+function withPreviewUrls(files: ProcessedFile[]): ProcessedFile[] {
+  return files.map((item) =>
+    item.previewUrl || !/^(?:image|video|audio)\//.test(item.mimeType)
+      ? item
+      : { ...item, previewUrl: URL.createObjectURL(item.blob) },
+  );
+}
+
 function fileSignature(files: File[]) {
   return files.map((file) => `${file.name}:${file.size}:${file.lastModified}`).join('|');
 }
@@ -526,6 +538,10 @@ function StandardToolWorkbench({
   const [files, setFiles] = useState<File[]>([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The address a webpage capture failed on: offers capturing it from the user's own browser.
+  const [failedCaptureUrl, setFailedCaptureUrl] = useState<string | null>(null);
+  // A capture that "worked" can still show a block page or a cookie wall.
+  const [captureHelpOpen, setCaptureHelpOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [options, setOptions] = useState<Record<string, string | number | boolean>>(() =>
     getInitialOptions(tool, searchParams),
@@ -648,6 +664,16 @@ function StandardToolWorkbench({
   useEffect(() => {
     setNotice(null);
   }, [inputSignature]);
+
+  useEffect(() => {
+    if (!error) {
+      setFailedCaptureUrl(null);
+    }
+  }, [error]);
+
+  useEffect(() => {
+    setCaptureHelpOpen(false);
+  }, [results]);
 
   // Bring the outcome into view once a run finishes; on long pages it renders
   // below the fold and is easy to miss.
@@ -803,26 +829,7 @@ function StandardToolWorkbench({
         return;
       }
 
-      const filesWithPreview = processedFiles.map((item) => {
-        if (item.previewUrl) {
-          return item;
-        }
-
-        if (
-          item.mimeType.startsWith('image/') ||
-          item.mimeType.startsWith('video/') ||
-          item.mimeType.startsWith('audio/')
-        ) {
-          return {
-            ...item,
-            previewUrl: URL.createObjectURL(item.blob),
-          };
-        }
-
-        return item;
-      });
-
-      setResults(filesWithPreview);
+      setResults(withPreviewUrls(processedFiles));
       setResultsSignature(signature);
       if (supportsOptionMemory) {
         saveLastRunToolOptions(tool.id, rememberableOptions, currentOptions);
@@ -833,6 +840,7 @@ function StandardToolWorkbench({
         return;
       }
       setError(localizeErrorMessage(cause, locale));
+      setFailedCaptureUrl(isCaptureError(cause) ? String(currentOptions.url ?? '') : null);
       setResultsSignature(signature);
     } finally {
       if (runIdRef.current === runId) {
@@ -841,6 +849,14 @@ function StandardToolWorkbench({
         abortRef.current = null;
       }
     }
+  };
+
+  // A frame of the tab the user shared stands in for the failed capture; it
+  // belongs to the same inputs, so the error's signature is kept.
+  const onFallbackCaptured = (captured: ProcessedFile[]) => {
+    setError(null);
+    setResults(withPreviewUrls(captured));
+    pushRecentTool(tool.id);
   };
 
   const onDownloadAll = async () => {
@@ -1158,6 +1174,9 @@ function StandardToolWorkbench({
               <p className="min-w-0 break-words">{error}</p>
             </div>
           ) : null}
+          {error && failedCaptureUrl !== null ? (
+            <CaptureFallback toolId={tool.id} rawUrl={failedCaptureUrl} options={options} onCaptured={onFallbackCaptured} />
+          ) : null}
 
           {results.length > 0 ? (
             <>
@@ -1302,6 +1321,24 @@ function StandardToolWorkbench({
                   );
                 })}
               </div>
+              {CAPTURE_TOOL_IDS.has(tool.id) ? (
+                captureHelpOpen ? (
+                  <CaptureFallback
+                    toolId={tool.id}
+                    rawUrl={String(options.url ?? '')}
+                    options={options}
+                    onCaptured={onFallbackCaptured}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setCaptureHelpOpen(true)}
+                    className="text-sm text-ink-muted underline-offset-4 transition-colors hover:text-ink hover:underline"
+                  >
+                    {messages.workbench.captureLooksWrong}
+                  </button>
+                )
+              ) : null}
             </>
           ) : null}
         </section>
