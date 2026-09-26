@@ -619,6 +619,7 @@ test.skip('audio editor localizes save, record, and conversion actions in korean
 test('audio editor localizes save and record actions in korean mode', async ({ page }) => {
   await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('[data-testid="audio-editor-shell"][data-ready="true"]')).toBeVisible({ timeout: 60_000 });
   await page.getByRole('button', { name: 'ko' }).click();
 
   await expect(page.getByTestId('audio-transport-bar')).toHaveCount(0);
@@ -692,6 +693,8 @@ test('audio recording can pause and resume before opening the take in the editor
 
   await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
+  // The start screen is server-rendered: click only once the editor is live.
+  await expect(page.locator('[data-testid="audio-editor-shell"][data-ready="true"]')).toBeVisible({ timeout: 60_000 });
 
   await page.getByRole('button', { name: 'Start recording' }).click();
   await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 60_000 });

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { JetBrains_Mono } from 'next/font/google';
+import localFont from 'next/font/local';
 import { GeistMono } from 'geist/font/mono';
 import './fonts/pretendard/pretendard-variable.css';
 import './globals.css';
@@ -9,11 +9,16 @@ import { LocaleProvider } from '@/components/providers/locale-provider';
 import { ThemeProvider } from '@/components/providers/theme-provider';
 import { AppToaster } from '@/components/ui/Toast';
 
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500'],
+// Self-hosted (like Pretendard) so builds never depend on Google Fonts.
+const jetbrainsMono = localFont({
+  src: [
+    { path: './fonts/jetbrains-mono/jetbrains-mono-latin-400-normal.woff2', weight: '400', style: 'normal' },
+    { path: './fonts/jetbrains-mono/jetbrains-mono-latin-500-normal.woff2', weight: '500', style: 'normal' },
+  ],
   variable: '--font-audio-mono',
   display: 'swap',
+  fallback: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
+  adjustFontFallback: false,
 });
 
 export const metadata: Metadata = {
