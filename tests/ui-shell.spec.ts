@@ -370,18 +370,18 @@ test('video trim uses the timeline editor without duplicate numeric inputs', asy
   await expect(page.getByRole('slider', { name: 'Trim start' })).not.toHaveValue('0');
 });
 
-test('audio editor empty state keeps a single transport bar and hides playback affordances', async ({ page }) => {
+test('audio editor starts with record and open, without playback controls', async ({ page }) => {
   await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
 
   await expect(page.getByLabel(/Open audio|오디오 열기/)).toBeVisible();
-  await expect(page.getByTestId('audio-transport-bar')).toHaveCount(1);
+  await expect(page.getByTestId('audio-transport-bar')).toHaveCount(0);
   await expect(page.getByTestId('audio-selection-bar')).toHaveCount(0);
   await expect(page.getByTestId('audio-playhead')).toHaveCount(0);
   await expect(page.locator('button[aria-label="Start recording"], button[aria-label="녹음 시작"]')).toHaveCount(1);
-  await expect(page.getByText(/Open audio or press(?: the)? record(?: button)?(?: below)? to get started\./i)).toBeVisible();
-  await expect(page.getByText('Trim')).toBeVisible();
-  await expect(page.getByText('Audio convert')).toBeVisible();
+  await expect(page.getByText(/Record your microphone or the device’s sound, or open audio files to edit\./)).toBeVisible();
+  await expect(page.getByTestId('audio-recording-settings')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save as' })).toHaveCount(0);
   await expectNoLegacyAudioContainers(page);
 });
 
@@ -392,7 +392,7 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   await expect(page).toHaveURL(/\/tools\/audio(\?intent=[a-z]+)?$/);
   await expect(page.getByRole('main')).toBeVisible();
   await expect(page.getByLabel(/Open audio|오디오 열기/)).toBeVisible();
-  await expect(page.getByTestId('audio-transport-bar')).toHaveCount(1);
+  await expect(page.getByTestId('audio-transport-bar')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Start recording' })).toHaveCount(1);
   await expect(page.getByRole('button', { name: /Fade|Speed|Pitch|Amplify|EQ|Reverb/i })).toHaveCount(0);
   await expect(page.getByText('Selected range', { exact: true })).toHaveCount(0);
@@ -401,6 +401,7 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   await page.locator('input[type="file"]').setInputFiles('tests/fixtures/sample.wav');
 
   await expect(page.getByRole('button', { name: 'Save as' })).toHaveCount(1);
+  await expect(page.getByTestId('audio-transport-bar')).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Start recording' })).toHaveCount(1);
   await expect(page.locator('button[aria-label="Play"], button[aria-label="Pause"]')).toHaveCount(1);
   await expect(page.getByTestId('audio-playhead')).toHaveCount(1, { timeout: 60_000 });
@@ -620,8 +621,9 @@ test('audio editor localizes save and record actions in korean mode', async ({ p
   await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
   await page.getByRole('button', { name: 'ko' }).click();
 
-  await expect(page.getByTestId('audio-transport-bar')).toHaveCount(1);
+  await expect(page.getByTestId('audio-transport-bar')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '녹음 시작' })).toHaveCount(1);
+  await expect(page.getByText('녹음 설정', { exact: true })).toBeVisible();
   await expect(page.getByTestId('audio-selection-bar')).toHaveCount(0);
   await page.locator('input[type="file"]').setInputFiles('tests/fixtures/sample.wav');
 

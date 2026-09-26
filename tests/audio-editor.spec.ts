@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { devices, expect, test, type Page } from '@playwright/test';
 import JSZip from 'jszip';
 
 function createDemoAudioBuffer(durationSeconds: number, frequency = 220) {
@@ -33,8 +33,8 @@ function createDemoAudioBuffer(durationSeconds: number, frequency = 220) {
 test('audio mixer exposes live gain, mute, and solo controls per track', async ({ page }) => {
   await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
-  // Wait for the editor shell to hydrate so the file input handler is attached.
-  await expect(page.getByTestId('audio-transport-bar')).toBeVisible({ timeout: 60_000 });
+  // Wait for the editor to hydrate so the file input handler is attached.
+  await expect(page.locator('[data-testid="audio-editor-shell"][data-ready="true"]')).toBeVisible({ timeout: 60_000 });
 
   await page.locator('input[type="file"]').setInputFiles([
     { name: 'alpha.wav', mimeType: 'audio/wav', buffer: createDemoAudioBuffer(1.2, 220) },
@@ -56,8 +56,8 @@ test('audio mixer exposes live gain, mute, and solo controls per track', async (
 test('undo history survives switching the active track', async ({ page }) => {
   await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
-  // Wait for the editor shell to hydrate so the file input handler is attached.
-  await expect(page.getByTestId('audio-transport-bar')).toBeVisible({ timeout: 60_000 });
+  // Wait for the editor to hydrate so the file input handler is attached.
+  await expect(page.locator('[data-testid="audio-editor-shell"][data-ready="true"]')).toBeVisible({ timeout: 60_000 });
 
   await page.locator('input[type="file"]').setInputFiles([
     { name: 'first.wav', mimeType: 'audio/wav', buffer: createDemoAudioBuffer(1.4, 220) },
@@ -96,7 +96,7 @@ test('undo history survives switching the active track', async ({ page }) => {
 test('split at playhead creates a second clip and cut/paste works through the clipboard', async ({ page }) => {
   await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByTestId('audio-transport-bar')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('[data-testid="audio-editor-shell"][data-ready="true"]')).toBeVisible({ timeout: 60_000 });
 
   await page.locator('input[type="file"]').setInputFiles({
     name: 'clip.wav',
@@ -148,7 +148,7 @@ test('split at playhead creates a second clip and cut/paste works through the cl
 
 test('drops audio files onto the editor shell to import them', async ({ page }) => {
   await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('audio-transport-bar')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('[data-testid="audio-editor-shell"][data-ready="true"]')).toBeVisible({ timeout: 60_000 });
 
   const dataTransfer = await page.evaluateHandle((bytes) => {
     const transfer = new DataTransfer();
@@ -164,7 +164,7 @@ test('drops audio files onto the editor shell to import them', async ({ page }) 
 
 test('timeline conveniences: zoom to selection, inline rename, and reorder', async ({ page }) => {
   await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('audio-transport-bar')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('[data-testid="audio-editor-shell"][data-ready="true"]')).toBeVisible({ timeout: 60_000 });
 
   await page.locator('input[type="file"]').setInputFiles([
     { name: 'a.wav', mimeType: 'audio/wav', buffer: createDemoAudioBuffer(0.8, 220) },
@@ -206,6 +206,134 @@ test('timeline conveniences: zoom to selection, inline rename, and reorder', asy
   await expect(
     page.getByTestId('audio-track-stack-row').first().getByRole('button', { name: 'b.wav' }),
   ).toBeVisible();
+});
+
+/**
+ * Fake capture devices: the microphone and a shared tab play tones, and every
+ * request is recorded on `window.__capture` so tests can read what was asked.
+ */
+async function stubCapture(page: Page, { sharedAudio = true }: { sharedAudio?: boolean } = {}) {
+  await page.addInitScript((withAudio) => {
+    type CaptureLog = { mic: unknown[]; display: unknown[] };
+    const log: CaptureLog = { mic: [], display: [] };
+    (window as unknown as { __capture: CaptureLog }).__capture = log;
+    const tone = (frequency: number) => {
+      const context = new AudioContext();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const destination = context.createMediaStreamDestination();
+      oscillator.frequency.value = frequency;
+      gain.gain.value = 0.25;
+      oscillator.connect(gain);
+      gain.connect(destination);
+      oscillator.start();
+      return destination.stream;
+    };
+    navigator.mediaDevices.getUserMedia = async (constraints?: MediaStreamConstraints) => {
+      log.mic.push(constraints?.audio ?? null);
+      return tone(220);
+    };
+    navigator.mediaDevices.getDisplayMedia = async (options?: DisplayMediaStreamOptions) => {
+      log.display.push(options ?? null);
+      const canvas = document.createElement('canvas');
+      canvas.width = 320;
+      canvas.height = 180;
+      canvas.getContext('2d')?.fillRect(0, 0, 320, 180);
+      const stream = canvas.captureStream(5);
+      if (withAudio) {
+        tone(440).getAudioTracks().forEach((track) => stream.addTrack(track));
+      }
+      return stream;
+    };
+  }, sharedAudio);
+}
+
+async function openReadyEditor(page: Page) {
+  await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('[data-testid="audio-editor-shell"][data-ready="true"]')).toBeVisible({ timeout: 60_000 });
+}
+
+async function recordFor(page: Page, milliseconds: number) {
+  await page.getByRole('button', { name: 'Start recording' }).click();
+  await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('audio-level-meter')).toBeVisible();
+  await expect(page.getByTestId('audio-recording-lane')).toBeVisible();
+  await page.waitForTimeout(milliseconds);
+  await page.getByRole('button', { name: 'Stop recording' }).click();
+}
+
+test('the microphone records the sound as it is, and voice cleanup is a choice that sticks', async ({ page }) => {
+  await stubCapture(page);
+  await openReadyEditor(page);
+
+  await recordFor(page, 900);
+  await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1, { timeout: 30_000 });
+  await expect(page.getByText(/Recording ready: .*kHz · (Mono|Stereo) · WAV/)).toBeVisible();
+
+  // Call processing is off by default: it makes music and rooms sound thin.
+  const first = await page.evaluate(() => (window as unknown as { __capture: { mic: Record<string, unknown>[] } }).__capture.mic[0]);
+  expect(first).toMatchObject({ echoCancellation: false, noiseSuppression: false, autoGainControl: false });
+  expect(first.channelCount).toEqual({ ideal: 2 });
+
+  await page.getByRole('button', { name: 'Recording settings' }).click();
+  await page.getByText('Voice cleanup', { exact: true }).click();
+  await page.keyboard.press('Escape');
+  await recordFor(page, 400);
+  await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(2, { timeout: 30_000 });
+  const second = await page.evaluate(() => (window as unknown as { __capture: { mic: Record<string, unknown>[] } }).__capture.mic[1]);
+  expect(second).toMatchObject({ echoCancellation: true, noiseSuppression: true, autoGainControl: true });
+
+  // The choice is remembered on this device.
+  await openReadyEditor(page);
+  await expect(page.getByRole('checkbox', { name: /Voice cleanup/ })).toBeChecked();
+});
+
+test('device sound is recorded without the microphone', async ({ page }) => {
+  await stubCapture(page);
+  await openReadyEditor(page);
+
+  const settings = page.getByTestId('audio-recording-settings');
+  await settings.getByRole('button', { name: 'Device sound' }).click();
+  await expect(settings.getByText(/Only the sound a tab or the computer plays/)).toBeVisible();
+
+  await recordFor(page, 700);
+  await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1, { timeout: 30_000 });
+
+  const log = await page.evaluate(() => (window as unknown as { __capture: { mic: unknown[]; display: unknown[] } }).__capture);
+  expect(log.display).toHaveLength(1);
+  expect(log.mic).toHaveLength(0);
+});
+
+test('sharing a tab without its sound says how to turn the sound on', async ({ page }) => {
+  await stubCapture(page, { sharedAudio: false });
+  await openReadyEditor(page);
+
+  await page.getByTestId('audio-recording-settings').getByRole('button', { name: 'Device sound' }).click();
+  await page.getByRole('button', { name: 'Start recording' }).click();
+
+  await expect(page.getByText(/No sound was shared/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Stop recording' })).toHaveCount(0);
+});
+
+test.describe('on a phone', () => {
+  const phone = devices['iPhone 13'];
+  test.use({
+    viewport: phone.viewport,
+    userAgent: phone.userAgent,
+    deviceScaleFactor: phone.deviceScaleFactor,
+    isMobile: phone.isMobile,
+    hasTouch: phone.hasTouch,
+  });
+
+  test('device sound points to the phone screen recorder instead', async ({ page }) => {
+    await openReadyEditor(page);
+    const settings = page.getByTestId('audio-recording-settings');
+
+    await expect(settings.getByRole('button', { name: 'Device sound' })).toBeDisabled();
+    await expect(settings.getByText('Only the sound playing on a phone')).toBeVisible();
+    await expect(settings.getByText(/Screen Recording/)).toBeVisible();
+    await expect(settings.getByRole('link', { name: /Extract Audio/ })).toHaveAttribute('href', '/tools/video/extract-audio');
+  });
 });
 
 test('pdf to hwpx converts the sample pdf into an hwpx package', async ({ page }) => {

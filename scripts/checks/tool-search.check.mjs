@@ -87,6 +87,8 @@ const expectFirst = [
   ['오디오 합치기', 'audio-merge'],
   ['벨소리', 'audio-cut'],
   ['녹음', 'audio-recorder'],
+  ['내부 소리 녹음', 'audio-recorder'],
+  ['컴퓨터 소리 녹음', 'audio-recorder'],
   ['웹캠', 'webcam-recorder'],
   ['pdf 순서', 'pdf-rearrange'],
   ['pdf 페이지 삭제', 'pdf-delete-page'],

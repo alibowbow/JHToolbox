@@ -12,7 +12,18 @@ import {
   getMixdownDuration,
   mixAudioTracks,
 } from '@/lib/audio';
-import { createWavRecordingSession, type WavRecordingSession } from '@/lib/processors/audio-recording';
+import {
+  DEFAULT_RECORDING_SETTINGS,
+  RecordingError,
+  canRecordDeviceAudio,
+  createWavRecordingSession,
+  listMicrophones,
+  openRecordingInput,
+  type RecordingInput,
+  type RecordingSettings,
+  type RecordingSessionInfo,
+  type WavRecordingSession,
+} from '@/lib/processors/audio-recording';
 import {
   applyEqToAudioRange,
   applyFadeToAudioRange,
@@ -39,19 +50,41 @@ import {
   AUDIO_ACCEPT,
   DEFAULT_EFFECTS,
   clamp,
+  formatTime,
 } from './audio-editor-utils';
 import { EffectsPanel } from './Effects/EffectsPanel';
+import { EmptyStart } from './EmptyStart';
+import { RecordingSettingsPanel } from './Recording/RecordingSettingsPanel';
 import { SelectionBar } from './Selection/SelectionBar';
 import { ShortcutsModal } from './ShortcutsModal';
 import { TrackTimelineStack } from './Tracks/TrackTimelineStack';
 import { EditorToolbar } from './Toolbar/EditorToolbar';
 import { TransportBar } from './Transport/TransportBar';
 
-const DROPPABLE_AUDIO_PATTERN = /\.(mp3|wav|m4a|aac|ogg|flac|webm|mp4|jhaudio)$/i;
+const DROPPABLE_AUDIO_PATTERN = /\.(mp3|wav|m4a|aac|ogg|flac|webm|mp4|mov|m4v|jhaudio)$/i;
+const RECORDING_SETTINGS_KEY = 'jh-audio-recording-settings';
 
 function isDroppableAudioFile(file: File) {
-  return file.type.startsWith('audio/') || DROPPABLE_AUDIO_PATTERN.test(file.name);
+  return file.type.startsWith('audio/') || file.type.startsWith('video/') || DROPPABLE_AUDIO_PATTERN.test(file.name);
 }
+
+function readSavedRecordingSettings(): RecordingSettings {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(RECORDING_SETTINGS_KEY) ?? 'null') as Partial<RecordingSettings> | null;
+    if (!saved || typeof saved !== 'object') {
+      return DEFAULT_RECORDING_SETTINGS;
+    }
+    return {
+      source: saved.source === 'device' || saved.source === 'both' ? saved.source : 'mic',
+      micId: typeof saved.micId === 'string' ? saved.micId : '',
+      voiceEnhance: saved.voiceEnhance === true,
+    };
+  } catch {
+    return DEFAULT_RECORDING_SETTINGS;
+  }
+}
+
+type WakeLockSentinelLike = { released?: boolean; release: () => Promise<void> };
 
 interface AudioEditorProps {
   mode: AudioEditorMode;
@@ -135,8 +168,8 @@ const INTENT_PROMPTS: Record<string, { en: string; ko: string }> = {
     ko: '오디오 파일을 열면 아래 피치 패널에서 음높이를 바꿀 수 있어요.',
   },
   record: {
-    en: 'Press the red record button above to record from your microphone.',
-    ko: '위의 빨간 녹음 버튼을 누르면 마이크로 녹음을 시작합니다.',
+    en: 'Press Start recording. On a computer you can also record just the device’s sound, without the microphone.',
+    ko: '녹음 시작을 누르면 바로 녹음돼요. 컴퓨터에서는 마이크 없이 기기 소리만 녹음할 수도 있어요.',
   },
 };
 
@@ -172,6 +205,11 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [isRecordingPaused, setIsRecordingPaused] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
+  const [recordingSettings, setRecordingSettings] = useState<RecordingSettings>(DEFAULT_RECORDING_SETTINGS);
+  const [recordingInfo, setRecordingInfo] = useState<RecordingSessionInfo | null>(null);
+  const [microphones, setMicrophones] = useState<Array<{ id: string; label: string }>>([]);
+  const [deviceSupported, setDeviceSupported] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importFilesRef = useRef<(files: File[]) => Promise<void>>(async () => undefined);
@@ -185,7 +223,11 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const busyRef = useRef(false);
 
   const recordingSessionRef = useRef<WavRecordingSession | null>(null);
-  const recordingStreamRef = useRef<MediaStream | null>(null);
+  const recordingInputRef = useRef<RecordingInput | null>(null);
+  const inputPeaksRef = useRef<number[]>([]);
+  const livePeaksRef = useRef<number[]>([]);
+  const wakeLockRef = useRef<WakeLockSentinelLike | null>(null);
+  const stopRecordingRef = useRef<() => Promise<void>>(async () => undefined);
   const recordingTimerRef = useRef<number | null>(null);
   const recordingStartRef = useRef<number | null>(null);
   const recordingPausedRef = useRef(false);
@@ -214,7 +256,6 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const canRedo = historyRef.current.canRedo;
   const undoLabel = historyRef.current.undoLabel;
   const redoLabel = historyRef.current.redoLabel;
-  const historyDepth = historyRef.current.depth;
 
   const canSaveTrack = Boolean(activeTrack?.buffer) && !isRecording;
   const canSaveMix = tracks.some((track) => track.buffer) && !isRecording;
@@ -312,7 +353,8 @@ export function AudioEditor({ mode }: AudioEditorProps) {
         window.clearInterval(recordingTimerRef.current);
       }
 
-      recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+      recordingInputRef.current?.stop();
+      void wakeLockRef.current?.release().catch(() => undefined);
 
       const recordingSession = recordingSessionRef.current;
       if (recordingSession) {
@@ -323,6 +365,60 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       playerRef.current = null;
     };
   }, []);
+
+  // Recording preferences are the viewer's own; device sound falls back to
+  // the microphone where the browser cannot record it.
+  useEffect(() => {
+    setRecordingSettings(readSavedRecordingSettings());
+    setDeviceSupported(canRecordDeviceAudio());
+    setHydrated(true);
+    void listMicrophones().then(setMicrophones);
+    const mediaDevices = navigator.mediaDevices;
+    if (!mediaDevices?.addEventListener) {
+      return;
+    }
+    const onDeviceChange = () => void listMicrophones().then(setMicrophones);
+    mediaDevices.addEventListener('devicechange', onDeviceChange);
+    return () => mediaDevices.removeEventListener('devicechange', onDeviceChange);
+  }, []);
+
+  // Stable, so the level meter's animation loop is not restarted on renders.
+  const readInputPeaks = useMemo(() => () => inputPeaksRef.current, []);
+
+  const effectiveRecordingSettings: RecordingSettings =
+    deviceSupported || recordingSettings.source === 'mic' ? recordingSettings : { ...recordingSettings, source: 'mic' };
+
+  const updateRecordingSettings = (next: RecordingSettings) => {
+    setRecordingSettings(next);
+    try {
+      window.localStorage.setItem(RECORDING_SETTINGS_KEY, JSON.stringify(next));
+    } catch {
+      // Private mode: the choice lasts for this visit only.
+    }
+  };
+
+  useEffect(() => {
+    if (!isRecording) {
+      return;
+    }
+    const retakeWakeLock = () => {
+      if (document.visibilityState === 'visible' && (!wakeLockRef.current || wakeLockRef.current.released)) {
+        void acquireWakeLock();
+      }
+    };
+    // Leaving the page would lose the take.
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    document.addEventListener('visibilitychange', retakeWakeLock);
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    return () => {
+      document.removeEventListener('visibilitychange', retakeWakeLock);
+      window.removeEventListener('beforeunload', warnBeforeLeaving);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- acquireWakeLock only touches refs
+  }, [isRecording]);
 
   const bumpHistory = () => setHistoryVersion((value) => value + 1);
 
@@ -1078,27 +1174,42 @@ export function AudioEditor({ mode }: AudioEditorProps) {
 
   const startRecordingTimer = () => {
     clearRecordingTimer();
+    // The time readout shows the progress; the status line stays quiet so
+    // screen readers are not flooded ten times a second.
     recordingTimerRef.current = window.setInterval(() => {
-      const elapsedSeconds = getRecordingElapsed();
-      setRecordingDuration(elapsedSeconds);
-      setStatusMessage(
-        recordingPausedRef.current ? copy.recording.pausedStatus(elapsedSeconds) : copy.recording.liveStatus(elapsedSeconds),
-      );
+      setRecordingDuration(getRecordingElapsed());
     }, 100);
   };
 
   const stopRecordingStream = () => {
-    recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
-    recordingStreamRef.current = null;
+    recordingInputRef.current?.stop();
+    recordingInputRef.current = null;
+  };
+
+  // The screen stays on while recording (a phone set down would otherwise
+  // lock and stop the microphone). Browsers drop the lock when the page is
+  // hidden, so it is taken again on return.
+  const acquireWakeLock = async () => {
+    const wakeLock = (navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<WakeLockSentinelLike> } })
+      .wakeLock;
+    try {
+      wakeLockRef.current = (await wakeLock?.request('screen')) ?? null;
+    } catch {
+      wakeLockRef.current = null;
+    }
+  };
+
+  const releaseWakeLock = () => {
+    void wakeLockRef.current?.release().catch(() => undefined);
+    wakeLockRef.current = null;
+  };
+
+  const refreshMicrophones = async () => {
+    setMicrophones(await listMicrophones());
   };
 
   const handleStartRecording = async () => {
     if (isRecording) {
-      return;
-    }
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setLoadError(copy.recording.startError);
       return;
     }
 
@@ -1114,28 +1225,55 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     recordingPausedRef.current = false;
     recordingAccumulatedRef.current = 0;
     recordingInsertTimeRef.current = Math.max(0, playheadRef.current);
+    inputPeaksRef.current = [];
+    livePeaksRef.current = [];
 
+    let input: RecordingInput | null = null;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      const recordingSession = await createWavRecordingSession(stream, {
+      // Opened first, while the click still counts as a user gesture.
+      input = await openRecordingInput(effectiveRecordingSettings);
+      const recordingSession = await createWavRecordingSession(input.streams, {
         outputName: `audio-recording-${Date.now()}.wav`,
+        onLevel: (peaks) => {
+          inputPeaksRef.current = peaks;
+          if (!recordingPausedRef.current) {
+            livePeaksRef.current.push(peaks.length > 0 ? Math.max(...peaks) : 0);
+          }
+        },
       });
 
-      recordingStreamRef.current = stream;
+      recordingInputRef.current = input;
       recordingSessionRef.current = recordingSession;
+      input.audioTracks.forEach((track) =>
+        track.addEventListener(
+          'ended',
+          () => {
+            if (recordingSessionRef.current === recordingSession) {
+              setWarningMessage(copy.recorder.ended);
+              void stopRecordingRef.current();
+            }
+          },
+          { once: true },
+        ),
+      );
+      setRecordingInfo(recordingSession.info);
       recordingStartRef.current = Date.now();
       setIsRecording(true);
-      setStatusMessage(copy.recording.liveStatus(0));
+      setStatusMessage(null);
       startRecordingTimer();
+      void acquireWakeLock();
+      // Microphone names appear once access is granted.
+      void refreshMicrophones();
     } catch (error) {
-      stopRecordingStream();
-
-      if (error instanceof DOMException && error.name === 'NotAllowedError') {
-        setLoadError(copy.recording.permissionError);
-        return;
-      }
-
-      setLoadError(error instanceof Error ? error.message : copy.recording.startError);
+      input?.stop();
+      setStatusMessage(null);
+      setLoadError(
+        error instanceof RecordingError
+          ? copy.recorder.errors[error.code]
+          : error instanceof Error
+            ? error.message
+            : copy.recording.startError,
+      );
     }
   };
 
@@ -1170,7 +1308,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       recordingPausedRef.current = false;
       recordingStartRef.current = Date.now();
       setIsRecordingPaused(false);
-      setStatusMessage(copy.recording.liveStatus(recordingAccumulatedRef.current));
+      setStatusMessage(null);
       startRecordingTimer();
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : copy.recording.startError);
@@ -1196,6 +1334,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
 
     try {
       const recording = await recordingSession.stop();
+      stopRecordingStream();
       const nextBuffer = await decodeAudioBlobToBuffer(recording.file);
       const insertTime = recordingInsertTimeRef.current;
       const nextTrack = createProjectTrack(recording.file.name, nextBuffer, 'recording', insertTime);
@@ -1204,7 +1343,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       commitTracks(copy.commands.recordTake, [...tracksRef.current, nextTrack], {
         activeTrackId: nextTrack.id,
         playhead: insertTime + recording.duration,
-        status: copy.recording.ready(recording.file.name),
+        status: `${copy.recording.ready(recording.file.name)} · ${copy.recorder.quality(recording.info.sampleRate, recording.info.channels)}`,
       });
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : copy.recording.startError);
@@ -1214,9 +1353,14 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       recordingPausedRef.current = false;
       recordingAccumulatedRef.current = 0;
       recordingInsertTimeRef.current = 0;
+      inputPeaksRef.current = [];
+      livePeaksRef.current = [];
+      setRecordingInfo(null);
       stopRecordingStream();
+      releaseWakeLock();
     }
   };
+  stopRecordingRef.current = handleStopRecording;
 
   const handleRecordPauseResume = () => {
     if (!isRecording) {
@@ -1244,6 +1388,8 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     getPlayer().stop();
     clearRecordingTimer();
     stopRecordingStream();
+    releaseWakeLock();
+    setRecordingInfo(null);
 
     const recordingSession = recordingSessionRef.current;
     if (recordingSession) {
@@ -1378,6 +1524,12 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       return;
     }
 
+    if (!primaryModifier && key === 'r') {
+      event.preventDefault();
+      handleRecordToggle();
+      return;
+    }
+
     if (!primaryModifier && key === 'm') {
       event.preventDefault();
       const track = activeTrackRef.current;
@@ -1416,35 +1568,40 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     return () => window.removeEventListener('keydown', listener);
   }, []);
 
-  const statusLines = (
-    <div className="space-y-2">
-      {historyDepth > 0 ? (
-        <div className="audio-status-line rounded-[10px] px-3 py-2 text-sm text-[var(--text-secondary)]">
-          {copy.session.history(historyDepth)}
-        </div>
-      ) : null}
-      {statusMessage ? (
-        <div className="audio-status-line is-success rounded-[10px] px-3 py-2 text-sm">{statusMessage}</div>
-      ) : null}
-      {warningMessage ? (
-        <div className="audio-status-line is-warning rounded-[10px] px-3 py-2 text-sm">{warningMessage}</div>
-      ) : null}
-      {loadError ? <div className="audio-status-line is-error rounded-[10px] px-3 py-2 text-sm">{loadError}</div> : null}
-    </div>
+  const emptyStatePromptText =
+    INTENT_PROMPTS[intent ?? '']?.[locale] ??
+    (locale === 'ko'
+      ? '마이크나 기기 소리를 녹음하거나, 오디오 파일을 열어 편집하세요.'
+      : 'Record your microphone or the device’s sound, or open audio files to edit.');
+  const isEmpty = tracks.length === 0 && !isRecording;
+  const projectTitle = activeTrackName ?? copy.studio.untitled;
+  const projectSubtitle = tracks.length > 0 ? `${copy.studio.tracks(tracks.length)} · ${formatTime(projectDuration)}` : null;
+  const effectsTarget = selection
+    ? copy.studio.effectsTargetSelection(formatTime(selection.start), formatTime(selection.end))
+    : copy.studio.effectsTargetTrack(activeTrackName ?? copy.studio.untitled);
+  const transportStatus =
+    isRecording && recordingInfo
+      ? `${statusMessage ?? ''}${statusMessage ? ' · ' : ''}${copy.recorder.quality(recordingInfo.sampleRate, recordingInfo.channels)}`
+      : statusMessage;
+  const recordingSettingsPanel = (
+    <RecordingSettingsPanel
+      settings={effectiveRecordingSettings}
+      onChange={updateRecordingSettings}
+      microphones={microphones}
+      deviceSupported={deviceSupported}
+    />
   );
-
-  const emptyStatePromptText = INTENT_PROMPTS[intent ?? '']?.[locale] ?? (
-    locale === 'ko' ? '오디오를 불러오거나 녹음 버튼을 눌러 시작하세요.' : 'Open audio or press the record button to get started.');
-  const emptyStateFeatureList =
-    locale === 'ko'
-      ? ['자르기', '오디오 변환', '녹음', '멀티트랙', '리버브', '앰플리파이', 'EQ']
-      : ['Trim', 'Audio convert', 'Record', 'Multitrack', 'Reverb', 'Amplify', 'EQ'];
+  const banners = [
+    loadError ? { tone: 'is-error', text: loadError, dismiss: () => setLoadError(null) } : null,
+    warningMessage ? { tone: 'is-warning', text: warningMessage, dismiss: () => setWarningMessage(null) } : null,
+  ].filter((banner): banner is { tone: string; text: string; dismiss: () => void } => banner !== null);
 
   return (
     <div
       data-mode={mode}
       data-testid="audio-editor-shell"
-      className="audio-studio audio-studio-shell relative flex min-h-[calc(100dvh-5.5rem)] flex-col"
+      data-ready={hydrated ? 'true' : undefined}
+      className="audio-studio audio-studio-shell relative flex min-h-[calc(100dvh-3.5rem)] flex-col"
       onDragEnter={(event) => {
         if (isRecording || !Array.from(event.dataTransfer.types).includes('Files')) {
           return;
@@ -1481,7 +1638,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       }}
     >
       {isDragOver ? (
-        <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-[rgba(0,0,0,0.35)] p-6">
+        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-black/40 p-6 backdrop-blur-[2px]">
           <div className="rounded-2xl border-2 border-dashed border-[var(--accent)] bg-[var(--bg-surface)] px-8 py-6 text-center shadow-xl">
             <p className="text-sm font-semibold text-[var(--text-primary)]">{copy.fileDrop.dropOverlayTitle}</p>
             <p className="mt-1 text-xs text-[var(--text-secondary)]">{copy.fileDrop.dropOverlayHint}</p>
@@ -1502,144 +1659,156 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       />
 
       <EditorToolbar
+        title={projectTitle}
+        subtitle={projectSubtitle}
         fileName={activeTrackName}
+        empty={isEmpty}
         canSaveTrack={canSaveTrack}
         canSaveMix={canSaveMix}
         canSaveSession={canSaveSession}
-        loopEnabled={loopEnabled}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        undoLabel={undoLabel}
+        redoLabel={redoLabel}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
         onOpenFiles={openPicker}
         onSaveAs={({ format, filename, target }) => void handleSaveAs({ format, filename, target })}
         onReset={handleResetProject}
-        onToggleLoop={() => setLoopEnabled((currentValue) => !currentValue)}
         onShowShortcuts={() => setShowShortcuts(true)}
       />
 
-      <div className="border-b border-[var(--border)] bg-[var(--topbar-bg)] px-3 py-3 sm:px-4">
-        <TransportBar
-          currentTime={projectCurrentTime}
-          duration={displayDuration}
-          isPlaying={isPlaying}
-          isRecording={isRecording}
-          isRecordingPaused={isRecordingPaused}
-          loopEnabled={loopEnabled}
-          canUndo={canUndo}
-          canRedo={canRedo}
-          undoLabel={undoLabel}
-          redoLabel={redoLabel}
-          onPlayPause={handlePlayPause}
-          onSeekBy={seekBy}
-          onSeekToStart={() => seekTo(0)}
-          onSeekToEnd={() => seekTo(projectDuration)}
-          onUndo={handleUndo}
-          onRedo={handleRedo}
-          onToggleLoop={() => setLoopEnabled((currentValue) => !currentValue)}
-          onRecordToggle={handleRecordToggle}
-          onRecordPauseResume={handleRecordPauseResume}
-        />
-      </div>
-
       <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 sm:p-4">
-        {tracks.length === 0 && !isRecording ? (
+        {banners.map((banner) => (
           <div
-            className="audio-panel cursor-pointer rounded-[20px] border border-dashed border-[var(--border)] p-6 transition hover:border-[var(--accent)] sm:p-8"
-            onClick={openPicker}
-            data-testid="audio-empty-dropzone"
+            key={banner.tone}
+            role={banner.tone === 'is-error' ? 'alert' : 'status'}
+            className={`audio-status-line ${banner.tone} flex items-start gap-3 px-3.5 py-2.5 text-sm`}
           >
-            <div className="mx-auto flex min-h-[180px] max-w-3xl flex-col justify-center gap-4">
-              <p className="text-sm text-[var(--text-secondary)]">{emptyStatePromptText}</p>
-              <div className="flex flex-wrap gap-2">
-                {emptyStateFeatureList.map((feature) => (
-                  <span
-                    key={feature}
-                    className="inline-flex items-center rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-sm text-[var(--text-secondary)]"
-                  >
-                    {feature}
-                  </span>
-                ))}
-              </div>
-              <p className="text-xs text-[var(--text-tertiary)]">{copy.fileDrop.clickOrDropHint}</p>
-            </div>
+            <p className="min-w-0 flex-1 leading-relaxed">{banner.text}</p>
+            <button
+              type="button"
+              onClick={banner.dismiss}
+              className="audio-focus-ring -my-0.5 shrink-0 rounded-md px-1.5 text-xs font-medium opacity-80 hover:opacity-100"
+              aria-label={copy.studio.dismiss}
+            >
+              ✕
+            </button>
           </div>
-        ) : null}
+        ))}
 
-        {tracks.length > 0 || isRecording ? (
-          <TrackTimelineStack
-            tracks={tracks.map((track) => ({
-              id: track.id,
-              name: track.name,
-              source: track.source,
-              startTime: track.startTime,
-              gain: track.gain,
-              muted: track.muted,
-              solo: track.solo,
-              isActive: track.id === activeTrack?.id,
-              buffer: track.buffer,
-            }))}
-            projectDuration={projectDuration}
-            currentTime={projectCurrentTime}
-            isPlaying={isPlaying}
-            zoom={zoom}
-            selection={selection}
-            recording={
-              isRecording
-                ? {
-                    active: true,
-                    paused: isRecordingPaused,
-                    insertTime: recordingInsertTimeRef.current,
-                    elapsed: recordingDuration,
-                  }
-                : null
-            }
-            canPaste={canPaste}
-            canSplit={canSplit}
-            onZoomChange={(nextZoom) => setZoom(clamp(nextZoom, 1, MAX_ZOOM))}
-            onSelectTrack={setActiveTrackId}
-            onSeek={seekTo}
-            onSelectionChange={handleSelectionChange}
-            onMoveTrackStart={handleMoveTrackStart}
-            onMoveTrack={handleMoveTrack}
-            onRenameTrack={handleRenameTrack}
-            onReorderTrack={handleReorderTrack}
-            onAddTrack={handleAddEmptyTrack}
-            onPaste={handlePaste}
-            onSplit={handleSplit}
-            onMuteToggle={(trackId) => updateTrackLive(trackId, (track) => ({ ...track, muted: !track.muted }))}
-            onSoloToggle={(trackId) => updateTrackLive(trackId, (track) => ({ ...track, solo: !track.solo }))}
-            onGainChange={(trackId, nextGain) =>
-              updateTrackLive(trackId, (track) => ({ ...track, gain: clamp(nextGain, 0, 2) }))
-            }
-            onRemoveTrack={handleRemoveTrack}
+        {isEmpty ? (
+          <EmptyStart
+            prompt={emptyStatePromptText}
+            recordingSettings={recordingSettingsPanel}
+            onRecord={() => void handleStartRecording()}
+            onOpen={openPicker}
           />
-        ) : null}
+        ) : (
+          <>
+            <TrackTimelineStack
+              tracks={tracks.map((track) => ({
+                id: track.id,
+                name: track.name,
+                source: track.source,
+                startTime: track.startTime,
+                gain: track.gain,
+                muted: track.muted,
+                solo: track.solo,
+                isActive: track.id === activeTrack?.id,
+                buffer: track.buffer,
+              }))}
+              projectDuration={projectDuration}
+              currentTime={projectCurrentTime}
+              isPlaying={isPlaying}
+              zoom={zoom}
+              selection={selection}
+              recording={
+                isRecording
+                  ? {
+                      active: true,
+                      paused: isRecordingPaused,
+                      insertTime: recordingInsertTimeRef.current,
+                      elapsed: recordingDuration,
+                      peaks: livePeaksRef.current,
+                      peakInterval: recordingInfo?.levelInterval,
+                    }
+                  : null
+              }
+              canPaste={canPaste}
+              canSplit={canSplit}
+              onZoomChange={(nextZoom) => setZoom(clamp(nextZoom, 1, MAX_ZOOM))}
+              onSelectTrack={setActiveTrackId}
+              onSeek={seekTo}
+              onSelectionChange={handleSelectionChange}
+              onMoveTrackStart={handleMoveTrackStart}
+              onMoveTrack={handleMoveTrack}
+              onRenameTrack={handleRenameTrack}
+              onReorderTrack={handleReorderTrack}
+              onAddTrack={handleAddEmptyTrack}
+              onPaste={handlePaste}
+              onSplit={handleSplit}
+              onMuteToggle={(trackId) => updateTrackLive(trackId, (track) => ({ ...track, muted: !track.muted }))}
+              onSoloToggle={(trackId) => updateTrackLive(trackId, (track) => ({ ...track, solo: !track.solo }))}
+              onGainChange={(trackId, nextGain) =>
+                updateTrackLive(trackId, (track) => ({ ...track, gain: clamp(nextGain, 0, 2) }))
+              }
+              onRemoveTrack={handleRemoveTrack}
+            />
 
-        {selection ? (
-          <SelectionBar
-            start={selection.start}
-            end={selection.end}
-            onStartChange={(nextStart) => adjustSelectionBound('start', nextStart)}
-            onEndChange={(nextEnd) => adjustSelectionBound('end', nextEnd)}
-            onPlaySelection={playSelection}
-            onTrimSelection={handleTrimSelection}
-            onRemoveSelection={handleRemoveSelection}
-            onCutSelection={handleCutSelection}
-            onCopySelection={handleCopySelection}
-            onClearSelection={handleClearSelection}
-          />
-        ) : null}
-
-        {statusLines}
-
-        {tracks.length > 0 ? (
-          <EffectsPanel
-            activeTab={activeTab}
-            effects={effects}
-            onTabChange={setActiveTab}
-            onChange={(nextEffects) => setEffects((currentEffects) => ({ ...currentEffects, ...nextEffects }))}
-            onPreview={(tab) => void previewEffect(tab)}
-            onApply={applyEffect}
-          />
-        ) : null}
+            {tracks.length > 0 ? (
+              <EffectsPanel
+                activeTab={activeTab}
+                effects={effects}
+                targetLabel={effectsTarget}
+                onTabChange={setActiveTab}
+                onChange={(nextEffects) => setEffects((currentEffects) => ({ ...currentEffects, ...nextEffects }))}
+                onPreview={(tab) => void previewEffect(tab)}
+                onApply={applyEffect}
+              />
+            ) : null}
+          </>
+        )}
       </div>
+
+      {isEmpty ? null : (
+        <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 px-3 pb-3 md:bottom-0 md:px-4 md:pb-4">
+          <div className="audio-transport">
+            {selection ? (
+              <SelectionBar
+                start={selection.start}
+                end={selection.end}
+                onStartChange={(nextStart) => adjustSelectionBound('start', nextStart)}
+                onEndChange={(nextEnd) => adjustSelectionBound('end', nextEnd)}
+                onPlaySelection={playSelection}
+                onTrimSelection={handleTrimSelection}
+                onRemoveSelection={handleRemoveSelection}
+                onCutSelection={handleCutSelection}
+                onCopySelection={handleCopySelection}
+                onClearSelection={handleClearSelection}
+              />
+            ) : null}
+            <TransportBar
+              currentTime={projectCurrentTime}
+              duration={displayDuration}
+              isPlaying={isPlaying}
+              isRecording={isRecording}
+              isRecordingPaused={isRecordingPaused}
+              loopEnabled={loopEnabled}
+              statusText={transportStatus}
+              readInputPeaks={readInputPeaks}
+              recordingSettings={recordingSettingsPanel}
+              onPlayPause={handlePlayPause}
+              onSeekBy={seekBy}
+              onSeekToStart={() => seekTo(0)}
+              onSeekToEnd={() => seekTo(projectDuration)}
+              onToggleLoop={() => setLoopEnabled((currentValue) => !currentValue)}
+              onRecordToggle={handleRecordToggle}
+              onRecordPauseResume={handleRecordPauseResume}
+            />
+          </div>
+        </div>
+      )}
 
       {showShortcuts ? <ShortcutsModal locale={locale} onClose={() => setShowShortcuts(false)} /> : null}
     </div>
