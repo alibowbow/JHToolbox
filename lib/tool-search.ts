@@ -93,7 +93,7 @@ const TOOL_ALIASES: Record<string, string[]> = {
   'screen-mic-recorder': ['화면 녹화', '마이크', '강의', '내레이션'],
   'screen-camera-recorder': ['화면 녹화', '카메라', '얼굴', '캠'],
   'webcam-recorder': ['웹캠', '카메라', '셀카', '녹화'],
-  'audio-recorder': ['녹음', '마이크', '음성'],
+  'audio-recorder': ['녹음', '마이크', '음성', '녹음기', '기기 소리', '내부 소리', '시스템 소리', '컴퓨터 소리'],
   'screenshot-capture': ['스크린샷', '캡처', '화면 캡처'],
   'csv-json': ['변환'],
   'json-csv': ['변환'],

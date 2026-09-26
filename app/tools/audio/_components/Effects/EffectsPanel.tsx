@@ -1,186 +1,175 @@
 'use client';
 
-import { Check, SlidersHorizontal, Sparkles, Volume2, Waves, X, type LucideIcon } from 'lucide-react';
+import { Check, Headphones } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
-import { AudioEffectTab, AudioEffectsState } from '../audio-editor-utils';
+import { AudioEffectTab, AudioEffectsState, getRangeStyle } from '../audio-editor-utils';
 import { getAudioEditorCopy } from '../audio-editor-copy';
-import { getRangeStyle } from '../audio-editor-utils';
-import { AmplifyControls } from './AmplifyControls';
-import { FadeControls } from './FadeControls';
-import { PitchControls } from './PitchControls';
-import { ReverbControls } from './ReverbControls';
-import { SpeedControls } from './SpeedControls';
 
 interface EffectsPanelProps {
   activeTab: AudioEffectTab;
   effects: AudioEffectsState;
+  /** What Apply changes, e.g. "Applies to the selection 0:01.2–0:03.4". */
+  targetLabel: string;
   onTabChange: (tab: AudioEffectTab) => void;
   onChange: (nextEffects: Partial<AudioEffectsState>) => void;
   onPreview: (tab: AudioEffectTab) => void;
   onApply: (tab: AudioEffectTab) => void;
-  onClose?: () => void;
 }
 
-export function EffectsPanel({
-  activeTab,
-  effects,
-  onTabChange,
-  onChange,
-  onPreview,
-  onApply,
-  onClose,
-}: EffectsPanelProps) {
+type Parameter = {
+  key: keyof AudioEffectsState;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  format: (value: number) => string;
+};
+
+const signed = (value: number) => (value > 0 ? `+${value}` : `${value}`);
+
+/**
+ * One rack for every effect: pick it, set its parameters, preview, apply.
+ * Each effect is described by its parameters instead of its own component.
+ */
+export function EffectsPanel({ activeTab, effects, targetLabel, onTabChange, onChange, onPreview, onApply }: EffectsPanelProps) {
   const { locale } = useLocale();
   const copy = getAudioEditorCopy(locale);
-  const [eqApplied, setEqApplied] = useState(false);
+  const [appliedTab, setAppliedTab] = useState<AudioEffectTab | null>(null);
 
   useEffect(() => {
-    if (!eqApplied) {
+    if (!appliedTab) {
       return;
     }
-
-    const timeoutId = window.setTimeout(() => setEqApplied(false), 800);
+    const timeoutId = window.setTimeout(() => setAppliedTab(null), 900);
     return () => window.clearTimeout(timeoutId);
-  }, [eqApplied]);
+  }, [appliedTab]);
 
-  const tabs: Array<{ id: AudioEffectTab; label: string; icon: LucideIcon }> = [
-    { id: 'fade', label: copy.effects.fade, icon: Waves },
-    { id: 'speed', label: copy.effects.speed, icon: SlidersHorizontal },
-    { id: 'pitch', label: copy.effects.pitch, icon: Sparkles },
-    { id: 'amplify', label: copy.effects.amplify, icon: Volume2 },
-    { id: 'reverb', label: copy.effects.reverb, icon: Waves },
-    { id: 'eq', label: copy.effects.eq, icon: SlidersHorizontal },
-  ];
+  const seconds = (value: number) => `${value.toFixed(2)}s`;
+  const effectsByTab: Record<AudioEffectTab, { label: string; parameters: Parameter[]; hint?: string }> = {
+    fade: {
+      label: copy.effects.fade,
+      parameters: [
+        { key: 'fadeIn', label: copy.effects.fadeIn, min: 0, max: 5, step: 0.05, format: seconds },
+        { key: 'fadeOut', label: copy.effects.fadeOut, min: 0, max: 5, step: 0.05, format: seconds },
+      ],
+    },
+    speed: {
+      label: copy.effects.speed,
+      parameters: [
+        { key: 'speed', label: copy.effects.playbackSpeed, min: 0.25, max: 4, step: 0.05, format: (value) => `${value.toFixed(2)}×` },
+      ],
+    },
+    pitch: {
+      label: copy.effects.pitch,
+      parameters: [
+        {
+          key: 'pitch',
+          label: copy.effects.pitchShift,
+          min: -12,
+          max: 12,
+          step: 1,
+          format: (value) => `${signed(value)} ${copy.effects.semitones}`,
+        },
+      ],
+    },
+    amplify: {
+      label: copy.effects.amplify,
+      parameters: [
+        { key: 'gain', label: copy.effects.amplifyGain, min: 0.25, max: 3, step: 0.05, format: (value) => `${value.toFixed(2)}×` },
+      ],
+      hint: copy.effects.amplifyHint,
+    },
+    reverb: {
+      label: copy.effects.reverb,
+      parameters: [
+        { key: 'reverbDecay', label: copy.effects.reverbDecay, min: 0.2, max: 4, step: 0.05, format: seconds },
+        { key: 'reverbMix', label: copy.effects.reverbMix, min: 0.05, max: 1, step: 0.01, format: (value) => `${Math.round(value * 100)}%` },
+      ],
+    },
+    eq: {
+      label: copy.effects.eq,
+      parameters: (['low', 'mid', 'high'] as const).map((band) => ({
+        key: band,
+        label: copy.effects[band],
+        min: -12,
+        max: 12,
+        step: 1,
+        format: (value: number) => `${signed(value)} dB`,
+      })),
+    },
+  };
+  const tabs = Object.keys(effectsByTab) as AudioEffectTab[];
+  const active = effectsByTab[activeTab];
 
   return (
-    <section className="audio-panel flex h-full min-h-[18rem] flex-col rounded-[20px] p-4">
-      <div className="flex items-start justify-between gap-3 border-b border-[var(--border)] pb-4">
-        <div>
-          <p className="audio-section-kicker">{copy.effects.kicker}</p>
-          <h2 className="mt-1 text-sm font-medium text-[var(--text-primary)]">{copy.effects.title}</h2>
-        </div>
-        {onClose ? (
-          <button
-            type="button"
-            onClick={onClose}
-            className="audio-icon-button audio-focus-ring"
-            aria-label={copy.effects.close}
-          >
-            <X size={16} strokeWidth={1.5} />
-          </button>
-        ) : null}
-      </div>
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        {tabs.map((tab) => {
-          const Icon = tab.icon;
-          const active = activeTab === tab.id;
-          return (
+    <section data-testid="audio-effects-panel" className="audio-panel rounded-2xl p-3 sm:p-4" aria-label={copy.effects.kicker}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="audio-segmented max-w-full flex-nowrap overflow-x-auto" role="group" aria-label={copy.effects.kicker}>
+          {tabs.map((tab) => (
             <button
-              key={tab.id}
+              key={tab}
               type="button"
-              onClick={() => onTabChange(tab.id)}
-              className={`audio-tab audio-focus-ring ${active ? 'audio-tab-active' : ''}`}
+              onClick={() => onTabChange(tab)}
+              aria-pressed={activeTab === tab}
+              className="audio-tab audio-focus-ring"
             >
-              <Icon size={13} strokeWidth={1.5} />
-              {tab.label}
+              {effectsByTab[tab].label}
             </button>
-          );
-        })}
+          ))}
+        </div>
+        <p className="min-w-0 truncate text-xs text-[var(--text-tertiary)]">{targetLabel}</p>
       </div>
 
-      <div className="mt-4 flex-1 rounded-[14px] border border-[var(--border)] bg-[var(--surface-muted)] p-4">
-        {activeTab === 'fade' ? (
-          <FadeControls
-            fadeIn={effects.fadeIn}
-            fadeOut={effects.fadeOut}
-            onChange={onChange}
-            onPreview={() => onPreview('fade')}
-            onApply={() => onApply('fade')}
-          />
-        ) : null}
-        {activeTab === 'speed' ? (
-          <SpeedControls
-            speed={effects.speed}
-            onChange={(nextSpeed) => onChange({ speed: nextSpeed })}
-            onPreview={() => onPreview('speed')}
-            onApply={() => onApply('speed')}
-          />
-        ) : null}
-        {activeTab === 'pitch' ? (
-          <PitchControls
-            pitch={effects.pitch}
-            onChange={(nextPitch) => onChange({ pitch: nextPitch })}
-            onPreview={() => onPreview('pitch')}
-            onApply={() => onApply('pitch')}
-          />
-        ) : null}
-        {activeTab === 'amplify' ? (
-          <AmplifyControls
-            gain={effects.gain}
-            onChange={(nextGain) => onChange({ gain: nextGain })}
-            onPreview={() => onPreview('amplify')}
-            onApply={() => onApply('amplify')}
-          />
-        ) : null}
-        {activeTab === 'reverb' ? (
-          <ReverbControls
-            decay={effects.reverbDecay}
-            mix={effects.reverbMix}
-            onChange={onChange}
-            onPreview={() => onPreview('reverb')}
-            onApply={() => onApply('reverb')}
-          />
-        ) : null}
-        {activeTab === 'eq' ? (
-          <div className="space-y-5">
-            {[
-              { id: 'low', label: copy.effects.low, value: effects.low },
-              { id: 'mid', label: copy.effects.mid, value: effects.mid },
-              { id: 'high', label: copy.effects.high, value: effects.high },
-            ].map((band) => (
-              <div key={band.id} className="space-y-2">
+      <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-end">
+        <div className="grid min-w-0 flex-1 gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
+          {active.parameters.map((parameter) => {
+            const value = effects[parameter.key];
+            const inputId = `audio-effect-${parameter.key}`;
+            return (
+              <div key={parameter.key} className="space-y-2">
                 <div className="flex items-center justify-between gap-3">
-                  <label className="audio-range-label">{band.label}</label>
-                  <span className="audio-value">{band.value > 0 ? `+${band.value}` : band.value} dB</span>
+                  <label htmlFor={inputId} className="audio-range-label">
+                    {parameter.label}
+                  </label>
+                  <span className="audio-value">{parameter.format(value)}</span>
                 </div>
                 <input
+                  id={inputId}
                   type="range"
-                  min={-12}
-                  max={12}
-                  step={1}
-                  value={band.value}
-                  onChange={(event) => onChange({ [band.id]: Number(event.target.value) })}
-                  style={getRangeStyle(band.value, -12, 12)}
+                  min={parameter.min}
+                  max={parameter.max}
+                  step={parameter.step}
+                  value={value}
+                  onChange={(event) => onChange({ [parameter.key]: Number(event.target.value) })}
+                  style={getRangeStyle(value, parameter.min, parameter.max)}
                   className="audio-range audio-focus-ring"
-                  aria-label={band.label}
                 />
               </div>
-            ))}
-            <div className="audio-surface-muted rounded-[10px] px-3 py-2 text-xs leading-relaxed text-[var(--text-secondary)]">
-              {copy.effects.eqHint}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => onPreview('eq')} className="audio-button-secondary audio-focus-ring h-9 px-3">
-                <SlidersHorizontal size={14} strokeWidth={1.5} />
-                {copy.effects.previewEq}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onApply('eq');
-                  setEqApplied(true);
-                }}
-                className="audio-button-primary audio-focus-ring h-9 px-3"
-              >
-                <Check size={14} strokeWidth={1.5} />
-                {eqApplied ? copy.effects.applied : copy.effects.applyEq}
-              </button>
-            </div>
-          </div>
-        ) : null}
+            );
+          })}
+        </div>
+
+        <div className="flex shrink-0 gap-2">
+          <button type="button" onClick={() => onPreview(activeTab)} className="audio-button-secondary audio-focus-ring h-9 px-3.5">
+            <Headphones size={15} strokeWidth={1.75} />
+            {copy.studio.preview}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onApply(activeTab);
+              setAppliedTab(activeTab);
+            }}
+            className="audio-button-primary audio-focus-ring h-9 px-4"
+          >
+            <Check size={15} strokeWidth={2} />
+            {appliedTab === activeTab ? copy.effects.applied : copy.studio.apply}
+          </button>
+        </div>
       </div>
+
+      {active.hint ? <p className="mt-3 text-xs leading-relaxed text-[var(--text-tertiary)]">{active.hint}</p> : null}
     </section>
   );
 }

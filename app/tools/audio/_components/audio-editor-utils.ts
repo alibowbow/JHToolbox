@@ -62,7 +62,8 @@ export function getRangeStyle(value: number, min: number, max: number): CSSPrope
   } as CSSProperties;
 }
 
-export const AUDIO_ACCEPT = '.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,.mp4';
+// Video types too: the sound of a screen recording (a phone's own audio) opens here.
+export const AUDIO_ACCEPT = '.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,.mp4,.mov,.m4v,audio/*,video/mp4,video/quicktime,video/webm';
 
 export const DEFAULT_EFFECTS: AudioEffectsState = {
   fadeIn: 0.35,

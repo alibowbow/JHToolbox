@@ -29,8 +29,13 @@ function getCanvasContext(canvas: WaveformCanvas) {
   return canvas.getContext('2d');
 }
 
-function getCacheKey(width: number, height: number, theme: AudioWaveformRenderOptions['theme']) {
-  return `${width}x${height}:${theme}`;
+function getCacheKey(width: number, height: number, theme: AudioWaveformRenderOptions['theme'], color: string) {
+  return `${width}x${height}:${theme}:${color}`;
+}
+
+/** Default waveform colour per theme (the brand indigo). */
+export function defaultWaveformColor(theme: AudioWaveformRenderOptions['theme']) {
+  return theme === 'dark' ? '#818cf8' : '#4f46e5';
 }
 
 function getSourceWidth(buffer: AudioBuffer, requestedWidth: number) {
@@ -52,10 +57,15 @@ function getChannelData(buffer: AudioBuffer) {
   return Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index));
 }
 
+/**
+ * Peak outline in a lighter tone with the RMS (loudness) body in full colour,
+ * on a transparent background so the clip behind it shows its track colour.
+ */
 function drawWaveformBase(
   canvas: WaveformCanvas,
   buffer: AudioBuffer,
   theme: AudioWaveformRenderOptions['theme'],
+  color: string,
 ) {
   const context = getCanvasContext(canvas);
   if (!context) {
@@ -66,48 +76,51 @@ function drawWaveformBase(
   const height = canvas.height;
   const channels = getChannelData(buffer);
   const halfHeight = height / 2;
-  const centerLine = Math.round(halfHeight);
   const sampleCount = buffer.length;
   const samplesPerPixel = Math.max(1, Math.floor(sampleCount / Math.max(width, 1)));
-  const palette = {
-    background: theme === 'dark' ? '#0A1A19' : 'rgba(248, 250, 252, 1)',
-    grid: theme === 'dark' ? 'rgba(255, 255, 255, 0.06)' : 'rgba(100, 116, 139, 0.12)',
-    waveform: theme === 'dark' ? '#00D4C850' : 'rgba(0, 179, 214, 0.86)',
-    silence: theme === 'dark' ? 'rgba(255, 255, 255, 0.14)' : 'rgba(100, 116, 139, 0.28)',
-    waveformActive: theme === 'dark' ? '#00D4C8' : 'rgba(0, 179, 214, 1)',
-  };
+  // Long buffers: sample a bounded number of frames per column.
+  const stride = Math.max(1, Math.floor(samplesPerPixel / 256));
 
   context.clearRect(0, 0, width, height);
-  context.fillStyle = palette.background;
-  context.fillRect(0, 0, width, height);
+  context.fillStyle = theme === 'dark' ? 'rgba(255, 255, 255, 0.12)' : 'rgba(15, 23, 42, 0.12)';
+  context.fillRect(0, Math.floor(halfHeight), width, 1);
 
-  context.strokeStyle = palette.grid;
-  context.lineWidth = 1;
-  context.beginPath();
-  context.moveTo(0, centerLine);
-  context.lineTo(width, centerLine);
-  context.stroke();
-
+  const peaks = new Float32Array(width);
+  const levels = new Float32Array(width);
   for (let column = 0; column < width; column += 1) {
     const startSample = column * samplesPerPixel;
     const endSample = Math.min(startSample + samplesPerPixel, sampleCount);
     let peak = 0;
+    let sumSquares = 0;
+    let count = 0;
 
     for (const channel of channels) {
-      for (let sampleIndex = startSample; sampleIndex < endSample; sampleIndex += 1) {
-        const value = Math.abs(channel[sampleIndex] ?? 0);
-        if (value > peak) {
-          peak = value;
+      for (let sampleIndex = startSample; sampleIndex < endSample; sampleIndex += stride) {
+        const value = channel[sampleIndex] ?? 0;
+        const magnitude = value < 0 ? -value : value;
+        if (magnitude > peak) {
+          peak = magnitude;
         }
+        sumSquares += value * value;
+        count += 1;
       }
     }
 
-    const barHeight = Math.max(1, peak * (height * 0.9));
-    const x = column;
-    const y = Math.round(halfHeight - barHeight / 2);
+    peaks[column] = Math.min(1, peak);
+    levels[column] = count > 0 ? Math.min(1, Math.sqrt(sumSquares / count)) : 0;
+  }
 
-    context.fillStyle = peak > 0.001 ? palette.waveform : palette.silence;
-    context.fillRect(x, y, 1, Math.max(1, Math.round(barHeight)));
+  const scale = height * 0.46;
+  context.globalAlpha = 0.45;
+  context.fillStyle = color;
+  for (let column = 0; column < width; column += 1) {
+    const extent = Math.max(0.5, peaks[column] * scale);
+    context.fillRect(column, halfHeight - extent, 1, extent * 2);
+  }
+  context.globalAlpha = 1;
+  for (let column = 0; column < width; column += 1) {
+    const extent = Math.max(0.5, levels[column] * scale * 1.2);
+    context.fillRect(column, halfHeight - extent, 1, extent * 2);
   }
 }
 
@@ -116,11 +129,12 @@ export function renderWaveformOffscreen(
   width: number,
   height: number,
   theme: AudioWaveformRenderOptions['theme'] = 'dark',
+  color: string = defaultWaveformColor(theme),
 ): WaveformCanvas {
   const safeWidth = Math.max(1, Math.floor(width));
   const safeHeight = Math.max(1, Math.floor(height));
   const sourceWidth = getSourceWidth(buffer, safeWidth);
-  const cacheKey = getCacheKey(sourceWidth, safeHeight, theme);
+  const cacheKey = getCacheKey(sourceWidth, safeHeight, theme, color);
   const bufferCache = getWaveformMap(buffer);
   const cached = bufferCache.get(cacheKey);
 
@@ -131,7 +145,7 @@ export function renderWaveformOffscreen(
   const canvas = createCanvas(sourceWidth, safeHeight);
   canvas.width = sourceWidth;
   canvas.height = safeHeight;
-  drawWaveformBase(canvas, buffer, theme);
+  drawWaveformBase(canvas, buffer, theme, color);
 
   bufferCache.set(cacheKey, { canvas, width: sourceWidth, height: safeHeight });
   return canvas;
@@ -176,7 +190,7 @@ export function renderWaveform(opts: AudioWaveformRenderOptions): void {
     context.rect(selectionLeft, 0, Math.max(1, selectionRight - selectionLeft), height);
     context.clip();
     context.drawImage(source as CanvasImageSource, sourceStart, 0, sourceSliceWidth, source.height, 0, 0, width, height);
-    context.fillStyle = theme === 'dark' ? 'rgba(0, 232, 219, 0.28)' : 'rgba(0, 179, 214, 0.24)';
+    context.fillStyle = theme === 'dark' ? 'rgba(129, 140, 248, 0.28)' : 'rgba(79, 70, 229, 0.22)';
     context.globalCompositeOperation = 'source-atop';
     context.fillRect(selectionLeft, 0, Math.max(1, selectionRight - selectionLeft), height);
     context.restore();
@@ -187,10 +201,10 @@ export function renderWaveform(opts: AudioWaveformRenderOptions): void {
     context.fillRect(0, 0, Math.max(0, selectionLeft), height);
     context.fillRect(Math.max(0, selectionRight), 0, Math.max(0, width - selectionRight), height);
 
-    context.fillStyle = theme === 'dark' ? 'rgba(0, 212, 200, 0.04)' : 'rgba(0, 179, 214, 0.06)';
+    context.fillStyle = theme === 'dark' ? 'rgba(129, 140, 248, 0.06)' : 'rgba(79, 70, 229, 0.06)';
     context.fillRect(selectionLeft, 0, Math.max(0, selectionRight - selectionLeft), height);
 
-    context.strokeStyle = theme === 'dark' ? '#00F5E6B8' : 'rgba(0, 179, 214, 0.82)';
+    context.strokeStyle = theme === 'dark' ? 'rgba(165, 180, 252, 0.85)' : 'rgba(79, 70, 229, 0.85)';
     context.lineWidth = 2;
     context.strokeRect(
       Math.max(0, selectionLeft),
@@ -201,7 +215,7 @@ export function renderWaveform(opts: AudioWaveformRenderOptions): void {
   }
 
   if (playheadLeft != null) {
-    context.fillStyle = theme === 'dark' ? '#00D4C8' : '#2DD4BF';
+    context.fillStyle = theme === 'dark' ? '#a5b4fc' : '#4f46e5';
     context.fillRect(Math.max(0, playheadLeft - 0.75), 0, 1.5, height);
   }
 }
