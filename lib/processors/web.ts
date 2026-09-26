@@ -6,6 +6,12 @@ import { parseBoolean, parseNumber } from '@/lib/utils';
 import { describeUrlRejection, validateExternalUrl } from '@/lib/url-safety';
 import { detectCms } from '@/lib/cms-detect';
 import { pngDimensions } from '@/lib/media-dimensions';
+import {
+  CaptureError,
+  classifyServiceFailure,
+  summarizeCaptureFailures,
+  type CaptureFailureKind,
+} from '@/lib/capture-failure';
 
 /** A validated public http(s) URL; an empty box is an error, not a default site. */
 function resolveExternalUrl(rawValue: unknown): string {
@@ -120,40 +126,92 @@ function buildMicrolinkUrl(url: string, opts: ScreenshotOptions): string {
   return `https://api.microlink.io/?${params.toString()}`;
 }
 
-async function fetchScreenshotCandidate(screenshotUrl: string): Promise<Blob> {
-  let lastError: Error | null = null;
+/** One service's failure, carried to the caller so the final error can say why. */
+class CandidateFailure extends Error {
+  readonly kind: CaptureFailureKind;
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  constructor(kind: CaptureFailureKind, detail: string) {
+    super(detail);
+    this.kind = kind;
+  }
+}
+
+async function fetchScreenshotCandidate(screenshotUrl: string, signal?: AbortSignal): Promise<Blob> {
+  for (let attempt = 0; ; attempt += 1) {
     let response: Response;
     try {
-      response = await fetch(screenshotUrl, { method: 'GET', mode: 'cors', cache: 'no-store' });
+      response = await fetch(screenshotUrl, { method: 'GET', mode: 'cors', cache: 'no-store', signal });
     } catch (cause) {
-      // A thrown fetch is a network/CORS failure that will not recover on retry;
-      // surface it so the caller can move on to the next candidate.
-      throw cause instanceof Error ? cause : new Error('The screenshot request was blocked by the browser.');
+      if (signal?.aborted) {
+        throw cause;
+      }
+      // A thrown fetch is a network/CORS failure that will not recover on retry.
+      throw new CandidateFailure('network', cause instanceof Error ? cause.message : 'request failed');
     }
 
     if (response.ok) {
       const blob = await response.blob();
-      if (!blob.type.startsWith('image/')) {
-        throw new Error('The screenshot service returned a non-image response.');
+      if (blob.type.startsWith('image/')) {
+        return blob;
       }
-
-      return blob;
+      // Some services answer 200 with an error payload instead of a picture.
+      const failure = classifyServiceFailure(response.status, await blob.text().catch(() => ''));
+      throw new CandidateFailure(failure.kind, failure.detail || 'not an image');
     }
 
-    const retryable = response.status === 429 || response.status === 408 || response.status >= 500;
-    lastError = new Error(`Screenshot service responded with status ${response.status}.`);
-    if (!retryable) {
-      throw lastError;
+    const failure = classifyServiceFailure(response.status, await response.text().catch(() => ''));
+    // Only a service hiccup is worth one more try; a timeout would double the
+    // wait and a block or a spent quota will not change a second later.
+    const transient = failure.kind === 'unknown' && (response.status >= 500 || response.status === 408);
+    if (!transient || attempt >= 1) {
+      throw new CandidateFailure(failure.kind, failure.detail);
     }
-
-    if (attempt < 1) {
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-    }
+    await new Promise((resolve) => setTimeout(resolve, 1200));
   }
+}
 
-  throw lastError ?? new Error('Unable to capture a rendered webpage screenshot for this URL.');
+/**
+ * True when a capture is one flat colour: the service's browser showed an empty
+ * page (blocked, or still loading). Tiny images and formats the browser cannot
+ * decode here are not judged.
+ */
+async function isBlankCapture(blob: Blob): Promise<boolean> {
+  if (typeof createImageBitmap !== 'function') {
+    return false;
+  }
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(blob);
+  } catch {
+    return false;
+  }
+  try {
+    if (bitmap.width < 64 || bitmap.height < 64) {
+      return false;
+    }
+    const width = 160;
+    const height = Math.min(2400, Math.max(1, Math.round((bitmap.height * width) / bitmap.width)));
+    const context =
+      typeof OffscreenCanvas !== 'undefined'
+        ? new OffscreenCanvas(width, height).getContext('2d')
+        : Object.assign(document.createElement('canvas'), { width, height }).getContext('2d');
+    if (!context) {
+      return false;
+    }
+    // Downscaling averages any text or line into visibly different pixels.
+    context.drawImage(bitmap, 0, 0, width, height);
+    const { data } = context.getImageData(0, 0, width, height);
+    for (let index = 4; index < data.length; index += 4) {
+      for (let channel = 0; channel < 4; channel += 1) {
+        if (Math.abs(data[index + channel] - data[channel]) > 6) {
+          return false;
+        }
+      }
+    }
+    return true;
+  } finally {
+    bitmap.close();
+  }
 }
 
 /**
@@ -182,7 +240,7 @@ async function readImageSize(blob: Blob): Promise<{ width: number; height: numbe
   }
 }
 
-async function fetchWebsiteScreenshot(url: string, opts: ScreenshotOptions): Promise<Blob> {
+async function fetchWebsiteScreenshot(url: string, opts: ScreenshotOptions, signal?: AbortSignal): Promise<Blob> {
   const directPrimary = buildScreenshotUrl(url, opts, false);
 
   // For viewport captures thum.io stays the fast path (and the thum.io-mocked
@@ -199,13 +257,23 @@ async function fetchWebsiteScreenshot(url: string, opts: ScreenshotOptions): Pro
   // capture that is clearly a scroll (height ≥ 2× width) immediately, otherwise
   // keep trying candidates and return the tallest capture we saw.
   let best: { blob: Blob; height: number } | null = null;
-  let lastError: Error | null = null;
+  const failures: CaptureFailureKind[] = [];
+  let lastDetail = '';
   for (const candidateUrl of candidateUrls) {
     let blob: Blob;
     try {
-      blob = await fetchScreenshotCandidate(candidateUrl);
+      blob = await fetchScreenshotCandidate(candidateUrl, signal);
     } catch (cause) {
-      lastError = cause instanceof Error ? cause : new Error('Screenshot fetch failed.');
+      if (!(cause instanceof CandidateFailure)) {
+        throw cause;
+      }
+      failures.push(cause.kind);
+      lastDetail = cause.message;
+      continue;
+    }
+
+    if (await isBlankCapture(blob)) {
+      failures.push('blank');
       continue;
     }
 
@@ -229,15 +297,102 @@ async function fetchWebsiteScreenshot(url: string, opts: ScreenshotOptions): Pro
     return best.blob;
   }
 
-  throw new Error(
-    `Unable to capture a screenshot for this URL. The screenshot service may be busy or blocking the request${
-      lastError ? ` (${lastError.message})` : ''
-    }.`,
-  );
+  throw new CaptureError(summarizeCaptureFailures(failures), lastDetail);
+}
+
+/**
+ * A capture as a PDF. A tall full-page capture as one giant page is hard to
+ * read or print, so it is sliced into A4-proportioned pages from the top down.
+ */
+async function buildCapturePdf(capture: Blob, splitPages: boolean): Promise<Blob> {
+  const bytes = new Uint8Array(await capture.arrayBuffer());
+  const pdf = await PDFDocument.create();
+  // Proxies can answer with JPEG instead of PNG.
+  const image = bytes[0] === 0xff && bytes[1] === 0xd8 ? await pdf.embedJpg(bytes) : await pdf.embedPng(bytes);
+
+  if (splitPages && image.height > image.width * 1.5) {
+    const pageHeight = image.width * (297 / 210);
+    const pageCount = Math.max(1, Math.ceil(image.height / pageHeight));
+    for (let index = 0; index < pageCount; index += 1) {
+      const page = pdf.addPage([image.width, pageHeight]);
+      page.drawImage(image, {
+        x: 0,
+        y: (index + 1) * pageHeight - image.height,
+        width: image.width,
+        height: image.height,
+      });
+    }
+  } else {
+    const page = pdf.addPage([image.width, image.height]);
+    page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+  }
+
+  return blobFromBytes(await pdf.save({ useObjectStreams: true }), 'application/pdf');
+}
+
+/** One still picture from a shared tab or window, as PNG. Stops the sharing. */
+async function grabDisplayFrame(stream: MediaStream): Promise<Blob> {
+  const video = document.createElement('video');
+  try {
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = stream;
+    await video.play();
+    await new Promise<void>((resolve, reject) => {
+      const timer = window.setTimeout(() => reject(new Error('The shared tab did not send a picture.')), 10_000);
+      const done = () => {
+        window.clearTimeout(timer);
+        resolve();
+      };
+      if (typeof video.requestVideoFrameCallback === 'function') {
+        video.requestVideoFrameCallback(() => done());
+      } else if (video.readyState >= 2 && video.videoWidth > 0) {
+        done();
+      } else {
+        video.addEventListener('loadeddata', done, { once: true });
+      }
+    });
+    // The first frame can predate the tab's last paint; take a later one.
+    await new Promise((resolve) => window.setTimeout(resolve, 150));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext('2d');
+    if (!context || !canvas.width || !canvas.height) {
+      throw new Error('The shared tab did not send a picture.');
+    }
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) {
+      throw new Error('Failed to create a canvas blob.');
+    }
+    return blob;
+  } finally {
+    stream.getTracks().forEach((track) => track.stop());
+    video.srcObject = null;
+  }
+}
+
+/**
+ * The capture tools' output made from a tab the user shared from their own
+ * browser: used when the screenshot services cannot open the site.
+ */
+export async function buildResultFromSharedTab(
+  toolId: string,
+  stream: MediaStream,
+  options: Record<string, string | number | boolean>,
+): Promise<ProcessedFile[]> {
+  const png = await grabDisplayFrame(stream);
+  if (toolId === 'url-pdf') {
+    const pdf = await buildCapturePdf(png, parseBoolean(options.splitPages, true));
+    return [{ name: 'url-capture.pdf', blob: pdf, mimeType: 'application/pdf' }];
+  }
+  return [{ name: 'url-capture.png', blob: png, mimeType: 'image/png' }];
 }
 
 export async function processWebTool(ctx: ProcessContext): Promise<ProcessedFile[]> {
-  const { toolId, files, options, onProgress } = ctx;
+  const { toolId, files, options, onProgress, signal } = ctx;
 
   if (toolId === 'qr-generator') {
     const content = String(options.content ?? 'https://example.com');
@@ -271,12 +426,16 @@ export async function processWebTool(ctx: ProcessContext): Promise<ProcessedFile
       percent: 10,
       stage: waitSeconds > 0 ? `Loading page (waiting ${waitSeconds}s)` : 'Capturing webpage screenshot',
     });
-    const screenshotBlob = await fetchWebsiteScreenshot(url, {
-      width,
-      fullPage: captureFullPage,
-      waitSeconds,
-      maxHeight,
-    });
+    const screenshotBlob = await fetchWebsiteScreenshot(
+      url,
+      {
+        width,
+        fullPage: captureFullPage,
+        waitSeconds,
+        maxHeight,
+      },
+      signal,
+    );
     onProgress({ percent: 85, stage: 'Preparing image download' });
 
     return [
@@ -298,37 +457,14 @@ export async function processWebTool(ctx: ProcessContext): Promise<ProcessedFile
       percent: 10,
       stage: waitSeconds > 0 ? `Loading page (waiting ${waitSeconds}s)` : 'Capturing webpage screenshot',
     });
-    const pngBlob = await fetchWebsiteScreenshot(url, { width, fullPage: true, waitSeconds });
-    const pngBytes = new Uint8Array(await pngBlob.arrayBuffer());
+    const pngBlob = await fetchWebsiteScreenshot(url, { width, fullPage: true, waitSeconds }, signal);
 
     onProgress({ percent: 75, stage: 'Creating PDF capture' });
-    const pdf = await PDFDocument.create();
-    const image = await pdf.embedPng(pngBytes);
-
-    // A tall full-page capture as one giant page is hard to read or print, so slice
-    // it into A4-proportioned pages that flow from the top of the scroll downward.
-    if (splitPages && image.height > image.width * 1.5) {
-      const pageHeight = image.width * (297 / 210);
-      const pageCount = Math.max(1, Math.ceil(image.height / pageHeight));
-      for (let index = 0; index < pageCount; index += 1) {
-        const page = pdf.addPage([image.width, pageHeight]);
-        page.drawImage(image, {
-          x: 0,
-          y: (index + 1) * pageHeight - image.height,
-          width: image.width,
-          height: image.height,
-        });
-      }
-    } else {
-      const page = pdf.addPage([image.width, image.height]);
-      page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
-    }
-
-    const bytes = await pdf.save({ useObjectStreams: true });
+    const pdfBlob = await buildCapturePdf(pngBlob, splitPages);
     return [
       {
         name: 'url-capture.pdf',
-        blob: blobFromBytes(bytes, 'application/pdf'),
+        blob: pdfBlob,
         mimeType: 'application/pdf',
       },
     ];

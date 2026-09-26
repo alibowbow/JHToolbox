@@ -25,6 +25,12 @@ classification, generated from the registry.
 | `url-pdf` (URL Full Page to PDF) | The target **URL** | same as above, then `pdf-lib` locally wraps the returned image | Output is a rasterized snapshot — selectable text/links are lost (disclose in UI, AF-016). |
 | `detect-cms` (Detect CMS) | The target **URL** | direct `fetch` → `r.jina.ai` CORS mirror fallback | Fetches page HTML to fingerprint a CMS. |
 
+When the providers cannot capture a page (for example a site that blocks
+overseas or automated visitors), `url-image` / `url-pdf` offer a local fallback:
+the user opens the page in a new tab and shares that tab (`getDisplayMedia`);
+one frame becomes the result. That page is loaded by the user's own browser and
+the frame never leaves the device.
+
 No other tool performs a cross-origin request with user data. (Engine assets such
 as ffmpeg.wasm / Tesseract / pdf.js workers may be fetched from the app’s own
 origin; that is app-asset loading, not user-data transmission. Pinning/self-host

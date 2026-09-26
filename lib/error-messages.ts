@@ -66,13 +66,21 @@ const EXACT_ERRORS_KO: Record<string, string> = {
   'The file could not be converted.': '파일을 변환하지 못했습니다. 파일 형식이 올바른지 확인하세요.',
   'The background worker stopped unexpectedly.': '백그라운드 작업이 예기치 않게 멈췄습니다. 다시 시도하세요.',
 
-  // Web capture
+  // Web capture (lib/capture-failure CAPTURE_FAILURE_MESSAGES)
   'Unable to fetch HTML for this URL. The target may block CORS or remote access.':
     '이 주소의 HTML을 가져오지 못했습니다. 사이트가 외부 접근을 막고 있을 수 있습니다.',
-  'The screenshot service returned a non-image response.': '캡처 서비스가 이미지 대신 다른 응답을 보냈습니다. 잠시 후 다시 시도하세요.',
-  'The screenshot request was blocked by the browser.': '브라우저가 캡처 요청을 막았습니다. 광고 차단 확장 프로그램을 확인하세요.',
-  'Unable to capture a rendered webpage screenshot for this URL.': '이 주소의 화면을 캡처하지 못했습니다. 잠시 후 다시 시도하세요.',
-  'Screenshot fetch failed.': '캡처 이미지를 받아오지 못했습니다.',
+  'The screenshot servers could not get into this site. It may block overseas or automated visitors.':
+    '캡처 서버가 이 사이트에 접속하지 못했습니다. 해외 접속이나 자동 접속을 막는 사이트일 수 있습니다.',
+  'The screenshot server could not find this address. Check the URL.': '캡처 서버가 이 주소를 찾지 못했습니다. 주소를 확인하세요.',
+  'The free screenshot services have reached their usage limit. Try again later.':
+    '무료 캡처 서비스의 사용 한도에 걸렸습니다. 잠시 후 다시 시도하세요.',
+  'The page took too long to load on the screenshot server. Shorten the wait or capture only the first screen.':
+    '캡처 서버에서 페이지를 여는 데 시간이 너무 오래 걸렸습니다. 대기 시간을 줄이거나 첫 화면만 캡처해 보세요.',
+  'The capture came back blank. The site may block the screenshot servers or need longer to load.':
+    '빈 화면만 캡처되었습니다. 사이트가 캡처 서버를 막았거나 로딩에 시간이 더 필요할 수 있습니다.',
+  'Could not reach the screenshot services. Check your connection or ad blocker.':
+    '캡처 서비스에 연결하지 못했습니다. 인터넷 연결이나 광고 차단 확장 프로그램을 확인하세요.',
+  'The shared tab did not send a picture.': '공유한 탭에서 화면을 받지 못했습니다. 다시 시도하세요.',
 
   // URL validation (lib/url-safety describeUrlRejection)
   'Enter a URL to continue.': '웹 주소(URL)를 입력하세요.',
@@ -175,7 +183,7 @@ const PATTERN_RULES: PatternRule[] = [
     ko: (match) => `캡처 서비스가 오류를 반환했습니다(상태 ${match[1]}). 잠시 후 다시 시도하세요.`,
   },
   {
-    pattern: /^Unable to capture a screenshot for this URL/,
+    pattern: /^(?:CaptureError: )?Unable to capture a screenshot for this URL/,
     en: () => null,
     ko: () => '이 주소의 화면을 캡처하지 못했습니다. 캡처 서비스가 바쁘거나 요청을 막고 있을 수 있으니 잠시 후 다시 시도하세요.',
   },
