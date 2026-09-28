@@ -5,8 +5,12 @@ import { countFrames, encodePcm16Wav, toPcm16 } from '@/lib/audio/pcm-wav';
 /** What to record: the microphone, the sound a tab / the computer plays, or both mixed. */
 export type RecordingSource = 'mic' | 'device' | 'both';
 
+/** Where a take goes: over the selected track from the playhead, or a new track. */
+export type RecordingTarget = 'track' | 'new';
+
 export interface RecordingSettings {
   source: RecordingSource;
+  target: RecordingTarget;
   /** Microphone to use; empty means the browser's default one. */
   micId: string;
   /**
@@ -17,12 +21,13 @@ export interface RecordingSettings {
   voiceEnhance: boolean;
 }
 
-export const DEFAULT_RECORDING_SETTINGS: RecordingSettings = { source: 'mic', micId: '', voiceEnhance: false };
+export const DEFAULT_RECORDING_SETTINGS: RecordingSettings = { source: 'mic', target: 'track', micId: '', voiceEnhance: false };
 
 export type RecordingErrorCode =
   | 'unsupported'
   | 'device-unsupported'
   | 'no-shared-audio'
+  | 'no-phone-audio'
   | 'permission'
   | 'no-mic'
   | 'mic-busy';
@@ -73,20 +78,35 @@ type WavRecordingOptions = {
   onLevel?: (peaks: number[]) => void;
 };
 
+function isPhone() {
+  const userAgent = navigator.userAgent;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent) || (/Macintosh/.test(userAgent) && navigator.maxTouchPoints > 1);
+}
+
 /**
- * Only desktop Chromium browsers (Chrome, Edge, Whale…) hand a page the sound
- * of a tab or of the whole computer. Phones cannot share their screen from a
- * browser at all, and Firefox / Safari share pictures without sound.
+ * How far this browser can record device sound:
+ * - `full`: desktop Chromium (Chrome, Edge, Whale…) shares the sound of a tab
+ *   or of the whole computer.
+ * - `try`: a phone browser that can share its screen (Safari from iOS 27);
+ *   whether the phone's sound comes along is up to the system.
+ * - `none`: no screen sharing (most phone browsers), or pictures without
+ *   sound (Firefox, Safari on a computer).
  */
-export function canRecordDeviceAudio(): boolean {
+export type DeviceAudioSupport = 'full' | 'try' | 'none';
+
+export function deviceAudioSupport(): DeviceAudioSupport {
   if (typeof navigator === 'undefined' || typeof navigator.mediaDevices?.getDisplayMedia !== 'function') {
-    return false;
+    return 'none';
+  }
+  if (isPhone()) {
+    return 'try';
   }
   const userAgent = navigator.userAgent;
-  if (/Android|iPhone|iPad|iPod|Mobile/i.test(userAgent)) {
-    return false;
-  }
-  return /Chrome\/|Chromium\/|Edg\//.test(userAgent) && !/Firefox\//.test(userAgent);
+  return /Chrome\/|Chromium\/|Edg\//.test(userAgent) && !/Firefox\//.test(userAgent) ? 'full' : 'none';
+}
+
+export function canRecordDeviceAudio(): boolean {
+  return deviceAudioSupport() !== 'none';
 }
 
 export function canRecordMicrophone(): boolean {
@@ -166,7 +186,7 @@ async function openDeviceAudio(): Promise<MediaStream> {
   }
   if (stream.getAudioTracks().length === 0) {
     stream.getTracks().forEach((track) => track.stop());
-    throw new RecordingError('no-shared-audio');
+    throw new RecordingError(isPhone() ? 'no-phone-audio' : 'no-shared-audio');
   }
   stream.getVideoTracks().forEach((track) => {
     track.enabled = false;

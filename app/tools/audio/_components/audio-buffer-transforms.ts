@@ -1,4 +1,5 @@
 import { cloneAudioBuffer, createAudioBuffer, createAudioBufferLike } from '@/lib/audio';
+import { punchIn } from '@/lib/audio/punch-in';
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -234,6 +235,32 @@ export function insertAudioAtTime(buffer: AudioBuffer | null, clip: AudioBuffer,
   }
 
   return nextBuffer;
+}
+
+/**
+ * Records `take` over a track's clip at `takeStart` (project seconds): the
+ * take replaces what was there, and the clip grows when the take starts
+ * before it or runs past its end. Joins get an 8 ms crossfade.
+ */
+export function overwriteAudioAt(clip: AudioBuffer | null, clipStart: number, take: AudioBuffer, takeStart: number) {
+  if (!clip) {
+    return { buffer: cloneAudioBuffer(take), startTime: Math.max(0, takeStart) };
+  }
+
+  const rate = clip.sampleRate;
+  const aligned = resampleAudioBuffer(take, rate);
+  const channelsOf = (buffer: AudioBuffer) =>
+    Array.from({ length: buffer.numberOfChannels }, (_, channelIndex) => buffer.getChannelData(channelIndex));
+  const result = punchIn(
+    channelsOf(clip),
+    Math.round(Math.max(0, clipStart) * rate),
+    channelsOf(aligned),
+    Math.round(Math.max(0, takeStart) * rate),
+    Math.round(rate * 0.008),
+  );
+  const buffer = createAudioBuffer(result.channels.length, result.channels[0]?.length ?? 1, rate);
+  result.channels.forEach((channelData, channelIndex) => buffer.copyToChannel(channelData, channelIndex));
+  return { buffer, startTime: result.startFrame / rate };
 }
 
 export type AudioEqBands = {

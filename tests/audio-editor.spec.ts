@@ -257,7 +257,8 @@ async function recordFor(page: Page, milliseconds: number) {
   await page.getByRole('button', { name: 'Start recording' }).click();
   await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId('audio-level-meter')).toBeVisible();
-  await expect(page.getByTestId('audio-recording-lane')).toBeVisible();
+  // The take being recorded shows on the timeline (its own lane or over the selected track).
+  await expect(page.getByTestId('audio-live-take')).toBeVisible();
   await page.waitForTimeout(milliseconds);
   await page.getByRole('button', { name: 'Stop recording' }).click();
 }
@@ -279,7 +280,9 @@ test('the microphone records the sound as it is, and voice cleanup is a choice t
   await page.getByText('Voice cleanup', { exact: true }).click();
   await page.keyboard.press('Escape');
   await recordFor(page, 400);
-  await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(2, { timeout: 30_000 });
+  // The second take continues the selected track.
+  await expect(page.getByText(/^Recorded into audio-recording-/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1);
   const second = await page.evaluate(() => (window as unknown as { __capture: { mic: Record<string, unknown>[] } }).__capture.mic[1]);
   expect(second).toMatchObject({ echoCancellation: true, noiseSuppression: true, autoGainControl: true });
 
@@ -315,6 +318,74 @@ test('sharing a tab without its sound says how to turn the sound on', async ({ p
   await expect(page.getByRole('button', { name: 'Stop recording' })).toHaveCount(0);
 });
 
+/** Project length from the transport readout ("0:01.234 / 0:05.678"). */
+async function projectSeconds(page: Page) {
+  const text = (await page.getByTestId('audio-time-display').textContent()) ?? '';
+  const total = text.split('/')[1]?.trim() ?? '0:00';
+  const [minutes, seconds] = total.split(':');
+  return Number(minutes) * 60 + Number(seconds);
+}
+
+test('recording again continues the selected track instead of adding tracks', async ({ page }) => {
+  await stubCapture(page);
+  await openReadyEditor(page);
+
+  await recordFor(page, 700);
+  await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1, { timeout: 30_000 });
+  const firstLength = await projectSeconds(page);
+  await expect(page.getByTestId('audio-record-hint')).toContainText('continue');
+
+  await recordFor(page, 700);
+  await expect(page.getByText(/^Recorded into audio-recording-/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1);
+  expect(await projectSeconds(page)).toBeGreaterThan(firstLength + 0.4);
+});
+
+test('recording from the middle of the selected track writes over it', async ({ page }) => {
+  await stubCapture(page);
+  await openReadyEditor(page);
+  await page.locator('input[type="file"]').setInputFiles({ name: 'speech.wav', mimeType: 'audio/wav', buffer: createDemoAudioBuffer(3, 220) });
+  await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1, { timeout: 60_000 });
+
+  // Put the playhead a third of the way in.
+  const surface = page.getByTestId('audio-track-waveform-surface').first();
+  const box = (await surface.boundingBox())!;
+  await page.mouse.click(box.x + box.width / 3, box.y + box.height * 0.7);
+  await expect(page.getByTestId('audio-record-hint')).toContainText('over speech.wav');
+
+  await recordFor(page, 500);
+  await expect(page.getByText(/^Recorded into speech\.wav/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1);
+  // The take replaced audio inside the clip, so the length did not change.
+  expect(await projectSeconds(page)).toBeCloseTo(3, 1);
+
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByText('Undo applied.')).toBeVisible();
+});
+
+test('new-track recording and Shift+R each add a track', async ({ page }) => {
+  await stubCapture(page);
+  await openReadyEditor(page);
+  await recordFor(page, 400);
+  await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1, { timeout: 30_000 });
+
+  // Shift+R: a new track once, whatever the setting.
+  await page.keyboard.press('Shift+R');
+  await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('audio-recording-lane')).toBeVisible();
+  await page.waitForTimeout(400);
+  await page.keyboard.press('r');
+  await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(2, { timeout: 30_000 });
+
+  // The "New track" setting does it every time.
+  await page.getByRole('button', { name: 'Recording settings' }).click();
+  await page.getByTestId('audio-recording-settings').getByRole('button', { name: 'New track' }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('audio-record-hint')).toHaveText('Record → new track');
+  await recordFor(page, 400);
+  await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(3, { timeout: 30_000 });
+});
+
 test.describe('on a phone', () => {
   const phone = devices['iPhone 13'];
   test.use({
@@ -325,7 +396,10 @@ test.describe('on a phone', () => {
     hasTouch: phone.hasTouch,
   });
 
-  test('device sound points to the phone screen recorder instead', async ({ page }) => {
+  test('without screen sharing, device sound points to the phone screen recorder', async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', { configurable: true, value: undefined });
+    });
     await openReadyEditor(page);
     const settings = page.getByTestId('audio-recording-settings');
 
@@ -333,6 +407,17 @@ test.describe('on a phone', () => {
     await expect(settings.getByText('Only the sound playing on a phone')).toBeVisible();
     await expect(settings.getByText(/Screen Recording/)).toBeVisible();
     await expect(settings.getByRole('link', { name: /Extract Audio/ })).toHaveAttribute('href', '/tools/video/extract-audio');
+  });
+
+  test('with screen sharing (iOS 27+), device sound can be tried and says when the phone gives no sound', async ({ page }) => {
+    await stubCapture(page, { sharedAudio: false });
+    await openReadyEditor(page);
+    const settings = page.getByTestId('audio-recording-settings');
+
+    await settings.getByRole('button', { name: 'Device sound' }).click();
+    await expect(settings.getByText(/can share its screen/)).toBeVisible();
+    await page.getByRole('button', { name: 'Start recording' }).click();
+    await expect(page.getByText(/This phone shared its screen without sound/)).toBeVisible();
   });
 });
 
