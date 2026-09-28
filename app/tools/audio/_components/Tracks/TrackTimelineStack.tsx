@@ -49,6 +49,8 @@ export interface TimelineRecordingState {
   /** Input peaks (0…1) so far, one every `peakInterval` seconds of recording. */
   peaks?: number[];
   peakInterval?: number;
+  /** The take is recorded over this track; otherwise it gets its own lane. */
+  targetTrackId?: string | null;
 }
 
 interface TrackTimelineStackProps {
@@ -811,6 +813,47 @@ export function TrackTimelineStack({
 
   const showPlayhead = tracks.length > 0 || recordingActive;
 
+  const recordingTarget = recordingActive ? tracks.find((track) => track.id === recording?.targetTrackId) ?? null : null;
+
+  // The take as it is being recorded, positioned on the timeline.
+  const renderLiveTake = () => {
+    const liveLeft = timeToLaneX(recording?.insertTime ?? 0);
+    const liveWidth = Math.max((recording?.elapsed ?? 0) * pixelsPerSecond, 6);
+    const liveAbsLeft = HEADER_W + liveLeft;
+    const liveWinLeft = clamp(windowStart - liveAbsLeft, 0, Math.max(liveWidth - 1, 0));
+    const liveWinWidth = clamp(windowEnd - liveAbsLeft, 0, liveWidth) - liveWinLeft;
+    return (
+      <div
+        data-testid="audio-live-take"
+        className="pointer-events-none absolute z-10 overflow-hidden rounded-lg"
+        style={{
+          top: `${CLIP_INSET}px`,
+          bottom: `${CLIP_INSET}px`,
+          left: `${liveLeft}px`,
+          width: `${liveWidth}px`,
+          background: recordingTarget ? 'rgba(239, 68, 68, 0.22)' : 'rgba(239, 68, 68, 0.1)',
+          boxShadow: 'inset 0 0 0 1px rgba(239, 68, 68, 0.55)',
+          backdropFilter: recordingTarget ? 'blur(1px)' : undefined,
+        }}
+      >
+        {recording?.peaks && recording.peakInterval ? (
+          <LiveRecordingWaveform
+            peaks={recording.peaks}
+            peakInterval={recording.peakInterval}
+            pixelsPerSecond={pixelsPerSecond}
+            clipWidth={liveWidth}
+            windowLeft={liveWinLeft}
+            windowWidth={liveWinWidth}
+            height={LANE_H - CLIP_INSET * 2}
+          />
+        ) : null}
+        <span className="audio-mono absolute left-1.5 top-1 rounded bg-[var(--bg-surface)]/90 px-1 text-[11px] font-semibold text-red-500 shadow-sm">
+          {formatTime(recording?.elapsed ?? 0)}
+        </span>
+      </div>
+    );
+  };
+
   const iconButton = 'audio-icon-button audio-focus-ring h-8 w-8';
   const toolButton = 'audio-button-ghost audio-focus-ring h-8 px-2.5';
 
@@ -1019,7 +1062,14 @@ export function TrackTimelineStack({
                     style={{ width: `${HEADER_W}px`, boxShadow: `inset 3px 0 0 ${track.isActive ? color : withAlpha(color, 0.4)}` }}
                   >
                     <div className="flex min-w-0 items-center gap-1">
-                      <SourceIcon size={13} strokeWidth={2} className="shrink-0" style={{ color }} />
+                      {recordingTarget?.id === track.id ? (
+                        <span
+                          className={`h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 ${recording?.paused ? '' : 'animate-pulse'}`}
+                          aria-label={copy.recordingLane}
+                        />
+                      ) : (
+                        <SourceIcon size={13} strokeWidth={2} className="shrink-0" style={{ color }} />
+                      )}
                       {editingTrack?.id === track.id ? (
                         <input
                           autoFocus
@@ -1338,12 +1388,13 @@ export function TrackTimelineStack({
                         {copy.emptyTrack}
                       </div>
                     )}
+                    {recordingTarget?.id === track.id ? renderLiveTake() : null}
                   </div>
                 </div>
               );
             })}
 
-            {recordingActive ? (
+            {recordingActive && !recordingTarget ? (
               <div data-testid="audio-recording-lane" className="flex border-b border-[var(--border)]">
                 <div
                   className="sticky left-0 z-30 flex shrink-0 items-center gap-2 border-r border-[var(--border)] bg-[var(--bg-elevated)] px-3.5 py-2"
@@ -1353,41 +1404,7 @@ export function TrackTimelineStack({
                   <span className="text-[13px] font-semibold text-[var(--text-primary)]">{copy.recordingLane}</span>
                 </div>
                 <div className="relative" style={{ width: `${laneWidth}px`, height: `${LANE_H}px` }}>
-                  {(() => {
-                    const liveLeft = timeToLaneX(recording?.insertTime ?? 0);
-                    const liveWidth = Math.max((recording?.elapsed ?? 0) * pixelsPerSecond, 6);
-                    const liveAbsLeft = HEADER_W + liveLeft;
-                    const liveWinLeft = clamp(windowStart - liveAbsLeft, 0, Math.max(liveWidth - 1, 0));
-                    const liveWinWidth = clamp(windowEnd - liveAbsLeft, 0, liveWidth) - liveWinLeft;
-                    return (
-                      <div
-                        className="absolute overflow-hidden rounded-lg"
-                        style={{
-                          top: `${CLIP_INSET}px`,
-                          bottom: `${CLIP_INSET}px`,
-                          left: `${liveLeft}px`,
-                          width: `${liveWidth}px`,
-                          background: 'rgba(239, 68, 68, 0.1)',
-                          boxShadow: 'inset 0 0 0 1px rgba(239, 68, 68, 0.45)',
-                        }}
-                      >
-                        {recording?.peaks && recording.peakInterval ? (
-                          <LiveRecordingWaveform
-                            peaks={recording.peaks}
-                            peakInterval={recording.peakInterval}
-                            pixelsPerSecond={pixelsPerSecond}
-                            clipWidth={liveWidth}
-                            windowLeft={liveWinLeft}
-                            windowWidth={liveWinWidth}
-                            height={LANE_H - CLIP_INSET * 2}
-                          />
-                        ) : null}
-                        <span className="audio-mono absolute left-1.5 top-1 rounded bg-[var(--bg-surface)]/90 px-1 text-[11px] font-semibold text-red-500 shadow-sm">
-                          {formatTime(recording?.elapsed ?? 0)}
-                        </span>
-                      </div>
-                    );
-                  })()}
+                  {renderLiveTake()}
                 </div>
               </div>
             ) : null}

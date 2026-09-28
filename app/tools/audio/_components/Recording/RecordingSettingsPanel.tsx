@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { Smartphone } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
-import type { RecordingSettings, RecordingSource } from '@/lib/processors/audio-recording';
+import type { DeviceAudioSupport, RecordingSettings, RecordingSource, RecordingTarget } from '@/lib/processors/audio-recording';
 import { getAudioEditorCopy } from '../audio-editor-copy';
 
 function isPhone() {
@@ -14,20 +14,24 @@ function isPhone() {
 }
 
 /**
- * What to record (microphone, device sound or both), which microphone, and
- * whether to clean the voice up. Where device sound cannot be recorded it
- * says why, and on phones how to get it with the phone's screen recorder.
+ * What to record (microphone, device sound or both), where the take goes
+ * (over the selected track or a new one), which microphone, and whether to
+ * clean the voice up. Where device sound cannot be recorded it says why, and
+ * on phones how to get it with the phone's screen recorder.
  */
 export function RecordingSettingsPanel({
   settings,
   onChange,
   microphones,
-  deviceSupported,
+  deviceSupport,
+  showTarget = true,
 }: {
   settings: RecordingSettings;
   onChange: (next: RecordingSettings) => void;
   microphones: Array<{ id: string; label: string }>;
-  deviceSupported: boolean;
+  deviceSupport: DeviceAudioSupport;
+  /** Hidden before there is a track to record over. */
+  showTarget?: boolean;
 }) {
   const { locale } = useLocale();
   const copy = getAudioEditorCopy(locale).recorder;
@@ -39,6 +43,12 @@ export function RecordingSettingsPanel({
   ];
   const active = sources.find((source) => source.id === settings.source) ?? sources[0];
   const usesMic = settings.source !== 'device';
+  const deviceSupported = deviceSupport !== 'none';
+  const targets: Array<{ id: RecordingTarget; label: string; hint: string }> = [
+    { id: 'track', label: copy.targetTrack, hint: copy.targetTrackHint },
+    { id: 'new', label: copy.targetNew, hint: copy.targetNewHint },
+  ];
+  const activeTarget = targets.find((target) => target.id === settings.target) ?? targets[0];
 
   return (
     <div className="space-y-4 text-left" data-testid="audio-recording-settings">
@@ -65,10 +75,31 @@ export function RecordingSettingsPanel({
         {!deviceSupported && !phone ? (
           <p className="text-xs leading-relaxed text-[var(--status-warning)]">{copy.deviceUnsupported}</p>
         ) : null}
+        {deviceSupport === 'try' ? <p className="text-xs leading-relaxed text-[var(--text-secondary)]">{copy.phoneTry}</p> : null}
       </div>
 
-      {!deviceSupported && phone ? (
-        <details className="group rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2.5 text-sm" open>
+      {showTarget ? (
+        <div className="space-y-2">
+          <p className="audio-range-label">{copy.target}</p>
+          <div className="audio-segmented w-full flex-nowrap" role="group" aria-label={copy.target}>
+            {targets.map((target) => (
+              <button
+                key={target.id}
+                type="button"
+                aria-pressed={settings.target === target.id}
+                onClick={() => onChange({ ...settings, target: target.id })}
+                className="audio-tab audio-focus-ring min-w-0 flex-1 px-2"
+              >
+                {target.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs leading-relaxed text-[var(--text-tertiary)]">{activeTarget.hint}</p>
+        </div>
+      ) : null}
+
+      {phone ? (
+        <details className="group rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2.5 text-sm" open={!deviceSupported}>
           <summary className="flex cursor-pointer select-none items-center gap-2 font-medium text-[var(--text-primary)]">
             <Smartphone size={15} strokeWidth={1.75} aria-hidden="true" />
             {copy.phoneTitle}

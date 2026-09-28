@@ -20,6 +20,8 @@ interface TransportBarProps {
   readInputPeaks?: () => number[];
   /** Recording settings, shown in a panel above the record button. */
   recordingSettings?: ReactNode;
+  /** Where the next take goes, e.g. "Record → over Take 1 from 0:04". */
+  recordHint?: string | null;
   onPlayPause: () => void;
   onSeekBy: (delta: number) => void;
   onSeekToStart: () => void;
@@ -40,6 +42,7 @@ export function TransportBar({
   statusText,
   readInputPeaks,
   recordingSettings,
+  recordHint,
   onPlayPause,
   onSeekBy,
   onSeekToStart,
@@ -136,6 +139,10 @@ export function TransportBar({
           {isRecording ? (
             <span className={`mb-1 text-[11px] font-semibold ${isRecordingPaused ? 'text-[var(--status-warning)]' : 'text-red-500'}`}>
               ● {isRecordingPaused ? copy.recorder.paused : copy.recorder.live}
+            </span>
+          ) : recordHint ? (
+            <span data-testid="audio-record-hint" className="mb-1 max-w-[16rem] truncate text-[11px] font-medium text-[var(--text-tertiary)]" title={recordHint}>
+              {recordHint}
             </span>
           ) : null}
           <span data-testid="audio-time-display" className="audio-mono whitespace-nowrap text-[15px] font-semibold text-[var(--text-primary)] sm:text-[17px]">

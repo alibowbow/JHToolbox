@@ -64,6 +64,17 @@ const audioEditorCopy = {
       mic: 'Microphone',
       micDefault: 'Default microphone',
       micUnnamed: (index: number) => `Microphone ${index}`,
+      target: 'Record into',
+      targetTrack: 'Selected track',
+      targetNew: 'New track',
+      targetTrackHint:
+        'Records over the selected track from the playhead. Start at its end to continue it; undo brings back what was replaced.',
+      targetNewHint: 'Every take becomes a new track. Shift+R does this once, whatever is chosen here.',
+      hintNewTrack: 'Record → new track',
+      hintEmptyTrack: (name: string) => `Record → ${name}`,
+      hintContinue: (name: string) => `Record → continue ${name}`,
+      hintOverwrite: (name: string, time: string) => `Record → over ${name} from ${time}`,
+      recordedInto: (name: string) => `Recorded into ${name}`,
       voiceEnhance: 'Voice cleanup',
       voiceEnhanceHint:
         'Noise and echo removal with automatic volume, as in calls. Off keeps the original sound in full quality.',
@@ -74,6 +85,8 @@ const audioEditorCopy = {
       paused: 'Paused',
       ended: 'The microphone or the sharing ended, so recording stopped. What was recorded is kept.',
       deviceUnsupported: 'This browser cannot record device sound. Use Chrome or Edge on a computer.',
+      phoneTry:
+        'This phone browser can share its screen. Whether the phone’s sound comes along depends on the phone; if not, use the steps below.',
       phoneTitle: 'Only the sound playing on a phone',
       phoneSteps: [
         'Phone browsers cannot take other apps’ sound, so use the phone’s screen recorder:',
@@ -87,6 +100,8 @@ const audioEditorCopy = {
         'device-unsupported': 'This browser cannot record device sound. Use Chrome or Edge on a computer.',
         'no-shared-audio':
           'No sound was shared. When choosing a tab or screen, turn on “Share tab audio” (or system audio).',
+        'no-phone-audio':
+          'This phone shared its screen without sound. Use the screen recorder below instead, then open the video here.',
         permission:
           'Recording was cancelled or not allowed. Allow the microphone (or screen sharing) in the site settings next to the address bar.',
         'no-mic': 'No microphone was found.',
@@ -325,6 +340,16 @@ const audioEditorCopy = {
       mic: '마이크',
       micDefault: '기본 마이크',
       micUnnamed: (index: number) => `마이크 ${index}`,
+      target: '녹음 위치',
+      targetTrack: '선택한 트랙',
+      targetNew: '새 트랙',
+      targetTrackHint: '재생 위치부터 선택한 트랙에 덮어써요. 트랙 끝에서 시작하면 이어서 녹음되고, 실행 취소로 되돌릴 수 있어요.',
+      targetNewHint: '녹음할 때마다 새 트랙을 만들어요. Shift+R은 설정과 상관없이 한 번 새 트랙에 녹음해요.',
+      hintNewTrack: '녹음 → 새 트랙',
+      hintEmptyTrack: (name: string) => `녹음 → ${name}`,
+      hintContinue: (name: string) => `녹음 → ${name} 끝에 이어서`,
+      hintOverwrite: (name: string, time: string) => `녹음 → ${name} ${time}부터 덮어쓰기`,
+      recordedInto: (name: string) => `${name}에 녹음했어요`,
       voiceEnhance: '음성 보정',
       voiceEnhanceHint: '통화처럼 잡음·에코를 지우고 음량을 자동으로 맞춰요. 끄면 원음 그대로 고음질로 녹음돼요.',
       quality: (sampleRate: number, channels: number) =>
@@ -334,6 +359,7 @@ const audioEditorCopy = {
       paused: '일시정지',
       ended: '마이크나 화면 공유가 끊겨 녹음을 멈췄어요. 녹음된 부분은 그대로 남겼어요.',
       deviceUnsupported: '이 브라우저에서는 기기 소리를 녹음할 수 없어요. 컴퓨터의 크롬이나 엣지에서 이용하세요.',
+      phoneTry: '이 휴대폰 브라우저는 화면 공유를 지원해요. 휴대폰 소리가 함께 담기는지는 기기마다 달라서, 안 되면 아래 방법을 써 주세요.',
       phoneTitle: '휴대폰에서 나는 소리만 녹음하려면',
       phoneSteps: [
         '휴대폰 브라우저는 다른 앱의 소리를 가져올 수 없어서, 휴대폰의 화면 녹화를 이용해요.',
@@ -346,6 +372,7 @@ const audioEditorCopy = {
         unsupported: '이 브라우저는 녹음을 지원하지 않아요.',
         'device-unsupported': '이 브라우저에서는 기기 소리를 녹음할 수 없어요. 컴퓨터의 크롬이나 엣지에서 이용하세요.',
         'no-shared-audio': '소리가 공유되지 않았어요. 탭이나 화면을 고를 때 ‘탭 오디오 공유’(또는 시스템 오디오)를 켜 주세요.',
+        'no-phone-audio': '이 휴대폰은 화면 공유에 소리를 담지 않았어요. 아래 화면 녹화 방법으로 녹화한 뒤 영상을 여기서 열어 주세요.',
         permission: '녹음이 취소되었거나 허용되지 않았어요. 주소창 옆 사이트 설정에서 마이크(또는 화면 공유)를 허용해 주세요.',
         'no-mic': '사용할 수 있는 마이크를 찾지 못했어요.',
         'mic-busy': '다른 앱이 마이크를 쓰고 있어요. 그 앱을 닫고 다시 시도하세요.',

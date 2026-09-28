@@ -19,6 +19,7 @@ function getShortcutGroups(locale: 'en' | 'ko'): { title: string; close: string;
             { keys: ['Home', 'End'], label: '처음 / 끝으로 이동' },
             { keys: ['L'], label: '선택 구간 반복' },
             { keys: ['R'], label: '녹음 시작 / 멈춤' },
+            { keys: ['Shift', 'R'], label: '새 트랙에 녹음' },
           ],
         },
         {
@@ -58,6 +59,7 @@ function getShortcutGroups(locale: 'en' | 'ko'): { title: string; close: string;
           { keys: ['Home', 'End'], label: 'Jump to start / end' },
           { keys: ['L'], label: 'Loop selection' },
           { keys: ['R'], label: 'Start / stop recording' },
+          { keys: ['Shift', 'R'], label: 'Record into a new track' },
         ],
       },
       {

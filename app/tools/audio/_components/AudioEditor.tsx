@@ -15,10 +15,11 @@ import {
 import {
   DEFAULT_RECORDING_SETTINGS,
   RecordingError,
-  canRecordDeviceAudio,
   createWavRecordingSession,
+  deviceAudioSupport,
   listMicrophones,
   openRecordingInput,
+  type DeviceAudioSupport,
   type RecordingInput,
   type RecordingSettings,
   type RecordingSessionInfo,
@@ -33,6 +34,7 @@ import {
   applySpeedToAudioRange,
   extractAudioRange,
   insertAudioAtTime,
+  overwriteAudioAt,
   removeAudioRange,
 } from './audio-buffer-transforms';
 import { getAudioEditorCopy } from './audio-editor-copy';
@@ -76,6 +78,7 @@ function readSavedRecordingSettings(): RecordingSettings {
     }
     return {
       source: saved.source === 'device' || saved.source === 'both' ? saved.source : 'mic',
+      target: saved.target === 'new' ? 'new' : 'track',
       micId: typeof saved.micId === 'string' ? saved.micId : '',
       voiceEnhance: saved.voiceEnhance === true,
     };
@@ -207,8 +210,10 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [recordingSettings, setRecordingSettings] = useState<RecordingSettings>(DEFAULT_RECORDING_SETTINGS);
   const [recordingInfo, setRecordingInfo] = useState<RecordingSessionInfo | null>(null);
+  // The track a take is being recorded over; null records a new track.
+  const [recordingTargetId, setRecordingTargetId] = useState<string | null>(null);
   const [microphones, setMicrophones] = useState<Array<{ id: string; label: string }>>([]);
-  const [deviceSupported, setDeviceSupported] = useState(false);
+  const [deviceSupport, setDeviceSupport] = useState<DeviceAudioSupport>('none');
   const [hydrated, setHydrated] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -233,6 +238,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const recordingPausedRef = useRef(false);
   const recordingAccumulatedRef = useRef(0);
   const recordingInsertTimeRef = useRef(0);
+  const recordingTargetRef = useRef<string | null>(null);
 
   const getPlayer = () => {
     if (!playerRef.current) {
@@ -370,7 +376,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   // the microphone where the browser cannot record it.
   useEffect(() => {
     setRecordingSettings(readSavedRecordingSettings());
-    setDeviceSupported(canRecordDeviceAudio());
+    setDeviceSupport(deviceAudioSupport());
     setHydrated(true);
     void listMicrophones().then(setMicrophones);
     const mediaDevices = navigator.mediaDevices;
@@ -386,7 +392,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const readInputPeaks = useMemo(() => () => inputPeaksRef.current, []);
 
   const effectiveRecordingSettings: RecordingSettings =
-    deviceSupported || recordingSettings.source === 'mic' ? recordingSettings : { ...recordingSettings, source: 'mic' };
+    deviceSupport !== 'none' || recordingSettings.source === 'mic' ? recordingSettings : { ...recordingSettings, source: 'mic' };
 
   const updateRecordingSettings = (next: RecordingSettings) => {
     setRecordingSettings(next);
@@ -1208,10 +1214,13 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     setMicrophones(await listMicrophones());
   };
 
-  const handleStartRecording = async () => {
+  const handleStartRecording = async ({ newTrack = false }: { newTrack?: boolean } = {}) => {
     if (isRecording) {
       return;
     }
+
+    const targetId =
+      !newTrack && effectiveRecordingSettings.target === 'track' ? (activeTrackRef.current?.id ?? null) : null;
 
     const player = getPlayer();
     player.pause();
@@ -1225,6 +1234,8 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     recordingPausedRef.current = false;
     recordingAccumulatedRef.current = 0;
     recordingInsertTimeRef.current = Math.max(0, playheadRef.current);
+    recordingTargetRef.current = targetId;
+    setRecordingTargetId(targetId);
     inputPeaksRef.current = [];
     livePeaksRef.current = [];
 
@@ -1337,14 +1348,37 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       stopRecordingStream();
       const nextBuffer = await decodeAudioBlobToBuffer(recording.file);
       const insertTime = recordingInsertTimeRef.current;
-      const nextTrack = createProjectTrack(recording.file.name, nextBuffer, 'recording', insertTime);
+      const quality = copy.recorder.quality(recording.info.sampleRate, recording.info.channels);
+      const target = tracksRef.current.find((track) => track.id === recordingTargetRef.current) ?? null;
 
       setRecordingDuration(recording.duration);
-      commitTracks(copy.commands.recordTake, [...tracksRef.current, nextTrack], {
-        activeTrackId: nextTrack.id,
-        playhead: insertTime + recording.duration,
-        status: `${copy.recording.ready(recording.file.name)} · ${copy.recorder.quality(recording.info.sampleRate, recording.info.channels)}`,
-      });
+      if (target) {
+        // Over the selected track from where recording started; the playhead
+        // lands at the end so the next take continues from there.
+        const merged = overwriteAudioAt(target.buffer, target.startTime, nextBuffer, insertTime);
+        const updated: AudioProjectTrack = {
+          ...target,
+          buffer: merged.buffer,
+          startTime: merged.startTime,
+          ...(target.source === 'empty' ? { source: 'recording' as const, name: recording.file.name } : {}),
+        };
+        commitTracks(
+          copy.commands.recordTake,
+          tracksRef.current.map((track) => (track.id === target.id ? updated : track)),
+          {
+            activeTrackId: target.id,
+            playhead: insertTime + recording.duration,
+            status: `${copy.recorder.recordedInto(getVisibleTrackName(updated, locale) ?? recording.file.name)} · ${quality}`,
+          },
+        );
+      } else {
+        const nextTrack = createProjectTrack(recording.file.name, nextBuffer, 'recording', insertTime);
+        commitTracks(copy.commands.recordTake, [...tracksRef.current, nextTrack], {
+          activeTrackId: nextTrack.id,
+          playhead: insertTime + recording.duration,
+          status: `${copy.recording.ready(recording.file.name)} · ${quality}`,
+        });
+      }
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : copy.recording.startError);
     } finally {
@@ -1353,6 +1387,8 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       recordingPausedRef.current = false;
       recordingAccumulatedRef.current = 0;
       recordingInsertTimeRef.current = 0;
+      recordingTargetRef.current = null;
+      setRecordingTargetId(null);
       inputPeaksRef.current = [];
       livePeaksRef.current = [];
       setRecordingInfo(null);
@@ -1375,13 +1411,13 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     void handlePauseRecording();
   };
 
-  const handleRecordToggle = () => {
+  const handleRecordToggle = (newTrack = false) => {
     if (isRecording) {
       void handleStopRecording();
       return;
     }
 
-    void handleStartRecording();
+    void handleStartRecording({ newTrack });
   };
 
   const handleResetProject = () => {
@@ -1390,6 +1426,8 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     stopRecordingStream();
     releaseWakeLock();
     setRecordingInfo(null);
+    recordingTargetRef.current = null;
+    setRecordingTargetId(null);
 
     const recordingSession = recordingSessionRef.current;
     if (recordingSession) {
@@ -1524,9 +1562,10 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       return;
     }
 
+    // R records where the settings say; Shift+R always starts a new track.
     if (!primaryModifier && key === 'r') {
       event.preventDefault();
-      handleRecordToggle();
+      handleRecordToggle(event.shiftKey);
       return;
     }
 
@@ -1579,6 +1618,22 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const effectsTarget = selection
     ? copy.studio.effectsTargetSelection(formatTime(selection.start), formatTime(selection.end))
     : copy.studio.effectsTargetTrack(activeTrackName ?? copy.studio.untitled);
+  // Where the next take goes, said before pressing record.
+  const recordHint = (() => {
+    if (isRecording || tracks.length === 0) {
+      return null;
+    }
+    if (effectiveRecordingSettings.target === 'new' || !activeTrack) {
+      return copy.recorder.hintNewTrack;
+    }
+    const name = activeTrackName ?? copy.studio.untitled;
+    if (!activeTrack.buffer) {
+      return copy.recorder.hintEmptyTrack(name);
+    }
+    return playhead >= activeClipEnd - 0.01
+      ? copy.recorder.hintContinue(name)
+      : copy.recorder.hintOverwrite(name, formatTime(Math.max(playhead, activeClipStart)));
+  })();
   const transportStatus =
     isRecording && recordingInfo
       ? `${statusMessage ?? ''}${statusMessage ? ' · ' : ''}${copy.recorder.quality(recordingInfo.sampleRate, recordingInfo.channels)}`
@@ -1588,7 +1643,8 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       settings={effectiveRecordingSettings}
       onChange={updateRecordingSettings}
       microphones={microphones}
-      deviceSupported={deviceSupported}
+      deviceSupport={deviceSupport}
+      showTarget={tracks.length > 0}
     />
   );
   const banners = [
@@ -1732,6 +1788,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
                       elapsed: recordingDuration,
                       peaks: livePeaksRef.current,
                       peakInterval: recordingInfo?.levelInterval,
+                      targetTrackId: recordingTargetId,
                     }
                   : null
               }
@@ -1803,7 +1860,8 @@ export function AudioEditor({ mode }: AudioEditorProps) {
               onSeekToStart={() => seekTo(0)}
               onSeekToEnd={() => seekTo(projectDuration)}
               onToggleLoop={() => setLoopEnabled((currentValue) => !currentValue)}
-              onRecordToggle={handleRecordToggle}
+              onRecordToggle={() => handleRecordToggle()}
+              recordHint={recordHint}
               onRecordPauseResume={handleRecordPauseResume}
             />
           </div>
