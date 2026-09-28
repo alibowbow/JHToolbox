@@ -198,6 +198,7 @@ const koOptionLabelsByLabel: Record<string, string> = {
   'Image format': '이미지 형식',
   'Quality (JPG/WEBP)': '품질 (JPG/WEBP)',
   'Keep aspect ratio (fit inside)': '비율 유지 (크기 안에 맞춤)',
+  'Only shrink (never enlarge)': '줄이기만 (작은 사진은 그대로)',
   FPS: 'FPS',
   'CRF (lower = better quality)': 'CRF (낮을수록 고화질)',
   'Rows per file': '파일당 행 수',

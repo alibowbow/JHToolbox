@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { tiledWatermarkCenters } from '@/lib/watermark-tiling';
 
 type Options = Record<string, string | number | boolean>;
 type Size = { width: number; height: number; scale: number };
@@ -148,18 +149,11 @@ export function WatermarkPreview({
   );
 
   if (position === 'tile') {
-    // Same spacing rule as the processor, in screen pixels.
+    // The processor's tiling, in screen pixels (its y axis points up).
     const stampWidth = isImage ? imageWidth : text.length * fontPx * 0.6;
     const stampHeight = isImage ? imageWidth * 0.5 : fontPx * 1.3;
-    const stepX = Math.max(stampWidth * 1.4, 120 * page.scale);
-    const stepY = Math.max(stampHeight * 3, 120 * page.scale);
-    const copies = [];
-    for (let row = 0, y = stepY / 2; y < page.height + stepY / 2; row += 1, y += stepY) {
-      for (let x = row % 2 === 0 ? stepX / 2 : stepX; x < page.width + stepX / 2; x += stepX) {
-        copies.push(at(x, page.height - y, `${row}-${x}`));
-      }
-    }
-    return <>{copies}</>;
+    const centers = tiledWatermarkCenters(page.width, page.height, stampWidth, stampHeight, rotation, 120 * page.scale);
+    return <>{centers.map((center, index) => at(center.x, page.height - center.y, index))}</>;
   }
   if (position === 'bottom-right') {
     const offset = 24 * page.scale;

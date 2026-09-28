@@ -645,6 +645,13 @@ export const tools: ToolDefinition[] = [
       { key: 'height', label: 'Height', type: 'number', defaultValue: 720, min: 16 },
       { key: 'keepAspect', label: 'Keep aspect ratio (fit inside)', type: 'checkbox', defaultValue: true },
       {
+        key: 'shrinkOnly',
+        label: 'Only shrink (never enlarge)',
+        type: 'checkbox',
+        defaultValue: false,
+        showWhen: { key: 'keepAspect', equals: [true] },
+      },
+      {
         key: 'format',
         label: 'Output format',
         type: 'select',

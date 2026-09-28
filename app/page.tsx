@@ -5,6 +5,8 @@ import { motion } from 'framer-motion';
 import { ArrowRight, Cpu, Search, ShieldCheck, Workflow } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { ToolCard } from '@/components/tool-card';
+import { PresetCard } from '@/components/pipeline/preset-card';
+import { getPipelinePreset, type PipelinePreset } from '@/lib/pipeline/presets';
 import { useLocale } from '@/components/providers/locale-provider';
 import { formatToolCount, getCategoryCopy } from '@/lib/i18n';
 import { openToolSearch } from '@/lib/search-events';
@@ -16,6 +18,12 @@ import { ToolDefinition } from '@/types/tool';
 function isToolDefinition(tool: ToolDefinition | undefined): tool is ToolDefinition {
   return Boolean(tool);
 }
+
+// The presets shown on the home page; all of them are on /pipeline.
+const FEATURED_PRESET_IDS = ['id-copy', 'pdfs-for-email', 'paper-photos-to-pdf', 'photos-for-posting'];
+const featuredPresets = FEATURED_PRESET_IDS.map((id) => getPipelinePreset(id)).filter(
+  (preset): preset is PipelinePreset => preset !== null,
+);
 
 const reveal = {
   initial: { opacity: 0, y: 8 },
@@ -171,6 +179,33 @@ export default function HomePage() {
             ))}
           </div>
         )}
+      </section>
+
+      <section aria-labelledby="home-presets" className="space-y-5">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <h2 id="home-presets" className="section-title">
+              {messages.home.presetsTitle}
+            </h2>
+            <p className="mt-1 text-sm text-ink-muted">{messages.home.presetsDescription}</p>
+          </div>
+          <Link href="/pipeline" className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-prime hover:underline">
+            {messages.pipeline.morePresets}
+            <ArrowRight size={14} aria-hidden="true" />
+          </Link>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {featuredPresets.map((preset) => (
+            <PresetCard
+              key={preset.id}
+              preset={preset}
+              locale={locale}
+              inputLabel={messages.pipeline.presetInput}
+              compact
+              href={`/pipeline?preset=${preset.id}`}
+            />
+          ))}
+        </div>
       </section>
 
       <section aria-labelledby="home-why" className="space-y-5">
