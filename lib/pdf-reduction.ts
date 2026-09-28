@@ -50,8 +50,9 @@ export function resolveReduceMode(value: unknown): ReduceMode {
 }
 
 /**
- * Cap on an embedded image's longest pixel edge for the "keep text" mode,
- * derived from the chosen DPI (~11-inch long edge). Images bigger than this are
+ * Cap on an embedded image's longest pixel edge for the "keep text" mode (and
+ * on a re-rendered page's in the "flatten" mode), derived from the chosen DPI
+ * (~11-inch long edge). Images bigger than this are
  * downscaled before recompression; smaller images keep their pixel dimensions.
  */
 export function dpiToMaxImageDimension(dpi: number): number {
@@ -59,6 +60,22 @@ export function dpiToMaxImageDimension(dpi: number): number {
     ? Math.round(Number(dpi))
     : DEFAULT_REDUCE_DPI;
   return Math.round(safe * 11);
+}
+
+/**
+ * pdf.js scale for re-rendering a page in the "flatten" mode. The DPI is meant
+ * for paper, so a page is never rendered past the DPI's ~11-inch long edge (the
+ * same cap as images in the "keep text" mode). A PDF made from photos has one
+ * point per pixel and pages several feet long; without the cap its pixels
+ * would be enlarged and the "reduced" file would grow.
+ */
+export function flattenRenderScale(dpi: number, pageWidth: number, pageHeight: number): number {
+  const scale = dpiToScale(resolveReduceDpi(dpi));
+  const longest = Math.max(pageWidth, pageHeight);
+  if (!Number.isFinite(longest) || longest <= 0) {
+    return scale;
+  }
+  return Math.min(scale, dpiToMaxImageDimension(dpi) / longest);
 }
 
 /** Shrink (never enlarge) to fit the longest edge within maxDimension, preserving aspect. */

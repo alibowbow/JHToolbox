@@ -136,6 +136,103 @@ test('pipeline rearrange refuses page numbers the PDF does not have', async ({ p
   expect((await PDFDocument.load(result.bytes)).getPageCount()).toBe(3);
 });
 
+test('a ready-made job runs from its own view', async ({ page }) => {
+  await page.goto('/pipeline');
+  await expect(page.locator('[data-testid="pipeline-builder"][data-ready="true"]')).toBeVisible({ timeout: 60_000 });
+
+  await page.getByTestId('pipeline-preset-submission-pdf').click();
+  const task = page.getByTestId('pipeline-task');
+  await expect(task.getByRole('heading', { name: 'One submission PDF with page numbers' })).toBeVisible();
+  // Only the job is left on the page: the builder steps aside.
+  await expect(page.getByRole('heading', { name: 'Build your own' })).toHaveCount(0);
+  await expect(task.getByLabel('First page number')).toHaveValue('1');
+
+  const pdf = readFileSync(samplePdfPath);
+  await task.locator('input[type="file"]').setInputFiles([
+    { name: 'part-1.pdf', mimeType: 'application/pdf', buffer: pdf },
+    { name: 'part-2.pdf', mimeType: 'application/pdf', buffer: pdf },
+  ]);
+  await page.getByTestId('pipeline-run').click();
+
+  const result = await downloadFirstResult(page);
+  expect(result.name).toBe('merged-numbered.pdf');
+  const { PDFDocument } = await import('pdf-lib');
+  expect((await PDFDocument.load(result.bytes)).getPageCount()).toBe(6);
+
+  await page.getByRole('button', { name: 'All jobs' }).click();
+  await expect(page.getByTestId('pipeline-task')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Build your own' })).toBeVisible();
+});
+
+test('photos ready to post: only large photos shrink, all become JPG', async ({ page }) => {
+  await page.goto('/pipeline?preset=photos-for-posting');
+  await expect(page.locator('[data-testid="pipeline-builder"][data-ready="true"]')).toBeVisible({ timeout: 60_000 });
+  const task = page.getByTestId('pipeline-task');
+  const longest = task.getByLabel('Longest side (px)');
+  await expect(longest).toHaveValue('1920');
+  await longest.fill('1200');
+
+  const png = async (width: number, height: number) =>
+    Buffer.from(
+      await page.evaluate(
+        ({ w, h }) => {
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const context = canvas.getContext('2d')!;
+          context.fillStyle = 'rgb(40, 120, 200)';
+          context.fillRect(0, 0, w, h);
+          return canvas.toDataURL('image/png').split(',')[1];
+        },
+        { w: width, h: height },
+      ),
+      'base64',
+    );
+  await task.locator('input[type="file"]').setInputFiles([
+    { name: 'wide.png', mimeType: 'image/png', buffer: await png(3000, 1000) },
+    { name: 'small.png', mimeType: 'image/png', buffer: await png(800, 600) },
+  ]);
+  await page.getByTestId('pipeline-run').click();
+
+  const downloads = page.getByRole('button', { name: 'Download', exact: true });
+  await expect(downloads).toHaveCount(2, { timeout: 30_000 });
+  const sizes: number[][] = [];
+  for (const index of [0, 1]) {
+    const downloadPromise = page.waitForEvent('download');
+    await downloads.nth(index).click();
+    const bytes = readFileSync((await (await downloadPromise).path())!);
+    expect([bytes[0], bytes[1]]).toEqual([0xff, 0xd8]); // JPEG
+    sizes.push(
+      await page.evaluate(async (base64) => {
+        const data = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+        const bitmap = await createImageBitmap(new Blob([data], { type: 'image/jpeg' }));
+        return [bitmap.width, bitmap.height];
+      }, bytes.toString('base64')),
+    );
+  }
+  expect(sizes).toEqual([
+    [1200, 400],
+    [800, 600],
+  ]);
+
+  // Editing the steps carries the job, with what was set, into the builder.
+  await page.getByRole('button', { name: 'Edit the steps' }).click();
+  await expect(page.getByTestId('pipeline-task')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Resize Image' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Compress Image' })).toBeVisible();
+  await expect(page.getByLabel('Width', { exact: true })).toHaveValue('1200');
+  await expect(page.getByLabel('Height', { exact: true })).toHaveValue('1200');
+});
+
+test('a job on the home page opens ready to use', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('pipeline-preset-id-copy').click();
+  await expect(page).toHaveURL(/\/pipeline\?preset=id-copy$/);
+  const task = page.getByTestId('pipeline-task');
+  await expect(task.getByRole('heading', { name: 'ID or bankbook copy for submission' })).toBeVisible({ timeout: 60_000 });
+  await expect(task.getByLabel(/Watermark text/)).toHaveValue('COPY · for submission only');
+});
+
 test('pdf-delete-page understands page ranges', async ({ page }) => {
   await page.goto('/tools/pdf/pdf-delete-page');
   await page.locator('input[type="file"]').setInputFiles(samplePdfPath);

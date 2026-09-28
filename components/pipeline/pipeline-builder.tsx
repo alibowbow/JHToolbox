@@ -2,17 +2,35 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import JSZip from 'jszip';
-import { ArrowDown, ArrowUp, CircleStop, Download, LoaderCircle, Play, Plus, Save, Trash2, Workflow, X } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  ChevronRight,
+  CircleStop,
+  Download,
+  LoaderCircle,
+  Play,
+  Plus,
+  Save,
+  SlidersHorizontal,
+  Trash2,
+  Workflow,
+  X,
+} from 'lucide-react';
 import { DropZone } from '@/components/ui/DropZone';
 import { ProgressBar } from '@/components/ui/ProgressBar';
-import { toast } from '@/components/ui/Toast';
 import { useLocale } from '@/components/providers/locale-provider';
 import { runTool } from '@/lib/processors';
 import { runPipeline } from '@/lib/pipeline/engine';
 import { localizeErrorMessage, localizeStage } from '@/lib/error-messages';
 import { deletePipeline, listPipelines, savePipeline } from '@/lib/pipeline/storage';
+import { PIPELINE_PRESETS, getPipelinePreset, type PipelinePreset } from '@/lib/pipeline/presets';
+import { PresetCard, presetIcon } from '@/components/pipeline/preset-card';
 import type { Pipeline, PipelineProgress, PipelineRunResult } from '@/lib/pipeline/types';
 import { getBrowsableTools, getToolById } from '@/lib/tool-registry';
+import { getToolIcon } from '@/lib/tool-icons';
+import { categoryStyles } from '@/lib/tool-presentation';
 import { getCategoryCopy, formatMegaBytes } from '@/lib/i18n';
 import {
   getLocalizedChoiceLabel,
@@ -55,16 +73,21 @@ function StepOptionField({
   value,
   locale,
   disabled,
+  idPrefix,
+  label: labelOverride,
   onChange,
 }: {
   option: ToolOption;
   value: string | number | boolean | undefined;
   locale: 'en' | 'ko';
   disabled: boolean;
+  /** Keeps ids unique when two steps share an option key. */
+  idPrefix: string;
+  label?: string;
   onChange: (value: string | number | boolean) => void;
 }) {
-  const label = getLocalizedOptionLabel(option, locale);
-  const id = `pipe-opt-${option.key}`;
+  const label = labelOverride ?? getLocalizedOptionLabel(option, locale);
+  const id = `${idPrefix}-${option.key}`;
   const base = 'input-surface mt-1 w-full text-sm';
 
   let control: JSX.Element;
@@ -123,6 +146,28 @@ function StepOptionField({
   );
 }
 
+/** The steps of a pipeline as a row of numbered chips with tool icons. */
+function StepChips({ toolIds, locale }: { toolIds: string[]; locale: 'en' | 'ko' }) {
+  return (
+    <ol className="flex flex-wrap items-center gap-1.5" aria-label={locale === 'ko' ? '단계' : 'Steps'}>
+      {toolIds.map((toolId, index) => {
+        const tool = getToolById(toolId);
+        const Icon = getToolIcon(toolId, tool?.category ?? 'file');
+        return (
+          <li key={`${toolId}-${index}`} className="flex items-center gap-1.5">
+            {index > 0 ? <ChevronRight size={14} className="text-ink-faint" aria-hidden="true" /> : null}
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-base-elevated px-2.5 py-1 text-xs font-medium text-ink">
+              <span className="tabular-nums text-ink-faint">{index + 1}</span>
+              <Icon size={13} aria-hidden="true" className="text-ink-muted" />
+              {tool ? getLocalizedToolCopy(tool, locale).name : toolId}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 export function PipelineBuilder() {
   const { locale, messages } = useLocale();
   const t = messages.pipeline;
@@ -134,13 +179,22 @@ export function PipelineBuilder() {
   const [result, setResult] = useState<PipelineRunResult | null>(null);
   const [recipes, setRecipes] = useState<Pipeline[]>([]);
   const [recipeName, setRecipeName] = useState('');
+  // A chosen preset turns the page into that one job: files, a setting or
+  // two, run. Editing its steps hands it to the full builder below.
+  const [activePresetId, setActivePresetId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
   const uidRef = useRef(0);
+  // Whether a setting of the open preset was changed by hand.
+  const presetEditedRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  const topRef = useRef<HTMLDivElement | null>(null);
+  const builderRef = useRef<HTMLElement | null>(null);
 
   const tools = useMemo(pipelineTools, []);
+  const activePreset = getPipelinePreset(activePresetId);
 
   const refreshRecipes = () => setRecipes(listPipelines());
-  useEffect(refreshRecipes, []);
 
   // Release the previous run's output object URLs when the result changes or
   // the page unmounts (downloads use the blob directly, so this is safe).
@@ -159,15 +213,78 @@ export function PipelineBuilder() {
     return `s${uidRef.current}`;
   };
 
+  const clearRun = () => {
+    setResult(null);
+    setProgress(null);
+    setNotice(null);
+  };
+
+  const presetSteps = (preset: PipelinePreset, language: 'en' | 'ko'): Step[] =>
+    preset.steps(language).map((step) => ({
+      uid: nextUid(),
+      toolId: step.toolId,
+      // Re-checked against each tool's current options.
+      options: normalizeToolOptions(getToolById(step.toolId)?.options ?? [], step.options),
+    }));
+
+  const openPreset = (preset: PipelinePreset) => {
+    setSteps(presetSteps(preset, locale));
+    setRecipeName(preset.name[locale]);
+    setActivePresetId(preset.id);
+    presetEditedRef.current = false;
+    clearRun();
+    topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  // Some presets write words into the file (a watermark). A preset opened
+  // from the address is built before the saved language is known, so an
+  // untouched preset is rebuilt in the language the page ends up in.
+  useEffect(() => {
+    if (!activePreset || presetEditedRef.current) return;
+    setSteps(presetSteps(activePreset, locale));
+    setRecipeName(activePreset.name[locale]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on a language change
+  }, [locale]);
+
+  const closePreset = () => {
+    setActivePresetId(null);
+    setSteps([]);
+    setRecipeName('');
+    clearRun();
+  };
+
+  // Keep the preset's steps and continue in the full builder.
+  const editPresetSteps = () => {
+    setActivePresetId(null);
+    clearRun();
+    window.setTimeout(() => builderRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+  };
+
+  useEffect(() => {
+    refreshRecipes();
+    setHydrated(true);
+    // /pipeline?preset=<id> opens that job directly.
+    const preset = getPipelinePreset(new URLSearchParams(window.location.search).get('preset'));
+    if (preset) {
+      openPreset(preset);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, from the address
+  }, []);
+
   const addStep = (toolId: string) => {
     const tool = getToolById(toolId);
     if (!tool) return;
     setSteps((current) => [...current, { uid: nextUid(), toolId, options: defaultsFor(tool) }]);
-    setResult(null);
+    clearRun();
   };
 
-  const updateOption = (index: number, key: string, value: string | number | boolean) => {
-    setSteps((current) => current.map((step, i) => (i === index ? { ...step, options: { ...step.options, [key]: value } } : step)));
+  const updateOption = (index: number, keys: string[], value: string | number | boolean) => {
+    presetEditedRef.current = true;
+    setSteps((current) =>
+      current.map((step, i) =>
+        i === index ? { ...step, options: { ...step.options, ...Object.fromEntries(keys.map((key) => [key, value])) } } : step,
+      ),
+    );
     setResult(null);
   };
 
@@ -179,28 +296,27 @@ export function PipelineBuilder() {
       [next[index], next[target]] = [next[target], next[index]];
       return next;
     });
-    setResult(null);
+    clearRun();
   };
 
   const removeStep = (index: number) => {
     setSteps((current) => current.filter((_, i) => i !== index));
-    setResult(null);
+    clearRun();
   };
 
   const onRun = async () => {
     if (!steps.length) {
-      toast.error(t.addStepsFirst);
+      setNotice(t.addStepsFirst);
       return;
     }
     if (toolNeedsFiles(steps[0]?.toolId) && !files.length) {
-      toast.error(t.addFilesFirst);
+      setNotice(t.addFilesFirst);
       return;
     }
     const controller = new AbortController();
     abortRef.current = controller;
     setRunning(true);
-    setResult(null);
-    setProgress(null);
+    clearRun();
     try {
       const outcome = await runPipeline({
         steps: steps.map((step) => ({ toolId: step.toolId, options: step.options })),
@@ -212,7 +328,7 @@ export function PipelineBuilder() {
       });
       setResult(outcome);
     } catch (cause) {
-      toast.error(localizeErrorMessage(cause, locale));
+      setNotice(localizeErrorMessage(cause, locale));
     } finally {
       setRunning(false);
       abortRef.current = null;
@@ -226,11 +342,11 @@ export function PipelineBuilder() {
   const onSave = () => {
     const name = recipeName.trim();
     if (!name) {
-      toast.error(t.nameToast);
+      setNotice(t.nameToast);
       return;
     }
     if (!steps.length) {
-      toast.error(t.addStepsFirst);
+      setNotice(t.addStepsFirst);
       return;
     }
     savePipeline({
@@ -239,6 +355,7 @@ export function PipelineBuilder() {
       steps: steps.map((step) => ({ toolId: step.toolId, options: step.options })),
     });
     refreshRecipes();
+    setNotice(null);
   };
 
   const loadRecipe = (pipeline: Pipeline) => {
@@ -252,7 +369,8 @@ export function PipelineBuilder() {
       })),
     );
     setRecipeName(pipeline.name);
-    setResult(null);
+    setActivePresetId(null);
+    clearRun();
   };
 
   const onDeleteRecipe = (id: string) => {
@@ -276,36 +394,170 @@ export function PipelineBuilder() {
     return tool ? getLocalizedToolCopy(tool, locale).name : toolId;
   };
 
-  return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
-      <header className="flex items-start gap-4">
-        <span className="category-tile h-12 w-12 shrink-0 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 sm:h-14 sm:w-14">
-          <Workflow size={24} />
-        </span>
-        <div className="min-w-0 pt-0.5">
-          <h1 className="text-2xl font-bold tracking-tight text-ink sm:text-[1.75rem] sm:leading-tight">{t.title}</h1>
-          <p className="mt-1.5 max-w-2xl text-[15px] leading-relaxed text-ink-muted">{t.subtitle}</p>
-        </div>
-      </header>
+  // The drop zone takes only what the first step can open.
+  const firstAccept = steps[0] ? getToolById(steps[0].toolId)?.accept : undefined;
+  const dropAccept = firstAccept && firstAccept !== '*' ? firstAccept : undefined;
+  const onFilesChange = (next: File[]) => {
+    setFiles(next);
+    clearRun();
+  };
 
-      <section className="workspace-panel space-y-4 p-5 sm:p-6">
-        <h2 className="text-[15px] font-semibold text-ink">{t.inputFiles}</h2>
+  const runButtons = (
+    <div className="flex flex-wrap items-center gap-3">
+      <button type="button" disabled={running} onClick={onRun} className="btn-primary" data-testid="pipeline-run">
+        {running ? <LoaderCircle size={18} className="animate-spin" /> : <Play size={18} />}
+        {running ? t.running : t.run}
+      </button>
+      {running ? (
+        <button type="button" onClick={onCancel} className="btn-ghost border-danger/30 text-danger">
+          <CircleStop size={16} />
+          {t.cancel}
+        </button>
+      ) : null}
+    </div>
+  );
+  const noticeLine = notice ? (
+    <p role="alert" className="text-sm font-medium text-warn">
+      {notice}
+    </p>
+  ) : null;
+
+  const taskView = activePreset ? (
+    <section className="workspace-panel p-5 sm:p-6" data-testid="pipeline-task" aria-labelledby="pipeline-task-title">
+      <button type="button" onClick={closePreset} disabled={running} className="btn-ghost -ml-1 h-8 px-2 text-xs">
+        <ArrowLeft size={14} aria-hidden="true" />
+        {t.allTasks}
+      </button>
+
+      <div className="mt-4 flex items-start gap-3">
+        {(() => {
+          const Icon = presetIcon(activePreset);
+          const style = categoryStyles[activePreset.category];
+          return (
+            <span className={cx('category-tile h-11 w-11 shrink-0', style.iconBg, style.icon)}>
+              <Icon size={21} aria-hidden="true" />
+            </span>
+          );
+        })()}
+        <div className="min-w-0">
+          <h2 id="pipeline-task-title" className="text-lg font-semibold text-ink">
+            {activePreset.name[locale]}
+          </h2>
+          <p className="mt-1 text-sm leading-relaxed text-ink-muted">{activePreset.description[locale]}</p>
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <StepChips toolIds={steps.map((step) => step.toolId)} locale={locale} />
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_17rem]">
+        <div className="min-w-0 space-y-2">
+          <p className="text-sm font-semibold text-ink">
+            <span className="mr-1.5 tabular-nums text-prime">1</span>
+            {t.taskFiles}
+            <span className="ml-2 font-normal text-ink-muted">{activePreset.input[locale]}</span>
+          </p>
+          <DropZone
+            files={files}
+            onFiles={onFilesChange}
+            accept={dropAccept}
+            multiple
+            reorderable
+            disabled={running}
+            label={messages.workbench.dropzone}
+          />
+        </div>
+
+        <div className="space-y-3">
+          <p className="text-sm font-semibold text-ink">
+            <span className="mr-1.5 tabular-nums text-prime">2</span>
+            {t.keySettings}
+          </p>
+          {activePreset.keyOptions?.length ? (
+            activePreset.keyOptions.map((keyOption) => {
+              const owner = steps[keyOption.step];
+              const option = owner ? getToolById(owner.toolId)?.options?.find((entry) => entry.key === keyOption.key) : undefined;
+              if (!owner || !option) return null;
+              return (
+                <StepOptionField
+                  key={`${keyOption.step}-${keyOption.key}`}
+                  option={option}
+                  value={owner.options[keyOption.key]}
+                  locale={locale}
+                  disabled={running}
+                  idPrefix={`preset-${owner.uid}`}
+                  label={keyOption.label?.[locale]}
+                  onChange={(value) => updateOption(keyOption.step, [keyOption.key, ...(keyOption.alsoSet ?? [])], value)}
+                />
+              );
+            })
+          ) : (
+            <p className="text-sm text-ink-muted">{t.noKeySettings}</p>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-border pt-5">
+        {runButtons}
+        <button type="button" onClick={editPresetSteps} disabled={running} className="btn-ghost">
+          <SlidersHorizontal size={16} aria-hidden="true" />
+          {t.editSteps}
+        </button>
+        {noticeLine}
+      </div>
+    </section>
+  ) : null;
+
+  const presetsGrid = (
+    <section className="space-y-4" aria-labelledby="pipeline-presets-title">
+      <div>
+        <h2 id="pipeline-presets-title" className="section-title">
+          {t.presets}
+        </h2>
+        <p className="mt-1 text-sm text-ink-muted">{t.presetsHint}</p>
+      </div>
+      <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="pipeline-presets">
+        {PIPELINE_PRESETS.map((preset) => (
+          <li key={preset.id}>
+            <PresetCard
+              preset={preset}
+              locale={locale}
+              inputLabel={t.presetInput}
+              disabled={running}
+              onUse={() => openPreset(preset)}
+            />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+
+  const builder = (
+    <section ref={builderRef} className="workspace-panel scroll-mt-20 space-y-5 p-5 sm:p-6" aria-labelledby="pipeline-custom-title">
+      <div>
+        <h2 id="pipeline-custom-title" className="text-[15px] font-semibold text-ink">
+          {t.customTitle}
+        </h2>
+        <p className="mt-1 text-sm text-ink-muted">{t.customHint}</p>
+      </div>
+
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold text-ink">{t.inputFiles}</h3>
         <DropZone
           files={files}
-          onFiles={(next) => {
-            setFiles(next);
-            setResult(null);
-            setProgress(null);
-          }}
+          onFiles={onFilesChange}
+          accept={dropAccept}
           multiple
+          reorderable
           disabled={running}
           label={messages.workbench.dropzone}
         />
-      </section>
+      </div>
 
-      <section className="workspace-panel space-y-4 p-5 sm:p-6">
+      <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-[15px] font-semibold text-ink">{t.steps}</h2>
+          <h3 className="text-sm font-semibold text-ink">{t.steps}</h3>
           <div className="flex items-center gap-2">
             <Plus size={16} className="text-ink-faint" />
             <select
@@ -351,7 +603,7 @@ export function PipelineBuilder() {
                       <span className="flex h-7 w-7 items-center justify-center rounded-full bg-prime/10 text-xs font-semibold text-prime">
                         {index + 1}
                       </span>
-                      <h3 className="text-sm font-semibold text-ink">{toolName(step.toolId)}</h3>
+                      <h4 className="text-sm font-semibold text-ink">{toolName(step.toolId)}</h4>
                     </div>
                     <div className="flex items-center gap-1">
                       <button type="button" aria-label={t.moveUp} disabled={running || index === 0} onClick={() => moveStep(index, -1)} className="rounded-lg border border-border p-1.5 text-ink-muted hover:border-border-bright disabled:opacity-40">
@@ -375,7 +627,8 @@ export function PipelineBuilder() {
                           value={step.options[option.key]}
                           locale={locale}
                           disabled={running}
-                          onChange={(value) => updateOption(index, option.key, value)}
+                          idPrefix={`step-${step.uid}`}
+                          onChange={(value) => updateOption(index, [option.key], value)}
                         />
                       ))}
                     </div>
@@ -385,33 +638,47 @@ export function PipelineBuilder() {
             })}
           </ol>
         )}
+      </div>
 
-        <div className="flex flex-wrap items-center gap-3 pt-1">
-          <button type="button" disabled={running} onClick={onRun} className="btn-primary">
-            {running ? <LoaderCircle size={18} className="animate-spin" /> : <Play size={18} />}
-            {running ? t.running : t.run}
+      <div className="flex flex-wrap items-center gap-3 border-t border-border pt-5">
+        {runButtons}
+        <div className="flex items-center gap-2">
+          <input
+            value={recipeName}
+            disabled={running}
+            onChange={(e) => setRecipeName(e.target.value)}
+            placeholder={t.namePlaceholder}
+            aria-label={t.namePlaceholder}
+            className="input-surface text-sm"
+          />
+          <button type="button" disabled={running} onClick={onSave} className="btn-ghost">
+            <Save size={16} />
+            {t.save}
           </button>
-          {running ? (
-            <button type="button" onClick={onCancel} className="btn-ghost border-danger/30 text-danger">
-              <CircleStop size={16} />
-              {t.cancel}
-            </button>
-          ) : null}
-          <div className="flex items-center gap-2">
-            <input
-              value={recipeName}
-              disabled={running}
-              onChange={(e) => setRecipeName(e.target.value)}
-              placeholder={t.namePlaceholder}
-              className="input-surface text-sm"
-            />
-            <button type="button" disabled={running} onClick={onSave} className="btn-ghost">
-              <Save size={16} />
-              {t.save}
-            </button>
-          </div>
         </div>
-      </section>
+        {noticeLine}
+      </div>
+    </section>
+  );
+
+  return (
+    <div
+      ref={topRef}
+      className="mx-auto flex w-full max-w-5xl scroll-mt-20 flex-col gap-6"
+      data-testid="pipeline-builder"
+      data-ready={hydrated ? 'true' : undefined}
+    >
+      <header className="flex items-start gap-4">
+        <span className="category-tile h-12 w-12 shrink-0 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 sm:h-14 sm:w-14">
+          <Workflow size={24} />
+        </span>
+        <div className="min-w-0 pt-0.5">
+          <h1 className="text-2xl font-bold tracking-tight text-ink sm:text-[1.75rem] sm:leading-tight">{t.title}</h1>
+          <p className="mt-1.5 max-w-2xl text-[15px] leading-relaxed text-ink-muted">{t.subtitle}</p>
+        </div>
+      </header>
+
+      {taskView ?? presetsGrid}
 
       {running || progress ? (
         <section className="workspace-panel p-5 sm:p-6">
@@ -429,7 +696,7 @@ export function PipelineBuilder() {
         <section className="workspace-panel space-y-4 p-5 sm:p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-[15px] font-semibold text-ink">{t.result}</h2>
-            {result.ok && result.finalFiles.length ? (
+            {result.ok && result.finalFiles.length > 1 ? (
               <button type="button" onClick={() => onDownloadAll(result.finalFiles)} className="btn-ghost">
                 <Download size={16} />
                 {messages.workbench.downloadAll}
@@ -477,31 +744,37 @@ export function PipelineBuilder() {
         </section>
       ) : null}
 
-      <section className="workspace-panel space-y-3 p-5 sm:p-6">
-        <h2 className="text-[15px] font-semibold text-ink">{t.recipes}</h2>
-        {recipes.length === 0 ? (
-          <p className="text-sm text-ink-muted">{t.noRecipes}</p>
-        ) : (
-          <ul className="space-y-2">
-            {recipes.map((pipeline) => (
-              <li key={pipeline.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-base-subtle/70 px-3 py-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-ink">{pipeline.name}</p>
-                  <p className="truncate text-xs text-ink-muted">{pipeline.steps.map((step) => toolName(step.toolId)).join(' → ') || '—'}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button type="button" disabled={running} onClick={() => loadRecipe(pipeline)} className="btn-ghost px-3 py-1.5 text-xs disabled:opacity-40">
-                    {t.load}
-                  </button>
-                  <button type="button" aria-label={t.delete} disabled={running} onClick={() => onDeleteRecipe(pipeline.id)} className="rounded-lg p-1.5 text-ink-faint hover:bg-danger/10 hover:text-danger disabled:opacity-40">
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {activePreset ? null : (
+        <>
+          {builder}
+
+          <section className="workspace-panel space-y-3 p-5 sm:p-6">
+            <h2 className="text-[15px] font-semibold text-ink">{t.recipes}</h2>
+            {recipes.length === 0 ? (
+              <p className="text-sm text-ink-muted">{t.noRecipes}</p>
+            ) : (
+              <ul className="space-y-2">
+                {recipes.map((pipeline) => (
+                  <li key={pipeline.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-base-subtle/70 px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-ink">{pipeline.name}</p>
+                      <p className="truncate text-xs text-ink-muted">{pipeline.steps.map((step) => toolName(step.toolId)).join(' → ') || '—'}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button type="button" disabled={running} onClick={() => loadRecipe(pipeline)} className="btn-ghost px-3 py-1.5 text-xs disabled:opacity-40">
+                        {t.load}
+                      </button>
+                      <button type="button" aria-label={t.delete} disabled={running} onClick={() => onDeleteRecipe(pipeline.id)} className="rounded-lg p-1.5 text-ink-faint hover:bg-danger/10 hover:text-danger disabled:opacity-40">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </>
+      )}
     </div>
   );
 }

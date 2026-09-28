@@ -75,14 +75,16 @@ async function resizeWithPica(
   width: number,
   height: number,
   mimeType: string,
-  { keepAspect = false, suffix = '' }: { keepAspect?: boolean; suffix?: string } = {},
+  { keepAspect = false, shrinkOnly = false, suffix = '' }: { keepAspect?: boolean; shrinkOnly?: boolean; suffix?: string } = {},
 ): Promise<ProcessedFile> {
   const bitmap = await toBitmap(file);
   const from = canvas(bitmap.width, bitmap.height);
   from.getContext('2d')!.drawImage(bitmap, 0, 0);
 
-  // Fit inside width × height without distorting the picture.
-  const fit = keepAspect ? Math.min(width / bitmap.width, height / bitmap.height) : 1;
+  // Fit inside width × height without distorting the picture; "shrink only"
+  // leaves pictures that already fit at their own size.
+  const scaleToFit = Math.min(width / bitmap.width, height / bitmap.height);
+  const fit = keepAspect ? (shrinkOnly ? Math.min(1, scaleToFit) : scaleToFit) : 1;
   const targetWidth = keepAspect ? Math.max(1, Math.round(bitmap.width * fit)) : width;
   const targetHeight = keepAspect ? Math.max(1, Math.round(bitmap.height * fit)) : height;
   const target = canvas(targetWidth, targetHeight);
@@ -327,11 +329,14 @@ export async function processImageTool(ctx: ProcessContext): Promise<ProcessedFi
     const width = parseNumber(options.width, 1280);
     const height = parseNumber(options.height, 720);
     const keepAspect = parseBoolean(options.keepAspect, true);
+    const shrinkOnly = parseBoolean(options.shrinkOnly, false);
 
     const output: ProcessedFile[] = [];
     for (let index = 0; index < files.length; index += 1) {
       onProgress({ percent: (index / files.length) * 100, stage: '리사이즈 처리 중' });
-      output.push(await resizeWithPica(files[index], width, height, getOutputMime(options, files[index]), { keepAspect }));
+      output.push(
+        await resizeWithPica(files[index], width, height, getOutputMime(options, files[index]), { keepAspect, shrinkOnly }),
+      );
     }
     return output;
   }

@@ -19,12 +19,13 @@ import {
 import {
   computeDownscaledSize,
   dpiToMaxImageDimension,
-  dpiToScale,
+  flattenRenderScale,
   resolveReduceDpi,
   resolveReduceMode,
   resolveReduceQuality,
   summarizePdfReduction,
 } from '@/lib/pdf-reduction';
+import { tiledWatermarkCenters } from '@/lib/watermark-tiling';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -357,7 +358,6 @@ async function reducePdfSize(
   const dpi = resolveReduceDpi(options.dpi);
   const quality = resolveReduceQuality(options.quality);
   const grayscale = parseBoolean(options.grayscale, false);
-  const scale = dpiToScale(dpi);
 
   const input = new Uint8Array(await file.arrayBuffer());
   const srcDoc = await openPdfDocument(input);
@@ -368,7 +368,7 @@ async function reducePdfSize(
       onProgress(((pageNo - 1) / srcDoc.numPages) * 90, `Re-rendering page ${pageNo} of ${srcDoc.numPages}`);
       const page = await srcDoc.getPage(pageNo);
       const baseViewport = page.getViewport({ scale: 1 });
-      const renderViewport = page.getViewport({ scale });
+      const renderViewport = page.getViewport({ scale: flattenRenderScale(dpi, baseViewport.width, baseViewport.height) });
 
       const canvas = document.createElement('canvas');
       canvas.width = Math.max(1, Math.ceil(renderViewport.width));
@@ -414,7 +414,9 @@ async function reducePdfSize(
   const reducedBlob = blobFromBytes(bytes, 'application/pdf');
   const { useReduced, savedPercent } = summarizePdfReduction(file.size, reducedBlob.size);
 
-  if (!useReduced) {
+  // Black and white was asked for, so the colour original is no answer even
+  // when the black-and-white pages come out larger.
+  if (!useReduced && !grayscale) {
     return {
       name: `${baseName(file.name)}.pdf`,
       blob: file,
@@ -1386,17 +1388,16 @@ async function createWatermarkTextPng(text: string, fontSize: number) {
 }
 
 /** Where watermark copies are centred on a page. */
-function watermarkCenters(position: string, pageWidth: number, pageHeight: number, stampWidth: number, stampHeight: number) {
+function watermarkCenters(
+  position: string,
+  pageWidth: number,
+  pageHeight: number,
+  stampWidth: number,
+  stampHeight: number,
+  rotation: number,
+) {
   if (position === 'tile') {
-    const stepX = Math.max(stampWidth * 1.4, 120);
-    const stepY = Math.max(stampHeight * 3, 120);
-    const centers: Array<{ x: number; y: number }> = [];
-    for (let row = 0, y = stepY / 2; y < pageHeight + stepY / 2; row += 1, y += stepY) {
-      for (let x = (row % 2 === 0 ? stepX / 2 : stepX); x < pageWidth + stepX / 2; x += stepX) {
-        centers.push({ x, y });
-      }
-    }
-    return centers;
+    return tiledWatermarkCenters(pageWidth, pageHeight, stampWidth, stampHeight, rotation);
   }
   if (position === 'bottom-right') {
     return [{ x: pageWidth - stampWidth / 2 - 24, y: stampHeight / 2 + 24 }];
@@ -2181,7 +2182,7 @@ export async function processPdfTool(ctx: ProcessContext): Promise<ProcessedFile
         const { width, height } = page.getSize();
         const stampWidth = embeddedWatermark ? Math.max(48, width * scale) : stamp.width / 2;
         const stampHeight = (stampWidth / stamp.width) * stamp.height;
-        for (const center of watermarkCenters(position, width, height, stampWidth, stampHeight)) {
+        for (const center of watermarkCenters(position, width, height, stampWidth, stampHeight, rotation)) {
           page.drawImage(stamp, {
             ...rotatedOrigin(center, stampWidth, stampHeight, rotation),
             width: stampWidth,

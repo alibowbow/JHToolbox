@@ -1062,6 +1062,30 @@ const presets: Record<string, MediaPreset> = {
   },
 };
 
+// What a result of the input's own type is called ("clip.mp4" → "clip-trimmed.mp4").
+const SAME_TYPE_SUFFIX: Record<string, string> = {
+  'mute-video': 'muted',
+  'video-compress': 'compressed',
+  'video-trim': 'trimmed',
+  'video-crop': 'cropped',
+  'video-resize': 'resized',
+  'gif-speed-change': 'speed',
+  'gif-reverse': 'reversed',
+  'audio-convert': 'converted',
+  'audio-cut': 'cut',
+};
+
+/**
+ * "lecture.webm" → "lecture.mp3". A result of the same type gets a suffix so
+ * it is not taken for the original, and chained steps do not pile up names.
+ */
+function mediaResultName(toolId: string, inputName: string, outputName: string) {
+  const ext = extOf(outputName) || 'bin';
+  return ext === extOf(inputName)
+    ? `${baseName(inputName)}-${SAME_TYPE_SUFFIX[toolId] ?? 'edited'}.${ext}`
+    : `${baseName(inputName)}.${ext}`;
+}
+
 export async function processMediaTool(ctx: ProcessContext): Promise<ProcessedFile[]> {
   const { toolId, files, options, onProgress } = ctx;
 
@@ -1144,7 +1168,7 @@ export async function processMediaTool(ctx: ProcessContext): Promise<ProcessedFi
         const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
 
         outputFiles.push({
-          name: `${baseName(file.name)}-${resolvedOutputName}`,
+          name: mediaResultName(toolId, file.name, resolvedOutputName),
           blob: blobFromBytes(bytes, mimeType),
           mimeType,
         });

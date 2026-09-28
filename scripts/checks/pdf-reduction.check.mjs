@@ -10,6 +10,7 @@ import {
   resolveReduceMode,
   dpiToMaxImageDimension,
   computeDownscaledSize,
+  flattenRenderScale,
 } from '../../lib/pdf-reduction.ts';
 
 let pass = 0;
@@ -69,6 +70,16 @@ check('landscape shrink', JSON.stringify(computeDownscaledSize(4000, 2000, 1650)
 check('portrait shrink', JSON.stringify(computeDownscaledSize(500, 4000, 1650)) === JSON.stringify({ width: 206, height: 1650 }));
 check('no cap', JSON.stringify(computeDownscaledSize(100, 100, 0)) === JSON.stringify({ width: 100, height: 100 }));
 check('degenerate -> 1x1', JSON.stringify(computeDownscaledSize(0, 0, 1650)) === JSON.stringify({ width: 1, height: 1 }));
+
+// flatten render scale: paper keeps its DPI, pixel-sized pages are not enlarged
+const near = (a, b) => Math.abs(a - b) < 1e-9;
+check('letter page at 150 dpi keeps 150 dpi', near(flattenRenderScale(150, 612, 792), 150 / 72));
+check('A5 page at 300 dpi keeps 300 dpi', near(flattenRenderScale(300, 420, 595), 300 / 72));
+check('A4 long edge capped at 1650 px', Math.round(842 * flattenRenderScale(150, 595, 842)) === 1650);
+check('phone-photo page (1080x2340 pt) not enlarged', 2340 * flattenRenderScale(150, 1080, 2340) <= 1650);
+check('landscape photo page capped on its width', Math.round(4032 * flattenRenderScale(200, 4032, 3024)) === 2200);
+check('bad dpi -> default 150', near(flattenRenderScale('abc', 612, 792), 150 / 72));
+check('degenerate page -> dpi scale', near(flattenRenderScale(150, 0, 0), 150 / 72));
 
 console.log(`\npdf-reduction: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
