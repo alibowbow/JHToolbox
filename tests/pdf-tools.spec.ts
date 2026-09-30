@@ -38,7 +38,7 @@ test('ocr pdf-to-text extracts text from the sample PDF', async ({ page }) => {
 
 async function downloadFirstResult(page: Page): Promise<{ name: string; bytes: Buffer }> {
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Download', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Download', exact: true }).or(page.getByRole('link', { name: 'Download', exact: true })).first().click();
   const download = await downloadPromise;
   return { name: download.suggestedFilename(), bytes: readFileSync((await download.path())!) };
 }
@@ -130,7 +130,7 @@ test('pipeline rearrange refuses page numbers the PDF does not have', async ({ p
 
   await order.fill('3~1');
   await page.getByRole('button', { name: 'Run pipeline' }).click();
-  await expect(page.getByRole('button', { name: 'Download', exact: true }).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('link', { name: 'Download', exact: true }).first()).toBeVisible({ timeout: 30_000 });
   const result = await downloadFirstResult(page);
   const { PDFDocument } = await import('pdf-lib');
   expect((await PDFDocument.load(result.bytes)).getPageCount()).toBe(3);
@@ -194,7 +194,7 @@ test('photos ready to post: only large photos shrink, all become JPG', async ({ 
   ]);
   await page.getByTestId('pipeline-run').click();
 
-  const downloads = page.getByRole('button', { name: 'Download', exact: true });
+  const downloads = page.getByRole('link', { name: 'Download', exact: true });
   await expect(downloads).toHaveCount(2, { timeout: 30_000 });
   const sizes: number[][] = [];
   for (const index of [0, 1]) {

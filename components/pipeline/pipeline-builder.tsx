@@ -197,7 +197,7 @@ export function PipelineBuilder() {
   const refreshRecipes = () => setRecipes(listPipelines());
 
   // Release the previous run's output object URLs when the result changes or
-  // the page unmounts (downloads use the blob directly, so this is safe).
+  // the page unmounts. Download links retain their URLs for the result's life.
   useEffect(() => {
     return () => {
       result?.finalFiles.forEach((file) => {
@@ -326,7 +326,13 @@ export function PipelineBuilder() {
         onProgress: setProgress,
         signal: controller.signal,
       });
-      setResult(outcome);
+      setResult({
+        ...outcome,
+        finalFiles: outcome.finalFiles.map((file) => ({
+          ...file,
+          previewUrl: file.previewUrl ?? URL.createObjectURL(file.blob),
+        })),
+      });
     } catch (cause) {
       setNotice(localizeErrorMessage(cause, locale));
     } finally {
@@ -733,10 +739,10 @@ export function PipelineBuilder() {
                     <p className="truncate text-sm font-medium text-ink">{file.name}</p>
                     <p className="text-xs font-mono text-ink-muted">{formatMegaBytes(file.blob.size)}</p>
                   </div>
-                  <button type="button" onClick={() => downloadBlob(file.blob, file.name)} className="btn-primary px-3 py-1.5 text-xs">
+                  <a href={file.previewUrl} download={safeFileName(file.name)} className="btn-primary px-3 py-1.5 text-xs">
                     <Download size={14} />
                     {messages.workbench.download}
-                  </button>
+                  </a>
                 </div>
               ))}
             </div>
