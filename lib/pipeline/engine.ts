@@ -2,6 +2,7 @@ import type { ProcessContext, ProcessProgress, ProcessedFile } from '@/types/pro
 import type { PipelineProgress, PipelineRunResult, PipelineStep, PipelineStepResult } from './types';
 import { MAX_PIPELINE_STEPS } from './types';
 import { describeAcceptMismatch } from './compatibility';
+import { baseName, extOf } from '@/lib/utils';
 
 export interface RunPipelineInput {
   steps: PipelineStep[];
@@ -63,6 +64,9 @@ export async function runPipeline(input: RunPipelineInput): Promise<PipelineRunR
   const results: PipelineStepResult[] = [];
   // Copy so a tool that mutates its input array cannot corrupt the caller's.
   let current: File[] = [...input.files];
+  // Audio extracted from a video keeps the video's name through later
+  // encoding steps. An intermediate MP3 is not the user's original input.
+  let extractedAudioSources: string[] | null = null;
 
   for (let index = 0; index < steps.length; index += 1) {
     const step = steps[index];
@@ -123,6 +127,20 @@ export async function runPipeline(input: RunPipelineInput): Promise<PipelineRunR
     if (!outputs.length) {
       results.push({ toolId: step.toolId, ok: false, outputCount: 0, warning, error: 'This step produced no output files.' });
       return { ok: false, steps: results, finalFiles: [], failedStepIndex: index };
+    }
+
+    if (step.toolId === 'audio-convert' && extractedAudioSources?.length === outputs.length) {
+      outputs = outputs.map((output, fileIndex) => {
+        const sourceName = extractedAudioSources![fileIndex];
+        const extension = extOf(output.name);
+        const suffix = extOf(sourceName) === extension ? '-converted' : '';
+        return { ...output, name: `${baseName(sourceName)}${suffix}.${extension}` };
+      });
+    } else if (step.toolId === 'extract-audio' && current.length === outputs.length) {
+      extractedAudioSources = current.map((file) => file.name);
+    } else {
+      // A merge or another operation changes the identity of the result.
+      extractedAudioSources = null;
     }
 
     results.push({ toolId: step.toolId, ok: true, outputCount: outputs.length, warning });

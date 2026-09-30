@@ -38,7 +38,7 @@ test('ocr pdf-to-text extracts text from the sample PDF', async ({ page }) => {
 
 async function downloadFirstResult(page: Page): Promise<{ name: string; bytes: Buffer }> {
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Download', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Download', exact: true }).or(page.getByRole('link', { name: 'Download', exact: true })).first().click();
   const download = await downloadPromise;
   return { name: download.suggestedFilename(), bytes: readFileSync((await download.path())!) };
 }
@@ -130,11 +130,82 @@ test('pipeline rearrange refuses page numbers the PDF does not have', async ({ p
 
   await order.fill('3~1');
   await page.getByRole('button', { name: 'Run pipeline' }).click();
-  await expect(page.getByRole('button', { name: 'Download', exact: true }).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('link', { name: 'Download', exact: true }).first()).toBeVisible({ timeout: 30_000 });
   const result = await downloadFirstResult(page);
   const { PDFDocument } = await import('pdf-lib');
   expect((await PDFDocument.load(result.bytes)).getPageCount()).toBe(3);
 });
+
+function ascii85(bytes: Uint8Array): Uint8Array {
+  let text = '';
+  for (let offset = 0; offset < bytes.length; offset += 4) {
+    const count = Math.min(4, bytes.length - offset);
+    let value = 0;
+    for (let index = 0; index < 4; index += 1) value = value * 256 + (bytes[offset + index] ?? 0);
+    if (count === 4 && value === 0) { text += 'z'; continue; }
+    let digits = '';
+    for (let index = 0; index < 5; index += 1) {
+      digits = String.fromCharCode(value % 85 + 33) + digits;
+      value = Math.floor(value / 85);
+    }
+    text += digits.slice(0, count + 1);
+  }
+  return new TextEncoder().encode(text + '~>');
+}
+
+for (const wrapper of ['ASCII85Decode', 'ASCIIHexDecode']) {
+  test(`email PDF job shrinks ${wrapper}-wrapped JPEGs and preserves text`, async ({ page }) => {
+    await page.goto('/pipeline?preset=pdfs-for-email');
+    await expect(page.getByTestId('pipeline-task')).toBeVisible({ timeout: 60_000 });
+    const jpeg = Buffer.from(await page.evaluate(() => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1200; canvas.height = 800;
+      const context = canvas.getContext('2d')!;
+      const image = context.createImageData(canvas.width, canvas.height);
+      let seed = 42;
+      for (let offset = 0; offset < image.data.length; offset += 4) {
+        for (let channel = 0; channel < 3; channel += 1) {
+          seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+          image.data[offset + channel] = seed >>> 24;
+        }
+        image.data[offset + 3] = 255;
+      }
+      context.putImageData(image, 0, 0);
+      return canvas.toDataURL('image/jpeg', 1).split(',')[1];
+    }), 'base64');
+    const { PDFDocument, PDFName, PDFRawStream } = await import('pdf-lib');
+    const source = await PDFDocument.create();
+    const image = await source.embedJpg(jpeg);
+    const paper = source.addPage([612, 792]);
+    paper.drawImage(image, { x: 36, y: 100, width: 540, height: 360 });
+    paper.drawText('Text must remain selectable', { x: 36, y: 730 });
+    await source.flush();
+    const stream = source.context.lookup(image.ref);
+    if (!(stream instanceof PDFRawStream)) throw new Error('JPEG stream was not embedded');
+    const dict = stream.dict.clone();
+    dict.set(PDFName.of('Filter'), source.context.obj([PDFName.of(wrapper), PDFName.of('DCTDecode')]));
+    const encoded = wrapper === 'ASCII85Decode' ? ascii85(jpeg) : new TextEncoder().encode(jpeg.toString('hex') + '>');
+    source.context.assign(image.ref, PDFRawStream.of(dict, encoded));
+    const input = Buffer.from(await source.save());
+    await page.locator('input[type="file"]').setInputFiles({ name: 'wrapped.pdf', mimeType: 'application/pdf', buffer: input });
+    await page.getByTestId('pipeline-run').click();
+    const result = await downloadFirstResult(page);
+    expect(result.bytes.length).toBeLessThan(input.length * 0.7);
+    const reduced = await PDFDocument.load(result.bytes);
+    expect(reduced.getPageCount()).toBe(1);
+    const images = reduced.context.enumerateIndirectObjects().filter(([, object]) =>
+      object instanceof PDFRawStream && object.dict.get(PDFName.of('Subtype')) === PDFName.of('Image'));
+    expect(images).toHaveLength(1);
+    const outputImage = images[0][1] as import('pdf-lib').PDFRawStream;
+    expect(outputImage.dict.get(PDFName.of('Filter'))).toBe(PDFName.of('DCTDecode'));
+    expect(Array.from(outputImage.getContents().slice(0, 2))).toEqual([0xff, 0xd8]);
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const pdfHandle = await pdfjs.getDocument({ data: new Uint8Array(result.bytes), useWorkerFetch: false, isEvalSupported: false }).promise;
+    const text = await (await pdfHandle.getPage(1)).getTextContent();
+    expect(text.items.map((item) => 'str' in item ? item.str : '').join(' ')).toContain('Text must remain selectable');
+    await pdfHandle.destroy();
+  });
+}
 
 test('a ready-made job runs from its own view', async ({ page }) => {
   await page.goto('/pipeline');
@@ -194,7 +265,7 @@ test('photos ready to post: only large photos shrink, all become JPG', async ({ 
   ]);
   await page.getByTestId('pipeline-run').click();
 
-  const downloads = page.getByRole('button', { name: 'Download', exact: true });
+  const downloads = page.getByRole('link', { name: 'Download', exact: true });
   await expect(downloads).toHaveCount(2, { timeout: 30_000 });
   const sizes: number[][] = [];
   for (const index of [0, 1]) {

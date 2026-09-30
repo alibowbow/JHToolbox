@@ -44,6 +44,41 @@ const makeRunner = () => {
 
 const src = [new File(['seed'], 'seed.jpg', { type: 'image/jpeg' })];
 
+// A second encoding must not mistake the intermediate MP3 for the source.
+{
+  const files = ['강의-테스트.mp4', 'lecture-converted.webm'].map((name) => new File(['video'], name));
+  const result = await runPipeline({
+    files,
+    steps: [{ toolId: 'extract-audio', options: {} }, { toolId: 'audio-convert', options: {} }],
+    runStep: async (ctx) => ctx.files.map((file) => ({
+      name: ctx.toolId === 'extract-audio' ? file.name.replace(/\.[^.]+$/, '.mp3') : file.name.replace(/\.mp3$/, '-converted.mp3'),
+      blob: new Blob(['audio']), mimeType: 'audio/mpeg',
+    })),
+  });
+  check('extracted audio: Korean source name survives re-encoding', result.finalFiles[0].name === '강의-테스트.mp3');
+  check('extracted audio: legitimate converted stem survives', result.finalFiles[1].name === 'lecture-converted.mp3');
+  check('extracted audio: names stay aligned with batch order', result.finalFiles.length === files.length);
+}
+{
+  const result = await runPipeline({
+    files: [new File(['audio'], 'original.mp3')],
+    steps: [{ toolId: 'audio-convert', options: {} }],
+    runStep: async () => [{ name: 'original-converted.mp3', blob: new Blob(['audio']), mimeType: 'audio/mpeg' }],
+  });
+  check('standalone conversion: same-type suffix is retained', result.finalFiles[0].name === 'original-converted.mp3');
+}
+{
+  const result = await runPipeline({
+    files: [new File(['video'], 'lecture.mp4')],
+    steps: [{ toolId: 'extract-audio', options: {} }, { toolId: 'audio-merge', options: {} }, { toolId: 'audio-convert', options: {} }],
+    runStep: async (ctx) => [{
+      name: ctx.toolId === 'extract-audio' ? 'lecture.mp3' : ctx.toolId === 'audio-merge' ? 'merged-audio.wav' : 'merged-audio.mp3',
+      blob: new Blob(['audio']), mimeType: 'audio/mpeg',
+    }],
+  });
+  check('merge: source identity is reset', result.finalFiles[0].name === 'merged-audio.mp3');
+}
+
 // --- 1. Two-step chain: step 2 receives step 1's converted outputs ----------
 {
   const { calls, runStep } = makeRunner();
