@@ -1,6 +1,6 @@
 import html2canvas from 'html2canvas';
 import JSZip from 'jszip';
-import { BlendMode, PDFArray, PDFDocument, PDFName, PDFNumber, PDFRawStream, degrees as pdfDegrees, rgb } from 'pdf-lib';
+import { BlendMode, PDFArray, PDFDocument, PDFName, PDFNumber, PDFRawStream, decodePDFRawStream, degrees as pdfDegrees, rgb } from 'pdf-lib';
 import * as XLSX from 'xlsx';
 import { getPdfJs, openPdfDocument } from '@/lib/processors/pdfjs-client';
 import { ProcessContext, ProcessedFile } from '@/types/processor';
@@ -200,11 +200,8 @@ function isDctImageStream(stream: PDFRawStream): boolean {
     return filter.asString() === '/DCTDecode';
   }
   if (filter instanceof PDFArray) {
-    if (filter.size() !== 1) {
-      return false;
-    }
-    const only = filter.get(0);
-    return only instanceof PDFName && only.asString() === '/DCTDecode';
+    const names = filter.asArray().map((entry) => entry instanceof PDFName ? entry.asString() : '');
+    return names.at(-1) === '/DCTDecode' && names.slice(0, -1).every((name) => name === '/ASCII85Decode' || name === '/ASCIIHexDecode');
   }
   return false;
 }
@@ -287,7 +284,16 @@ async function optimizePdfImages(
     }
     try {
       const original = obj.getContents();
-      const result = await recompressJpegBytes(original, maxDimension, quality, grayscale);
+      let jpegBytes = original;
+      const filter = obj.dict.lookup(PDFName.of('Filter'));
+      if (filter instanceof PDFArray && filter.size() > 1) {
+        // Decode only the text wrappers; the browser decodes the final JPEG.
+        const wrapperDict = obj.dict.clone();
+        wrapperDict.set(PDFName.of('Filter'), doc.context.obj(filter.asArray().slice(0, -1)));
+        wrapperDict.delete(PDFName.of('DecodeParms'));
+        jpegBytes = decodePDFRawStream(PDFRawStream.of(wrapperDict, original)).decode();
+      }
+      const result = await recompressJpegBytes(jpegBytes, maxDimension, quality, grayscale);
       if (!result || result.bytes.length >= original.length) {
         continue;
       }
@@ -296,6 +302,7 @@ async function optimizePdfImages(
       dict.set(PDFName.of('Height'), PDFNumber.of(result.height));
       dict.set(PDFName.of('BitsPerComponent'), PDFNumber.of(8));
       dict.set(PDFName.of('ColorSpace'), PDFName.of('DeviceRGB'));
+      dict.set(PDFName.of('Filter'), PDFName.of('DCTDecode'));
       dict.set(PDFName.of('Length'), PDFNumber.of(result.bytes.length));
       dict.delete(PDFName.of('Decode'));
       dict.delete(PDFName.of('DecodeParms'));
