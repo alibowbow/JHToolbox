@@ -45,8 +45,8 @@ function resolveFilename(format: AudioExportFormat, filename?: string) {
 }
 
 function downloadBlob(blob: Blob, filename: string) {
-  if (typeof document === 'undefined') {
-    return;
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return false;
   }
 
   const url = URL.createObjectURL(blob);
@@ -55,10 +55,15 @@ function downloadBlob(blob: Blob, filename: string) {
   anchor.download = filename;
   anchor.rel = 'noopener';
   anchor.style.display = 'none';
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  try {
+    document.body.appendChild(anchor);
+    anchor.click();
+    return true;
+  } finally {
+    anchor.remove();
+    // Keep the URL alive long enough for the browser to start the download.
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
 }
 
 function getPickerTypes(format: AudioExportFormat): FilePickerAcceptType[] {
@@ -83,33 +88,51 @@ function getPickerTypes(format: AudioExportFormat): FilePickerAcceptType[] {
   ];
 }
 
-async function saveBlobWithPicker(blob: Blob, filename: string, types?: FilePickerAcceptType[]) {
+type PickerSaveResult = 'saved' | 'cancelled' | 'unavailable';
+
+async function saveBlobWithPicker(
+  blob: Blob,
+  filename: string,
+  types?: FilePickerAcceptType[],
+): Promise<PickerSaveResult> {
   if (typeof window === 'undefined') {
-    return false;
+    return 'unavailable';
   }
 
   const pickerWindow = window as WindowWithSaveFilePicker;
-  if (!pickerWindow.showSaveFilePicker) {
-    return false;
+  if (typeof pickerWindow.showSaveFilePicker !== 'function') {
+    return 'unavailable';
   }
 
+  let handle: FileSystemFileHandleLike;
   try {
-    const handle = await pickerWindow.showSaveFilePicker({
+    handle = await pickerWindow.showSaveFilePicker({
       suggestedName: filename,
       excludeAcceptAllOption: false,
       types,
     });
-    const writable = await handle.createWritable();
-    await writable.write(blob);
-    await writable.close();
-    return true;
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
-      return false;
+    // Check the name rather than instanceof: errors can cross browser realms.
+    const name = error && typeof error === 'object' && 'name' in error ? error.name : undefined;
+    if (name === 'AbortError') {
+      return 'cancelled';
+    }
+    if (name === 'SecurityError' || name === 'NotAllowedError' || name === 'NotSupportedError') {
+      // Some embedded browsers expose the API but cannot open its dialog.
+      // Encoding/mixing can also outlast the required transient activation.
+      // An ordinary download still follows the browser's own download policy.
+      return 'unavailable';
     }
 
     throw error;
   }
+
+  // Once a destination is selected, surface write/close failures. Falling back
+  // here could hide a failed write or create an unexpected second file.
+  const writable = await handle.createWritable();
+  await writable.write(blob);
+  await writable.close();
+  return 'saved';
 }
 
 export async function saveBlobFile(options: {
@@ -118,10 +141,11 @@ export async function saveBlobFile(options: {
   types?: FilePickerAcceptType[];
 }) {
   const { blob, filename, types } = options;
-  if (!(await saveBlobWithPicker(blob, filename, types))) {
-    downloadBlob(blob, filename);
+  const result = await saveBlobWithPicker(blob, filename, types);
+  if (result === 'cancelled') {
+    return false;
   }
-  return true;
+  return result === 'saved' || downloadBlob(blob, filename);
 }
 
 async function encodeMp3Blob(buffer: AudioBuffer, quality: number | undefined) {
