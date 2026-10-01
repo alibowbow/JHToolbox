@@ -1,6 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { devices, expect, test, type Page } from '@playwright/test';
 
+async function useBrowserDownloads(page: Page) {
+  // These workspace tests assert download events, not native file writes.
+  // Headless Chromium can cancel its native picker; cancellation must never
+  // trigger a download. Picker success/error/cancel paths have separate coverage
+  // in audio-editor.spec.ts and the audio-save unit checks.
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: undefined });
+  });
+}
+
 async function createDemoVideoBuffer(page: Page) {
   const bytes = await page.evaluate(async () => {
     const canvas = document.createElement('canvas');
@@ -386,6 +396,7 @@ test('audio editor starts with record and open, without playback controls', asyn
 });
 
 test('audio editor route exposes the unified editor workspace', async ({ page }) => {
+  await useBrowserDownloads(page);
   await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
 
@@ -445,6 +456,7 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   const replacementDownload = await replacementDownloadPromise;
   expect(replacementDownload.suggestedFilename()).toBe('replacement-copy.wav');
+  expect(await replacementDownload.failure()).toBeNull();
 
   // Dragging across the active clip (below the move grip) opens the selection bar.
   const activeSurface = page.getByTestId('audio-track-waveform-surface').nth(1);
@@ -654,6 +666,7 @@ test('audio editor localizes save and record actions in korean mode', async ({ p
 });
 
 test('audio recording can pause and resume before opening the take in the editor', async ({ page }) => {
+  await useBrowserDownloads(page);
   await page.addInitScript(() => {
     const audioWindow = window as typeof window & {
       webkitAudioContext?: typeof AudioContext;
@@ -724,6 +737,7 @@ test('audio recording can pause and resume before opening the take in the editor
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   const recordingDownload = await recordingDownloadPromise;
   expect(recordingDownload.suggestedFilename()).toBe('recording-take.wav');
+  expect(await recordingDownload.failure()).toBeNull();
 });
 
 test('pdf rearrange shows page editor controls before processing', async ({ page }) => {
