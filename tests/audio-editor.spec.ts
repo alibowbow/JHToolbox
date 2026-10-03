@@ -1,5 +1,7 @@
 import { devices, expect, test, type Page } from '@playwright/test';
 import JSZip from 'jszip';
+import { createHash } from 'node:crypto';
+import path from 'node:path';
 
 function createDemoAudioBuffer(durationSeconds: number, frequency = 220) {
   const sampleRate = 44_100;
@@ -463,7 +465,23 @@ test('hwpx to pdf renders extracted hangul text into pdf pages', async ({ page }
   await expect(page.getByText('minimal.pdf')).toBeVisible({ timeout: 60_000 });
 });
 
+
 test.describe('audio save compatibility', () => {
+  test.beforeEach(async ({ page }) => {
+    // Same pinned core as production, served locally for deterministic encoding.
+    // This replaces only CDN transport, never the encoder or the download.
+    await page.route('https://unpkg.com/@ffmpeg/core@0.12.9/dist/umd/*', route => {
+      const name = new URL(route.request().url()).pathname.split('/').pop()!;
+      return route.fulfill({
+        path: path.join(path.dirname(require.resolve('@ffmpeg/core')), name),
+        contentType: name.endsWith('.wasm') ? 'application/wasm' : 'text/javascript',
+        headers: { 'access-control-allow-origin': '*' },
+      });
+    });
+  });
+  const downloadLink = (page: Page) => page.getByRole('link', { name: 'Download file / retry', exact: true });
+  const panel = (page: Page) => page.getByTestId('audio-download');
+
   async function loadExportTrack(page: Page) {
     await openReadyEditor(page);
     await page.locator('input[type="file"]').setInputFiles({
@@ -471,100 +489,288 @@ test.describe('audio save compatibility', () => {
     });
     await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1);
   }
-
-  async function openSave(page: Page) {
+  async function submitExport(page: Page, format: 'wav' | 'mp3' | 'session' = 'wav') {
     await page.getByRole('button', { name: 'Save as', exact: true }).click();
-    await expect(page.getByLabel('Filename')).toBeVisible();
+    if (format === 'session') await page.getByRole('button', { name: 'Session file', exact: true }).click();
+    if (format === 'mp3') await page.getByRole('button', { name: 'Save MP3', exact: true }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
   }
-
-  for (const errorName of ['unsupported', 'SecurityError', 'NotAllowedError', 'NotSupportedError']) {
-    test(`WAV downloads when the file picker is ${errorName}`, async ({ page }) => {
-      await page.addInitScript((name) => {
-        Object.defineProperty(window, 'showSaveFilePicker', {
-          configurable: true,
-          value: name === 'unsupported' ? undefined : async () => { throw new DOMException('Picker unavailable', name); },
-        });
-      }, errorName);
-      await loadExportTrack(page);
-      await openSave(page);
-      const downloadPromise = page.waitForEvent('download');
-      await page.getByRole('button', { name: 'Save', exact: true }).click();
-      const download = await downloadPromise;
-      expect(download.suggestedFilename()).toBe('fallback.wav');
-      expect(await download.failure()).toBeNull();
-      const stream = await download.createReadStream();
-      const chunks: Buffer[] = [];
-      for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
-      const bytes = Buffer.concat(chunks);
-      expect(bytes.subarray(0, 4).toString()).toBe('RIFF');
-      expect(bytes.subarray(8, 12).toString()).toBe('WAVE');
-      expect(bytes.length).toBeGreaterThan(44);
-      await expect(page.getByText('WAV export is ready.', { exact: true })).toBeVisible();
-      await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1);
-    });
+  async function prepare(page: Page, format: 'wav' | 'mp3' | 'session' = 'wav') {
+    const oldUrl = await downloadLink(page).count() ? await downloadLink(page).getAttribute('href') : null;
+    await submitExport(page, format);
+    await expect(downloadLink(page)).toBeVisible({ timeout: 120_000 });
+    await expect(downloadLink(page)).not.toHaveAttribute('href', oldUrl ?? '', { timeout: 120_000 });
+    await expect(downloadLink(page)).toHaveAttribute('download', new RegExp(`\\.${format === 'session' ? 'jhaudio' : format}$`));
   }
-
-  test('cancelling the picker keeps the recording and allows a later save', async ({ page }) => {
-    await page.addInitScript(() => {
-      let attempts = 0;
-      Object.defineProperty(window, 'showSaveFilePicker', {
-        configurable: true,
-        value: async () => {
-          attempts += 1;
-          throw new DOMException('', attempts === 1 ? 'AbortError' : 'SecurityError');
-        },
-      });
-    });
-    await loadExportTrack(page);
-    let downloads = 0;
-    page.on('download', () => { downloads += 1; });
-    await openSave(page);
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(page.getByText('Preparing WAV export...', { exact: true })).toHaveCount(0);
-    await expect(page.getByText('WAV export is ready.', { exact: true })).toHaveCount(0);
-    await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1);
-    // A download event is asynchronous; give an incorrect fallback time to fire.
-    await page.waitForTimeout(300);
-    expect(downloads).toBe(0);
-    await openSave(page);
-    const downloadPromise = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
-    await downloadPromise;
-    expect(downloads).toBe(1);
-    await expect(page.getByText('WAV export is ready.', { exact: true })).toBeVisible();
-  });
-
-  test('session fallback downloads a restorable recording', async ({ page }) => {
-    await page.addInitScript(() => {
-      Object.defineProperty(window, 'showSaveFilePicker', {
-        configurable: true,
-        value: async () => { throw new DOMException('Picker unavailable', 'NotAllowedError'); },
-      });
-    });
-    await loadExportTrack(page);
-    await openSave(page);
-    await page.getByRole('button', { name: 'Session file', exact: true }).click();
-    const downloadPromise = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
-    const download = await downloadPromise;
-    expect(download.suggestedFilename()).toBe('fallback.jhaudio');
+  async function downloadBytes(page: Page) {
+    const pending = page.waitForEvent('download');
+    await downloadLink(page).click();
+    const download = await pending;
     expect(await download.failure()).toBeNull();
     const stream = await download.createReadStream();
     const chunks: Buffer[] = [];
     for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
     const bytes = Buffer.concat(chunks);
+    expect(bytes.length).toBeGreaterThan(44);
+    console.log(JSON.stringify({ download: download.suggestedFilename(), bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }));
+    await test.info().attach(download.suggestedFilename(), { body: bytes, contentType: 'application/octet-stream' });
+    return { bytes, filename: download.suggestedFilename() };
+  }
+  async function checkDecoded(page: Page, bytes: Buffer, duration = 0.25) {
+    // Decode only bytes received from the browser's real download event.
+    const decoded = await page.evaluate(async (data) => {
+      const context = new AudioContext();
+      try {
+        const buffer = await context.decodeAudioData(Uint8Array.from(data).buffer);
+        const samples = buffer.getChannelData(0);
+        return { duration: buffer.duration, channels: buffer.numberOfChannels, peak: samples.reduce((peak, sample) => Math.max(peak, sample), 0) };
+      } finally { await context.close(); }
+    }, [...bytes]);
+    console.log(JSON.stringify({ decoded }));
+    expect(decoded.duration).toBeCloseTo(duration, 2);
+    expect(decoded.channels).toBe(1);
+    expect(decoded.peak).toBeGreaterThan(0.2);
+    expect(decoded.peak).toBeLessThan(0.4);
+    return decoded;
+  }
+  async function observeUrls(page: Page) {
+    await page.addInitScript(() => {
+      const audit = { created: [] as string[], revoked: [] as string[] };
+      Object.assign(window, { __exportUrls: audit });
+      const create = URL.createObjectURL.bind(URL);
+      const revoke = URL.revokeObjectURL.bind(URL);
+      URL.createObjectURL = blob => { const url = create(blob); audit.created.push(url); return url; };
+      URL.revokeObjectURL = url => { audit.revoked.push(url); revoke(url); };
+    });
+  }
+  async function revoked(page: Page, url: string | null) {
+    await expect.poll(() => page.evaluate(value => {
+      return (window as unknown as { __exportUrls: { revoked: string[] } }).__exportUrls.revoked.includes(value!);
+    }, url)).toBe(true);
+  }
+
+  for (const errorName of ['unsupported', 'SecurityError', 'NotAllowedError', 'NotSupportedError']) {
+    test(`WAV has a persistent real link when picker is ${errorName}`, async ({ page }) => {
+      await page.addInitScript(name => {
+        Object.defineProperty(window, 'showSaveFilePicker', {
+          configurable: true,
+          value: name === 'unsupported' ? undefined : async () => { throw new DOMException('Unavailable', name); },
+        });
+      }, errorName);
+      await loadExportTrack(page);
+      let downloads = 0;
+      page.on('download', () => { downloads += 1; });
+      await prepare(page);
+      expect(downloads).toBe(0);
+      await expect(panel(page)).toContainText('WAV');
+      await expect(panel(page)).toContainText('bytes');
+      if (errorName !== 'unsupported') {
+        await page.getByRole('button', { name: 'Choose save location' }).click();
+        await expect(panel(page)).toContainText('The save dialog is unavailable');
+        expect(downloads).toBe(0);
+      }
+      const first = await downloadBytes(page);
+      expect(first.filename).toBe('fallback.wav');
+      expect(first.bytes.subarray(0, 4).toString()).toBe('RIFF');
+      expect(first.bytes.subarray(8, 12).toString()).toBe('WAVE');
+      expect(first.bytes.readUInt32LE(40) + 44).toBe(first.bytes.length);
+      await checkDecoded(page, first.bytes);
+      await expect(panel(page)).toContainText('Download requested.');
+      // Retry uses exactly the retained bytes, no new encoding/URL or timer expiry.
+      const url = await downloadLink(page).getAttribute('href');
+      await page.clock.install();
+      await page.clock.fastForward(61_000);
+      const retry = await downloadBytes(page);
+      expect(retry.bytes.equals(first.bytes)).toBe(true);
+      expect(await downloadLink(page).getAttribute('href')).toBe(url);
+      expect(downloads).toBe(2);
+      await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1);
+    });
+  }
+
+  test('picker cancellation and write/close errors preserve export for retry', async ({ page }) => {
+    await page.addInitScript(() => {
+      let attempts = 0;
+      Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: async () => {
+        attempts += 1;
+        if (attempts === 1) throw new DOMException('', 'AbortError');
+        return { createWritable: async () => ({
+          write: async () => { if (attempts === 2) throw new Error('disk write failed'); },
+          close: async () => { if (attempts === 3) throw new Error('disk close failed'); },
+          abort: async () => {},
+        }) };
+      } });
+    });
+    await loadExportTrack(page);
+    await prepare(page);
+    const url = await downloadLink(page).getAttribute('href');
+    const save = page.getByRole('button', { name: 'Choose save location' });
+    for (const message of ['Save cancelled.', 'disk write failed', 'disk close failed', 'Finished writing the selected file.']) {
+      await save.click();
+      await expect(panel(page)).toContainText(message);
+      expect(await downloadLink(page).getAttribute('href')).toBe(url);
+      await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1);
+    }
+    await checkDecoded(page, (await downloadBytes(page)).bytes);
+  });
+
+  test('duplicate save clicks wait for close and close releases the retained URL', async ({ page }) => {
+    await observeUrls(page);
+    await page.addInitScript(() => {
+      Object.assign(window, { __pickerCount: 0 });
+      Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: async () => {
+        const state = window as unknown as { __pickerCount: number; __finishWrite: () => void; __gesture: boolean };
+        state.__pickerCount += 1;
+        state.__gesture = navigator.userActivation.isActive;
+        return { createWritable: async () => ({ write: async () => {}, close: () => new Promise<void>(resolve => { state.__finishWrite = resolve; }) }) };
+      } });
+    });
+    await loadExportTrack(page);
+    await prepare(page);
+    const url = await downloadLink(page).getAttribute('href');
+    const save = page.getByRole('button', { name: 'Choose save location' });
+    await save.dblclick();
+    await expect(save).toBeDisabled();
+    await expect(panel(page)).toContainText('Writing to the selected file...');
+    expect(await page.evaluate(() => (window as unknown as { __pickerCount: number }).__pickerCount)).toBe(1);
+    expect(await page.evaluate(() => (window as unknown as { __gesture: boolean }).__gesture)).toBe(true);
+    await page.evaluate(() => (window as unknown as { __finishWrite: () => void }).__finishWrite());
+    await expect(panel(page)).toContainText('Finished writing the selected file.');
+    await page.getByRole('button', { name: 'Close exported file' }).click();
+    await expect(panel(page)).toHaveCount(0);
+    await revoked(page, url);
+    await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1);
+    await prepare(page);
+    expect(await downloadLink(page).getAttribute('href')).not.toBe(url);
+    await checkDecoded(page, (await downloadBytes(page)).bytes);
+  });
+
+  test('session downloads restore audio; replacement, edits and unmount release URLs', async ({ page }) => {
+    await observeUrls(page);
+    await loadExportTrack(page);
+    await prepare(page);
+    const wavUrl = await downloadLink(page).getAttribute('href');
+    await prepare(page, 'session');
+    await revoked(page, wavUrl);
+    const sessionUrl = await downloadLink(page).getAttribute('href');
+    const { bytes, filename } = await downloadBytes(page);
+    expect(filename).toBe('fallback.jhaudio');
     const session = JSON.parse(bytes.toString());
     expect(session.type).toBe('jhtoolbox-audio-session');
     expect(session.tracks).toHaveLength(1);
-    expect(session.tracks[0].name).toBe('fallback.wav');
-    expect(Buffer.from(session.tracks[0].audioBase64, 'base64').subarray(0, 4).toString()).toBe('RIFF');
-    await expect(page.getByText('Saved the session file.', { exact: true })).toBeVisible();
-    // Verify the actual downloaded session can restore the audio after a reload.
-    await openReadyEditor(page);
-    await page.locator('input[type="file"]').setInputFiles({
-      name: download.suggestedFilename(), mimeType: 'application/json', buffer: bytes,
-    });
-    await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1);
+    await checkDecoded(page, Buffer.from(session.tracks[0].audioBase64, 'base64'));
+    await page.locator('input[type="file"]').setInputFiles({ name: filename, mimeType: 'application/json', buffer: bytes });
     await expect(page.getByRole('button', { name: 'fallback.wav', exact: true })).toBeVisible();
+    await expect(panel(page)).toHaveCount(0);
+    await revoked(page, sessionUrl);
+    await prepare(page);
+    const editUrl = await downloadLink(page).getAttribute('href');
+    await page.getByRole('button', { name: 'Mute', exact: true }).click();
+    await expect(panel(page)).toHaveCount(0);
+    await revoked(page, editUrl);
+    await prepare(page);
+    const finalUrl = await downloadLink(page).getAttribute('href');
+    // Next client navigation unmounts the editor without replacing this test realm.
+    await page.getByRole('link', { name: /JH.*Toolbox/i }).first().click();
+    await expect(page.getByTestId('audio-editor-shell')).toHaveCount(0);
+    await revoked(page, finalUrl);
+  });
+
+  test('encoding errors retain previous export; close discards late results and duplicate encoding', async ({ page }) => {
+    await observeUrls(page);
+    await loadExportTrack(page);
+    await prepare(page);
+    const url = await downloadLink(page).getAttribute('href');
+    await page.evaluate(() => {
+      const original = Blob.prototype.arrayBuffer;
+      Object.assign(window, { __restoreArrayBuffer: () => { Blob.prototype.arrayBuffer = original; } });
+      Blob.prototype.arrayBuffer = async () => { throw new Error('synthetic encoding failure'); };
+    });
+    await submitExport(page, 'session');
+    await expect(page.getByTestId('audio-editor-shell').getByRole('alert')).toContainText('synthetic encoding failure');
+    expect(await downloadLink(page).getAttribute('href')).toBe(url);
+    await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1);
+    await page.evaluate(() => {
+      (window as unknown as { __restoreArrayBuffer: () => void }).__restoreArrayBuffer();
+      const original = Blob.prototype.arrayBuffer;
+      const state = window as unknown as { __encodeCount: number; __finishEncode: () => void };
+      state.__encodeCount = 0;
+      Blob.prototype.arrayBuffer = async function () {
+        state.__encodeCount += 1;
+        await new Promise<void>(resolve => { state.__finishEncode = resolve; });
+        return original.call(this);
+      };
+    });
+    await page.getByRole('button', { name: 'Save as', exact: true }).click();
+    await page.getByRole('button', { name: 'Session file', exact: true }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).dblclick();
+    await expect(page.getByText('Preparing export file...', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Save as', exact: true })).toBeDisabled();
+    expect(await page.evaluate(() => (window as unknown as { __encodeCount: number }).__encodeCount)).toBe(1);
+    await page.getByRole('button', { name: 'Close exported file' }).click();
+    await revoked(page, url);
+    await page.evaluate(() => (window as unknown as { __finishEncode: () => void }).__finishEncode());
+    await expect(page.getByText('Preparing export file...', { exact: true })).toHaveCount(0);
+    await expect(panel(page)).toHaveCount(0);
+    await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1);
+  });
+
+  test('synthetic shared-tab recording exports WAV, MP3 and a restorable session', async ({ page }) => {
+    test.setTimeout(180_000);
+    await stubCapture(page);
+    await openReadyEditor(page);
+    await page.getByTestId('audio-recording-settings').getByRole('button', { name: 'Device sound' }).click();
+    await recordFor(page, 400);
+    await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1);
+    await prepare(page);
+    const wav = await downloadBytes(page);
+    const duration = (wav.bytes.length - 44) / (wav.bytes.readUInt32LE(24) * wav.bytes.readUInt16LE(22) * 2);
+    expect(duration).toBeGreaterThan(0.2);
+    expect(duration).toBeLessThan(3);
+    await checkDecoded(page, wav.bytes, duration);
+    await prepare(page, 'mp3');
+    await checkDecoded(page, (await downloadBytes(page)).bytes, duration);
+    await prepare(page, 'session');
+    const session = await downloadBytes(page);
+    const payload = JSON.parse(session.bytes.toString());
+    expect(payload.tracks[0].source).toBe('recording');
+    await checkDecoded(page, Buffer.from(payload.tracks[0].audioBase64, 'base64'), duration);
+    await page.locator('input[type="file"]').setInputFiles({ name: session.filename, mimeType: 'application/json', buffer: session.bytes });
+    await expect(panel(page)).toHaveCount(0);
+    await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1);
+  });
+
+  test('mobile Korean download panel fits and reset releases the export', async ({ page }) => {
+    await observeUrls(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await loadExportTrack(page);
+    await prepare(page);
+    const url = await downloadLink(page).getAttribute('href');
+    await page.getByRole('button', { name: 'ko', exact: true }).click();
+    const link = page.getByRole('link', { name: '파일 다운로드 / 다시 받기' });
+    await expect(link).toBeVisible();
+    const bounds = await panel(page).boundingBox();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+    await test.info().attach('mobile-download.png', { body: await page.screenshot(), contentType: 'image/png' });
+    const pending = page.waitForEvent('download');
+    await link.click();
+    expect(await (await pending).failure()).toBeNull();
+    await expect(panel(page)).toContainText('다운로드를 요청했습니다');
+    await page.getByRole('button', { name: '더보기', exact: true }).click();
+    await page.getByRole('button', { name: '편집기 초기화', exact: true }).click();
+    await expect(panel(page)).toHaveCount(0);
+    await revoked(page, url);
+  });
+
+  test('MP3 encodes real audio and downloads decodable bytes', async ({ page }) => {
+    test.setTimeout(180_000);
+    await loadExportTrack(page);
+    await prepare(page, 'mp3');
+    const { bytes, filename } = await downloadBytes(page);
+    expect(filename).toBe('fallback.mp3');
+    await checkDecoded(page, bytes);
+    const retry = await downloadBytes(page);
+    expect(retry.bytes.equals(bytes)).toBe(true);
   });
 });
