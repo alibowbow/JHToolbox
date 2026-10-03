@@ -1,6 +1,6 @@
 'use client';
 
-import { createWavBlob, decodeAudioBlobToBuffer, type AudioProjectTrack, saveBlobFile } from '@/lib/audio';
+import { createWavBlob, decodeAudioBlobToBuffer, type AudioProjectTrack, type PreparedAudioFile } from '@/lib/audio';
 import { DEFAULT_EFFECTS, type AudioEffectTab, type AudioEffectsState } from './audio-editor-utils';
 
 export const AUDIO_SESSION_EXTENSION = '.jhaudio';
@@ -150,14 +150,14 @@ export async function createAudioSessionBlob(state: AudioEditorSessionState) {
   return new Blob([JSON.stringify(payload)], { type: 'application/json' });
 }
 
-export async function saveAudioSession(options: { filename: string; state: AudioEditorSessionState }) {
+export async function prepareAudioSession(options: { filename: string; state: AudioEditorSessionState }): Promise<PreparedAudioFile> {
   const blob = await createAudioSessionBlob(options.state);
-  const baseName = options.filename.trim() || 'audio-session';
+  const baseName = options.filename.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'audio-session';
   const filename = baseName.toLowerCase().endsWith(AUDIO_SESSION_EXTENSION)
     ? baseName
     : `${baseName}${AUDIO_SESSION_EXTENSION}`;
 
-  return await saveBlobFile({
+  return {
     blob,
     filename,
     types: [
@@ -168,7 +168,7 @@ export async function saveAudioSession(options: { filename: string; state: Audio
         },
       },
     ],
-  });
+  };
 }
 
 export async function parseAudioSessionFile(file: File): Promise<AudioEditorSessionState> {

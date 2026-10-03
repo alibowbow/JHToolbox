@@ -443,6 +443,7 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
   await page.getByRole('button', { name: 'Save as' }).click();
   await page.locator('#audio-save-name').fill('replacement-copy');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('link', { name: 'Download file / retry', exact: true }).click();
   const replacementDownload = await replacementDownloadPromise;
   expect(replacementDownload.suggestedFilename()).toBe('replacement-copy.wav');
 
@@ -722,6 +723,7 @@ test('audio recording can pause and resume before opening the take in the editor
   await page.getByRole('button', { name: 'Save as' }).click();
   await page.locator('#audio-save-name').fill('recording-take');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('link', { name: 'Download file / retry', exact: true }).click();
   const recordingDownload = await recordingDownloadPromise;
   expect(recordingDownload.suggestedFilename()).toBe('recording-take.wav');
 });

@@ -42,7 +42,7 @@ import {
   AUDIO_SESSION_ACCEPT,
   isAudioSessionFile,
   parseAudioSessionFile,
-  saveAudioSession,
+  prepareAudioSession,
   type ProjectSelection,
 } from './audio-session';
 import {
@@ -62,6 +62,8 @@ import { ShortcutsModal } from './ShortcutsModal';
 import { TrackTimelineStack } from './Tracks/TrackTimelineStack';
 import { EditorToolbar } from './Toolbar/EditorToolbar';
 import { TransportBar } from './Transport/TransportBar';
+import { AudioDownload } from './AudioDownload';
+import { usePreparedAudioFile } from './usePreparedAudioFile';
 
 const DROPPABLE_AUDIO_PATTERN = /\.(mp3|wav|m4a|aac|ogg|flac|webm|mp4|mov|m4v|jhaudio)$/i;
 const RECORDING_SETTINGS_KEY = 'jh-audio-recording-settings';
@@ -187,6 +189,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const copy = useMemo(() => getAudioEditorCopy(locale), [locale]);
 
   const [tracks, setTracks] = useState<AudioProjectTrack[]>([]);
+  const audioDownload = usePreparedAudioFile(tracks);
   const [activeTrackId, setActiveTrackId] = useState<string | null>(null);
   const [playhead, setPlayhead] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -263,9 +266,9 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const undoLabel = historyRef.current.undoLabel;
   const redoLabel = historyRef.current.redoLabel;
 
-  const canSaveTrack = Boolean(activeTrack?.buffer) && !isRecording;
-  const canSaveMix = tracks.some((track) => track.buffer) && !isRecording;
-  const canSaveSession = tracks.length > 0 && !isRecording;
+  const canSaveTrack = Boolean(activeTrack?.buffer) && !isRecording && !audioDownload.preparing;
+  const canSaveMix = tracks.some((track) => track.buffer) && !isRecording && !audioDownload.preparing;
+  const canSaveSession = tracks.length > 0 && !isRecording && !audioDownload.preparing;
 
   const activeClipStart = activeTrack?.buffer ? Math.max(0, activeTrack.startTime) : 0;
   const activeClipEnd = activeTrack?.buffer ? activeClipStart + activeTrack.buffer.duration : 0;
@@ -1109,54 +1112,37 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     filename: string;
     target: 'track' | 'mix' | 'session';
   }) => {
-    if (target === 'session') {
-      if (tracksRef.current.length === 0) {
-        setLoadError(copy.status.loadFirst);
-        return;
-      }
-
-      try {
-        setStatusMessage(locale === 'ko' ? '세션 파일을 저장하는 중입니다...' : 'Saving the session file...');
-        const saved = await saveAudioSession({
-          filename: filename.trim() || activeTrackName || 'audio-session',
-          state: {
-            activeTrackId,
-            playhead: playheadRef.current,
-            zoom,
-            selection: selectionRef.current,
-            effects,
-            activeTab,
-            loopEnabled,
-            tracks: tracksRef.current,
-          },
-        });
-
-        setStatusMessage(saved ? (locale === 'ko' ? '세션 파일을 저장했습니다.' : 'Saved the session file.') : null);
-        return;
-      } catch (error) {
-        setLoadError(error instanceof Error ? error.message : copy.status.exportFailed);
-        return;
-      }
-    }
-
+    setLoadError(null);
+    setStatusMessage(null);
     try {
-      setStatusMessage(copy.status.exportPreparing(format));
-      const exportBuffer =
-        target === 'mix' ? await mixAudioTracks(tracksRef.current) : activeTrackRef.current?.buffer ?? null;
-
-      if (!exportBuffer) {
-        setLoadError(copy.status.loadFirst);
-        return;
-      }
-
-      const saved = await exportAudio({
-        buffer: exportBuffer,
-        format,
-        filename: filename.trim() || (target === 'mix' ? 'audio-mix' : activeTrackName || 'audio-export'),
-        quality: 0.82,
+      await audioDownload.prepare(async () => {
+        if (target === 'session') {
+          if (tracksRef.current.length === 0) throw new Error(copy.status.loadFirst);
+          return prepareAudioSession({
+            filename: filename.trim() || activeTrackName || 'audio-session',
+            state: {
+              activeTrackId,
+              playhead: playheadRef.current,
+              zoom,
+              selection: selectionRef.current,
+              effects,
+              activeTab,
+              loopEnabled,
+              tracks: tracksRef.current,
+            },
+          });
+        }
+        const exportBuffer = target === 'mix'
+          ? await mixAudioTracks(tracksRef.current)
+          : activeTrackRef.current?.buffer ?? null;
+        if (!exportBuffer) throw new Error(copy.status.loadFirst);
+        return exportAudio({
+          buffer: exportBuffer,
+          format,
+          filename: filename.trim() || (target === 'mix' ? 'audio-mix' : activeTrackName || 'audio-export'),
+          quality: 0.82,
+        });
       });
-
-      setStatusMessage(saved ? copy.status.exportReady(format) : null);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : copy.status.exportFailed);
     }
@@ -1421,6 +1407,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   };
 
   const handleResetProject = () => {
+    audioDownload.clear();
     getPlayer().stop();
     clearRecordingTimer();
     stopRecordingStream();
@@ -1735,6 +1722,8 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       />
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 sm:p-4">
+        {audioDownload.preparing ? <p role="status" className="text-sm">{locale === 'ko' ? '내보낼 파일을 준비하는 중입니다...' : 'Preparing export file...'}</p> : null}
+        {audioDownload.file ? <AudioDownload key={audioDownload.file.url} file={audioDownload.file} locale={locale} onClose={audioDownload.clear} /> : null}
         {banners.map((banner) => (
           <div
             key={banner.tone}
