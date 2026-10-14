@@ -84,6 +84,7 @@ const MEDIA_TOOLS = new Set([
   'video-crop',
   'video-resize',
   'video-watermark',
+  'video-add-audio',
   'video-reverse',
   'video-thumbnail-generator',
   'images-to-gif',

@@ -320,6 +320,97 @@ test('mute video works on the whole clip, without a trim selection', async ({ pa
   await expect(page.getByRole('slider', { name: 'Trim end' })).toHaveCount(0);
 });
 
+/** A mono 16-bit WAV of a tone, `seconds` long. */
+function toneWav(seconds: number) {
+  const rate = 8000;
+  const frames = Math.round(seconds * rate);
+  const wav = Buffer.alloc(44 + frames * 2);
+  wav.write('RIFF', 0);
+  wav.writeUInt32LE(36 + frames * 2, 4);
+  wav.write('WAVEfmt ', 8);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(rate, 24);
+  wav.writeUInt32LE(rate * 2, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write('data', 36);
+  wav.writeUInt32LE(frames * 2, 40);
+  for (let index = 0; index < frames; index += 1) {
+    const envelope = 0.3 + 0.7 * Math.abs(Math.sin((index / rate) * Math.PI));
+    wav.writeInt16LE(Math.round(Math.sin((index / rate) * 2 * Math.PI * 440) * 20000 * envelope), 44 + index * 2);
+  }
+  return wav;
+}
+
+test('add audio to video: the waveform clip moves, trims, snaps and fits like a video editor', async ({ page }) => {
+  await page.goto('/tools/video/video-add-audio');
+  const videoBuffer = await createDemoVideoBuffer(page);
+  await page.locator('input[type="file"]').setInputFiles([
+    { name: 'clip.webm', mimeType: 'video/webm', buffer: videoBuffer },
+    { name: 'song.wav', mimeType: 'audio/wav', buffer: toneWav(6) },
+  ]);
+
+  const clip = page.getByTestId('add-audio-clip');
+  await expect(clip).toBeVisible({ timeout: 60_000 });
+  const position = page.getByTestId('add-audio-position');
+  const length = page.getByTestId('add-audio-length');
+  // It starts fitted: with the video, as long as the video.
+  await expect(position).toHaveText('0:00.00');
+  await expect.poll(async () => (await length.textContent()) !== '0:00.00').toBe(true);
+  const fittedLength = await length.textContent();
+
+  // The waveform is drawn.
+  const inked = await page.locator('[data-testid="add-audio-editor"] canvas').evaluate((canvas: HTMLCanvasElement) => {
+    const data = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+    let count = 0;
+    for (let index = 3; index < data.length; index += 4) if (data[index] > 0) count += 1;
+    return count;
+  });
+  expect(inked).toBeGreaterThan(100);
+
+  // Drag the clip right: it moves later into the video.
+  // The timeline sits below the fold; the mouse only reaches what is on screen.
+  await page.getByTestId('add-audio-editor').scrollIntoViewIfNeeded();
+  await page.getByTestId('add-audio-length').scrollIntoViewIfNeeded();
+  const box = (await clip.boundingBox())!;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(box.x + box.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 60, y, { steps: 6 });
+  await page.mouse.up();
+  await expect(position).not.toHaveText('0:00.00');
+
+  // Dragging it back close to the start sticks it there, with a guide line.
+  const moved = (await clip.boundingBox())!;
+  await page.mouse.move(moved.x + moved.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(moved.x + moved.width / 2 - 56, y, { steps: 6 });
+  await expect(page.getByTestId('add-audio-guide')).toBeVisible();
+  await page.mouse.up();
+  await expect(position).toHaveText('0:00.00');
+  await expect(page.getByTestId('add-audio-guide')).toHaveCount(0);
+
+  // The right edge trims the clip shorter.
+  const end = (await page.getByTestId('add-audio-handle-end').boundingBox())!;
+  await page.mouse.move(end.x + end.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(end.x + end.width / 2 - 80, y, { steps: 6 });
+  await page.mouse.up();
+  await expect(length).not.toHaveText(fittedLength!);
+
+  // "Fit to video" lines it up with the whole video again.
+  await page.getByTestId('add-audio-fit').click();
+  await expect(position).toHaveText('0:00.00');
+  await expect(length).toHaveText(fittedLength!);
+
+  // Arrow keys nudge it.
+  await clip.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(position).toHaveText('0:00.10');
+});
+
 test('video crop ratio presets reshape the crop frame', async ({ page }) => {
   await page.goto('/tools/video/video-crop');
 

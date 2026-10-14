@@ -46,6 +46,7 @@ const koToolNames: Record<string, string> = {
   'video-to-gif': '비디오를 GIF로',
   'video-to-webp': '비디오를 WEBP로',
   'mute-video': '비디오 음소거',
+  'video-add-audio': '비디오에 오디오 넣기',
   'extract-audio': '오디오 추출',
   'video-compress': '비디오 압축',
   'video-convert': '비디오 변환기',
@@ -122,6 +123,7 @@ const koToolDescriptions: Record<string, string> = {
   'video-to-gif': '비디오를 GIF 애니메이션으로 변환합니다.',
   'video-to-webp': '비디오를 WEBP 애니메이션으로 변환합니다.',
   'mute-video': '비디오에서 오디오 트랙을 제거합니다.',
+  'video-add-audio': '음악이나 내레이션을 영상에 넣어요. 타임라인에서 위치를 옮기고 길이를 맞출 수 있어요.',
   'extract-audio': '비디오에서 오디오만 추출합니다.',
   'video-compress': '비디오 용량을 줄이기 위해 다시 인코딩합니다.',
   'video-convert': 'MP4, WEBM, MOV, AVI 같은 비디오 파일을 원하는 출력 포맷으로 한 번에 변환합니다.',
@@ -258,6 +260,8 @@ const koOptionLabelsByKey: Record<string, string> = {
 };
 
 const koChoiceLabels: Record<string, string> = {
+  'Replace it with the new audio': '새 오디오로 바꾸기',
+  'Mix it with the new audio': '새 오디오와 섞기',
   '90 degrees': '90도',
   '180 degrees': '180도',
   '270 degrees': '270도',
@@ -360,6 +364,11 @@ Object.assign(koOptionLabelsByLabel, {
   Speed: '속도',
   Timestamp: '시점',
   'Fade in duration': '페이드 인 길이',
+  'Video sound': '영상 원래 소리',
+  'New audio volume': '넣을 오디오 볼륨',
+  'Original sound volume': '원래 소리 볼륨',
+  'Fade in (seconds)': '페이드 인 (초)',
+  'Fade out (seconds)': '페이드 아웃 (초)',
   'Fade out duration': '페이드 아웃 길이',
   Semitones: '반음 수',
   'Camera position': '카메라 위치',
