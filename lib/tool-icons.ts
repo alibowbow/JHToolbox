@@ -135,6 +135,7 @@ const toolIcons: Record<string, LucideIcon> = {
   'ocr-pdf-to-text': FileSearch,
 
   'mute-video': VolumeX,
+  'video-add-audio': Music,
   'extract-audio': Music,
   'video-compress': Minimize2,
   'video-speed-change': Gauge,

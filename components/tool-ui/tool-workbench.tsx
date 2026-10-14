@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import JSZip from 'jszip';
 import { AlertCircle, Check, Copy, Download, LoaderCircle, Play, RotateCcw, X } from 'lucide-react';
 import dynamic from 'next/dynamic';
@@ -46,6 +46,7 @@ const ImageCropEditor = dynamic(() => import('@/components/ui/ImageCropEditor').
 const ImageOverlayEditor = dynamic(() => import('@/components/ui/ImageOverlayEditor').then((mod) => mod.ImageOverlayEditor), { ssr: false });
 const ImageTransformPreview = dynamic(() => import('@/components/ui/ImageTransformPreview').then((mod) => mod.ImageTransformPreview), { ssr: false });
 const UrlImageCropper = dynamic(() => import('@/components/ui/UrlImageCropper').then((mod) => mod.UrlImageCropper), { ssr: false });
+const VideoAudioEditor = dynamic(() => import('@/components/ui/VideoAudioEditor').then((mod) => mod.VideoAudioEditor), { ssr: false });
 const VideoTimelineEditor = dynamic(() => import('@/components/ui/VideoTimelineEditor').then((mod) => mod.VideoTimelineEditor), { ssr: false });
 const BrowserCaptureWorkbench = dynamic(
   () => import('@/components/tool-ui/browser-capture-workbench').then((mod) => mod.BrowserCaptureWorkbench),
@@ -99,6 +100,7 @@ const HIDDEN_OPTION_KEYS_BY_TOOL_ID: Record<string, Set<string>> = {
   'video-speed-change': new Set(['startTime', 'endTime']),
   'video-resize': new Set(['startTime', 'endTime']),
   'video-watermark': new Set(['startTime', 'endTime']),
+  'video-add-audio': new Set(['offset', 'audioStart', 'audioEnd', 'videoDuration']),
   'video-convert': new Set(['startTime', 'endTime']),
   'video-compress': new Set(['startTime', 'endTime']),
   'extract-audio': new Set(['startTime', 'endTime']),
@@ -931,9 +933,42 @@ function StandardToolWorkbench({
   const pdfEditorFiles = useMemo(() => (tool.id === 'pdf-rearrange' ? files.slice(0, 1) : files), [files, tool.id]);
 
   // The editor or preview for the current input (null when a file row is enough).
+  const handleAudioClipChange = useCallback(
+    (next: { offset: number; audioStart: number; audioEnd: number }) => setOptions((current) => ({ ...current, ...next })),
+    [],
+  );
+  const handleAddAudioVideoDuration = useCallback(
+    (seconds: number) => setOptions((current) => ({ ...current, videoDuration: Number(seconds.toFixed(3)) })),
+    [],
+  );
+
   const renderInputStage = () => {
     if (files.length === 0) {
       return null;
+    }
+
+    if (tool.id === 'video-add-audio') {
+      const video = files.find((file) => file.type.startsWith('video/'));
+      const audio = files.find((file) => file !== video && (file.type.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg|oga|opus|flac|weba)$/i.test(file.name)));
+      if (!video || !audio) {
+        return <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-ink-muted">{messages.workbench.addAudioNeedsBoth}</p>;
+      }
+      return (
+        <VideoAudioEditor
+          // A different pair of files starts a fresh timeline.
+          key={`${fileSignature([video])}|${fileSignature([audio])}`}
+          videoFile={video}
+          audioFile={audio}
+          offset={Number(options.offset ?? 0)}
+          audioStart={Number(options.audioStart ?? 0)}
+          audioEnd={Number(options.audioEnd ?? 0)}
+          mode={String(options.mode ?? 'replace')}
+          volume={Number(options.volume ?? 1)}
+          originalVolume={Number(options.originalVolume ?? 1)}
+          onClipChange={handleAudioClipChange}
+          onVideoDuration={handleAddAudioVideoDuration}
+        />
+      );
     }
 
     if (usesPdfEditor) {

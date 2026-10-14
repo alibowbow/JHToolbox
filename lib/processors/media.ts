@@ -1,6 +1,8 @@
 import { getFfmpeg } from '@/lib/processors/ffmpeg-client';
 import { decodeImage } from '@/lib/processors/image-decode';
 import { baseName, extOf, parseNumber } from '@/lib/utils';
+import { createWavBlob } from '@/lib/audio/WavEncoder';
+import { addAudioCommand, clipGainPoints, clipLength, type AddAudioSettings } from '@/lib/video-audio-timeline';
 import { toEvenDimension, toEvenOffset } from '@/lib/media-dimensions';
 import { ProcessContext, ProcessedFile } from '@/types/processor';
 
@@ -304,6 +306,164 @@ async function execWithFallback(ffmpeg: any, primaryArgs: string[], fallbackArgs
     await ffmpeg.exec(primaryArgs);
   } catch {
     await ffmpeg.exec(fallbackArgs);
+  }
+}
+
+const AUDIO_FILE_PATTERN = /\.(mp3|wav|m4a|aac|ogg|oga|opus|flac|weba)$/i;
+
+function isAudioInput(file: File) {
+  return file.type.startsWith('audio/') || (!file.type.startsWith('video/') && AUDIO_FILE_PATTERN.test(file.name));
+}
+
+/**
+ * Runs each ffmpeg command until one produces its output. ffmpeg.wasm reports
+ * a failed command by its exit code, not by throwing.
+ */
+async function runFirstWorking(ffmpeg: any, attempts: Array<{ command: string[]; output: string }>) {
+  for (let index = 0; index < attempts.length; index += 1) {
+    try {
+      const code = await ffmpeg.exec(attempts[index].command);
+      if (code === 0 || code === undefined) {
+        const data = await ffmpeg.readFile(attempts[index].output);
+        const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+        if (bytes.byteLength > 0) {
+          return { bytes, attempt: index };
+        }
+      }
+    } catch {
+      // Try the next way.
+    }
+  }
+  return null;
+}
+
+/**
+ * The video's own sound and the clip mixed in the browser, as a WAV as long
+ * as the video. Null when the video has no sound to mix with (or the browser
+ * cannot read either file), so the clip alone becomes the sound.
+ */
+async function renderMixWav(video: File, audio: File, settings: AddAudioSettings): Promise<Blob | null> {
+  if (typeof OfflineAudioContext === 'undefined') {
+    return null;
+  }
+  const sampleRate = 48000;
+  const decoder = new OfflineAudioContext(2, 1, sampleRate);
+  let original: AudioBuffer;
+  let added: AudioBuffer;
+  try {
+    original = await decoder.decodeAudioData(await video.arrayBuffer());
+    added = await decoder.decodeAudioData(await audio.arrayBuffer());
+  } catch {
+    return null;
+  }
+  const duration = settings.videoDuration > 0 ? settings.videoDuration : original.duration;
+  const context = new OfflineAudioContext(2, Math.max(1, Math.ceil(duration * sampleRate)), sampleRate);
+
+  const originalSource = context.createBufferSource();
+  originalSource.buffer = original;
+  const originalGain = context.createGain();
+  originalGain.gain.value = Math.max(0, settings.originalVolume);
+  originalSource.connect(originalGain).connect(context.destination);
+  originalSource.start(0);
+
+  const { clip } = settings;
+  const clipSource = context.createBufferSource();
+  clipSource.buffer = added;
+  const clipGain = context.createGain();
+  clipGain.gain.value = 0;
+  clipGainPoints(settings).forEach(([time, gain], index) => {
+    if (index === 0) clipGain.gain.setValueAtTime(gain, time);
+    else clipGain.gain.linearRampToValueAtTime(gain, time);
+  });
+  clipSource.connect(clipGain).connect(context.destination);
+  const playable = Math.min(clipLength(clip), Math.max(0, added.duration - clip.start));
+  if (playable > 0 && clip.offset < duration) {
+    clipSource.start(clip.offset, clip.start, playable);
+  }
+
+  return createWavBlob(await context.startRendering());
+}
+
+/**
+ * Puts an audio clip into a video: the clip is trimmed, faded and placed at
+ * its offset, then either replaces the video's sound or is mixed with it. The
+ * picture is copied, never re-encoded, unless its codec cannot share a file
+ * with the new sound.
+ */
+async function processVideoAddAudio(ctx: ProcessContext) {
+  const { files, options, onProgress } = ctx;
+  const video = files.find((file) => file.type.startsWith('video/'));
+  const audio = files.find((file) => file !== video && isAudioInput(file));
+  if (!video) {
+    throw new Error('Add the video to put the audio into.');
+  }
+  if (!audio) {
+    throw new Error('Add an audio file to put into the video.');
+  }
+
+  onProgress({ percent: 2, stage: 'Loading ffmpeg.wasm' });
+  const { ffmpeg, fetchFile } = await getFfmpeg((ratio) =>
+    onProgress({ percent: Math.max(5, Math.min(95, ratio * 100)), stage: 'Adding audio' }),
+  );
+
+  const container = MUTE_CONTAINERS[extOf(video.name)] ? extOf(video.name) : 'mp4';
+  const settings: AddAudioSettings = {
+    clip: {
+      offset: parseNumber(options.offset, 0),
+      start: parseNumber(options.audioStart, 0),
+      end: parseNumber(options.audioEnd, 0),
+    },
+    mode: String(options.mode ?? 'replace') === 'mix' ? 'mix' : 'replace',
+    volume: parseNumber(options.volume, 1),
+    originalVolume: parseNumber(options.originalVolume, 1),
+    fadeIn: parseNumber(options.fadeIn, 0),
+    fadeOut: parseNumber(options.fadeOut, 0),
+    videoDuration: parseNumber(options.videoDuration, 0),
+  };
+  // An end of 0 means "to the end of the audio".
+  if (!(settings.clip.end > settings.clip.start)) {
+    settings.clip.end = settings.clip.start + 24 * 3600;
+  }
+
+  const videoName = `add-audio-video.${extOf(video.name) || 'bin'}`;
+  const audioName = `add-audio-audio.${extOf(audio.name) || 'bin'}`;
+  const mixedName = 'add-audio-mixed.wav';
+  const copyOutput = `add-audio-output.${container}`;
+  const encodeOutput = 'add-audio-output-encoded.mp4';
+  const copy = { video: videoName, audio: audioName, output: copyOutput, container };
+  const encode = { ...copy, output: encodeOutput, container: 'mp4' };
+  const mix = settings.mode === 'mix';
+
+  try {
+    await ffmpeg.writeFile(videoName, await fetchFile(video));
+    await ffmpeg.writeFile(audioName, await fetchFile(audio));
+    // A video without sound has nothing to mix with: the clip alone goes in.
+    const mixed = mix ? await renderMixWav(video, audio, settings) : null;
+    if (mixed) {
+      await ffmpeg.writeFile(mixedName, await fetchFile(mixed));
+    }
+    const sound = mixed ? { mixed: mixedName } : {};
+    // Copy the picture when it can share a file with the new sound, else
+    // re-encode it as MP4.
+    const attempts = [
+      { command: addAudioCommand(settings, { ...copy, ...sound }), output: copyOutput },
+      { command: addAudioCommand(settings, { ...encode, ...sound }, true), output: encodeOutput },
+    ];
+    const result = await runFirstWorking(ffmpeg, attempts);
+    if (!result) {
+      throw new Error('The audio could not be added to this video.');
+    }
+    const outputExt = attempts[result.attempt].output === encodeOutput ? 'mp4' : container;
+    const mimeType = outputExt === 'mp4' ? 'video/mp4' : MUTE_CONTAINERS[outputExt] ?? 'video/mp4';
+    return [
+      {
+        name: `${baseName(video.name)}-with-audio.${outputExt}`,
+        blob: blobFromBytes(result.bytes, mimeType),
+        mimeType,
+      },
+    ];
+  } finally {
+    await Promise.allSettled([videoName, audioName, mixedName, copyOutput, encodeOutput].map((name) => ffmpeg.deleteFile(name)));
   }
 }
 
@@ -1123,6 +1283,10 @@ export async function processMediaTool(ctx: ProcessContext): Promise<ProcessedFi
 
   if (toolId === 'video-speed-change') {
     return await processVideoSpeedChange(ctx);
+  }
+
+  if (toolId === 'video-add-audio') {
+    return await processVideoAddAudio(ctx);
   }
 
   if (toolId === 'video-watermark') {
