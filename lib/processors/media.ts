@@ -145,11 +145,14 @@ function getVideoFormatConfig(format: string) {
   return VIDEO_FORMATS[requestedFormat] ?? VIDEO_FORMATS.mp4;
 }
 
-function hasTrimSelection(options: Record<string, string | number | boolean>) {
-  const startTime = Math.max(0, parseNumber(options.startTime, 0));
-  const endTime = Math.max(0, parseNumber(options.endTime, 0));
-  return startTime > 0.01 || endTime > startTime + 0.05;
-}
+// Containers a muted copy keeps; anything else becomes MP4.
+const MUTE_CONTAINERS: Record<string, string> = {
+  mp4: 'video/mp4',
+  m4v: 'video/mp4',
+  mov: 'video/quicktime',
+  webm: 'video/webm',
+  mkv: 'video/x-matroska',
+};
 
 function buildVideoInputArgs(inputName: string, options: Record<string, string | number | boolean>) {
   const startTime = Math.max(0, parseNumber(options.startTime, 0));
@@ -926,12 +929,11 @@ const presets: Record<string, MediaPreset> = {
     },
   },
   'mute-video': {
-    outputName: 'output.mp4',
-    mimeType: 'video/mp4',
-    args: (input, _file, output, options) =>
-      hasTrimSelection(options)
-        ? [...buildVideoInputArgs(input, options), '-c:v', 'libx264', '-an', output]
-        : ['-i', input, '-c:v', 'copy', '-an', output],
+    // The picture is copied as it is, never re-encoded, so the result keeps
+    // the input's container (VP8 or VP9 cannot always go into MP4).
+    outputName: (file) => `output.${MUTE_CONTAINERS[extOf(file.name)] ? extOf(file.name) : 'mp4'}`,
+    mimeType: (file) => MUTE_CONTAINERS[extOf(file.name)] ?? 'video/mp4',
+    args: (input, _file, output) => ['-i', input, '-map', '0:v', '-c', 'copy', output],
   },
   'extract-audio': {
     outputName: 'output.mp3',

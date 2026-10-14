@@ -1189,8 +1189,6 @@ export const tools: ToolDefinition[] = [
     browseGroups: ['new', 'editor-enabled'],
     previewKind: 'video',
     options: [
-      { key: 'startTime', label: 'Start time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
-      { key: 'endTime', label: 'End time', type: 'number', defaultValue: 0, min: 0, step: 0.01 },
     ],
   },
   {
