@@ -311,6 +311,15 @@ test('video crop editor exposes timeline scrubbing, trim handles, and hides lega
   await expect(page.locator('input[type="number"]')).toHaveCount(0);
 });
 
+test('mute video works on the whole clip, without a trim selection', async ({ page }) => {
+  await page.goto('/tools/video/mute-video');
+  const videoBuffer = await createDemoVideoBuffer(page);
+  await page.locator('input[type="file"]').setInputFiles({ name: 'clip.webm', mimeType: 'video/webm', buffer: videoBuffer });
+  await expect(page.getByRole('slider', { name: 'Playhead' })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole('slider', { name: 'Trim start' })).toHaveCount(0);
+  await expect(page.getByRole('slider', { name: 'Trim end' })).toHaveCount(0);
+});
+
 test('video crop ratio presets reshape the crop frame', async ({ page }) => {
   await page.goto('/tools/video/video-crop');
 

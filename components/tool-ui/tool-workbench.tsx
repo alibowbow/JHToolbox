@@ -88,7 +88,6 @@ const VIDEO_TRIM_TOOL_IDS = new Set([
   'video-watermark',
   'video-convert',
   'video-compress',
-  'mute-video',
   'extract-audio',
   'video-reverse',
 ]);
@@ -102,7 +101,6 @@ const HIDDEN_OPTION_KEYS_BY_TOOL_ID: Record<string, Set<string>> = {
   'video-watermark': new Set(['startTime', 'endTime']),
   'video-convert': new Set(['startTime', 'endTime']),
   'video-compress': new Set(['startTime', 'endTime']),
-  'mute-video': new Set(['startTime', 'endTime']),
   'extract-audio': new Set(['startTime', 'endTime']),
   'video-reverse': new Set(['startTime', 'endTime']),
   // Set by dragging on the picture or page instead of typing coordinates.
