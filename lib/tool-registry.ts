@@ -1315,6 +1315,18 @@ export const tools: ToolDefinition[] = [
     ],
   },
   {
+    id: 'video-editor',
+    name: 'Video Editor',
+    category: 'video',
+    description: 'Edit like CapCut: cut and arrange clips and photos, add text and music, change speed, then export a video.',
+    accept: 'video/*,image/*,audio/*',
+    multiple: true,
+    tags: ['video', 'editor', 'capcut', 'timeline', 'cut', 'split', 'text', 'subtitle', 'music', 'vlog'],
+    browseGroups: ['new', 'editor-enabled'],
+    inputMode: 'editor',
+    previewKind: 'video',
+  },
+  {
     id: 'video-add-audio',
     name: 'Add Audio to Video',
     category: 'video',
@@ -2240,6 +2252,7 @@ export const categories: ToolCategoryDefinition[] = [
     label: 'Video Tools',
     description: 'Convert, compress, mute, and extract media from video files.',
     tools: [
+      'video-editor',
       'video-convert',
       'extract-audio',
       'video-to-gif',

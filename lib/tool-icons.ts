@@ -1,5 +1,6 @@
 import {
   ArrowDownUp,
+  Clapperboard,
   ArrowLeftRight,
   AudioLines,
   AudioWaveform,
@@ -136,6 +137,7 @@ const toolIcons: Record<string, LucideIcon> = {
 
   'mute-video': VolumeX,
   'video-add-audio': Music,
+  'video-editor': Clapperboard,
   'extract-audio': Music,
   'video-compress': Minimize2,
   'video-speed-change': Gauge,

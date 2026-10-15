@@ -76,7 +76,7 @@ for (const preset of PIPELINE_PRESETS) {
       check(`${label} step ${index + 1}: tool ${step.toolId} exists`, Boolean(tool));
       if (!tool) return;
       check(`${label} step ${index + 1}: ${step.toolId} is browsable`, browsable.has(step.toolId));
-      check(`${label} step ${index + 1}: ${step.toolId} runs without a live capture`, tool.inputMode !== 'capture');
+      check(`${label} step ${index + 1}: ${step.toolId} runs without a live capture`, tool.inputMode !== 'capture' && tool.inputMode !== 'editor');
 
       const schema = tool.options ?? [];
       const normalized = normalizeToolOptions(schema, step.options);

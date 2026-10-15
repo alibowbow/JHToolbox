@@ -113,7 +113,8 @@ for (const [catId, secs] of Object.entries(sections)) {
 //    ids, which the pipeline builder can still run) must reach runTool's
 //    dispatch, or it fails at run time with "Unsupported tool.".
 const router = await loadStripped('lib/processors/index.ts');
-const unrouted = tools.filter((t) => t.inputMode !== 'capture' && !router.isRoutedTool(t.id)).map((t) => t.id);
+// Editors (inputMode 'editor') are pages of their own.
+const unrouted = tools.filter((t) => t.inputMode !== 'capture' && t.inputMode !== 'editor' && !router.isRoutedTool(t.id)).map((t) => t.id);
 check(`every non-capture tool is routed (unrouted: ${unrouted.join(', ') || 'none'})`, unrouted.length === 0);
 
 console.log(
