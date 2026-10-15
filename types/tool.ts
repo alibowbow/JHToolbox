@@ -2,7 +2,8 @@ export type ToolCategory = 'pdf' | 'image' | 'ocr' | 'video' | 'audio' | 'file' 
 
 export type ToolOptionType = 'number' | 'text' | 'select' | 'checkbox' | 'range' | 'color';
 export type ToolBrowseGroup = 'popular' | 'new' | 'editor-enabled' | 'convert' | 'trim' | 'compress' | 'merge' | 'capture';
-export type ToolInputMode = 'file' | 'url' | 'capture';
+/** 'editor': a full editor page of its own (not the file → result workbench). */
+export type ToolInputMode = 'file' | 'url' | 'capture' | 'editor';
 export type ToolPreviewKind = 'none' | 'image' | 'audio' | 'video' | 'pdf-merge' | 'audio-editor';
 
 export interface ToolOption {

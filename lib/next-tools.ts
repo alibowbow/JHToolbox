@@ -17,7 +17,7 @@ const RULES: Rule[] = [
   },
   {
     test: (mime) => mime.startsWith('video/'),
-    toolIds: ['video-compress', 'video-convert', 'video-trim', 'video-add-audio', 'mute-video', 'extract-audio', 'video-thumbnail-generator'],
+    toolIds: ['video-editor', 'video-compress', 'video-convert', 'video-trim', 'video-add-audio', 'mute-video', 'extract-audio', 'video-thumbnail-generator'],
   },
   { test: (mime, name) => mime.startsWith('text/csv') || extension(name) === 'csv', toolIds: ['csv-excel', 'csv-json', 'split-csv'] },
   { test: (mime, name) => mime.includes('json') || extension(name) === 'json', toolIds: ['json-csv', 'json-xml'] },

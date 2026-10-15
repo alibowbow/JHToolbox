@@ -61,7 +61,7 @@ function toolNeedsFiles(toolId: string | undefined): boolean {
 // Tools usable in a pipeline: everything except the interactive capture studios
 // (screen/webcam/audio recorders take no file input and need a live session).
 function pipelineTools(): ToolDefinition[] {
-  return getBrowsableTools().filter((tool) => tool.inputMode !== 'capture');
+  return getBrowsableTools().filter((tool) => tool.inputMode !== 'capture' && tool.inputMode !== 'editor');
 }
 
 function defaultsFor(tool: ToolDefinition): ToolOptionValues {

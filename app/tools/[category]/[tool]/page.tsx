@@ -1,6 +1,7 @@
 import { Suspense } from 'react';
 import { notFound, redirect } from 'next/navigation';
 import { ToolWorkbench } from '@/components/tool-ui/tool-workbench';
+import { VideoEditorPage } from '@/components/video-editor/VideoEditorPage';
 import { categories, getCategoryById, getToolById, isToolInCategory } from '@/lib/tool-registry';
 
 const legacyToolRedirects: Partial<Record<string, string>> = {
@@ -69,6 +70,10 @@ export default function ToolPage({
   const tool = getToolById(params.tool);
   if (!category || !tool || !isToolInCategory(category.id, tool.id)) {
     notFound();
+  }
+
+  if (tool.inputMode === 'editor') {
+    return <VideoEditorPage />;
   }
 
   return (
