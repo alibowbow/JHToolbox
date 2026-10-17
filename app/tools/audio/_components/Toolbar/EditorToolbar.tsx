@@ -28,6 +28,11 @@ interface EditorToolbarProps {
   onSaveAs: (options: { filename: string; format: SaveFormat; target: SaveTarget }) => void;
   onReset: () => void;
   onShowShortcuts?: () => void;
+  /** One track (the default) or multitrack. */
+  viewMode: 'single' | 'multi';
+  /** No switching while recording. */
+  viewModeLocked?: boolean;
+  onViewModeChange: (next: 'single' | 'multi') => void;
 }
 
 function getBaseName(fileName: string | null) {
@@ -71,6 +76,9 @@ export function EditorToolbar({
   onSaveAs,
   onReset,
   onShowShortcuts,
+  viewMode,
+  viewModeLocked = false,
+  onViewModeChange,
 }: EditorToolbarProps) {
   const { locale } = useLocale();
   const copy = getAudioEditorCopy(locale);
@@ -141,7 +149,7 @@ export function EditorToolbar({
   const openSavePanel = () => {
     setSaveName(getBaseName(fileName));
     setSaveFormat(getInitialFormat(fileName));
-    setSaveTarget(getInitialTarget(canSaveTrack, canSaveMix, canSaveSession));
+    setSaveTarget(viewMode === 'single' && canSaveTrack ? 'track' : getInitialTarget(canSaveTrack, canSaveMix, canSaveSession));
     setMenuOpen(false);
     setSaveOpen((open) => !open);
   };
@@ -152,6 +160,7 @@ export function EditorToolbar({
   };
 
   const saveExtension = saveTarget === 'session' ? AUDIO_SESSION_EXTENSION.replace(/^\./, '') : saveFormat;
+  const single = viewMode === 'single';
   const targets: Array<{ id: SaveTarget; enabled: boolean }> = [
     { id: 'track', enabled: canSaveTrack },
     { id: 'mix', enabled: canSaveMix },
@@ -168,6 +177,23 @@ export function EditorToolbar({
           <p className="truncate text-[14px] font-semibold leading-tight text-[var(--text-primary)]">{title}</p>
           {subtitle ? <p className="audio-mono truncate text-[11px] leading-tight text-[var(--text-tertiary)]">{subtitle}</p> : null}
         </div>
+      </div>
+
+      <div className={`audio-segmented shrink-0 ${empty ? '' : 'hidden sm:flex'}`} role="group" aria-label={copy.viewMode.label} data-testid="audio-view-mode">
+        {(['single', 'multi'] as const).map((mode) => (
+          <button
+            key={mode}
+            type="button"
+            onClick={() => onViewModeChange(mode)}
+            disabled={viewModeLocked}
+            aria-pressed={viewMode === mode}
+            title={mode === 'single' ? copy.viewMode.singleTitle : copy.viewMode.multiTitle}
+            className="audio-tab audio-focus-ring px-2.5 text-[12px] disabled:opacity-50"
+            data-testid={`audio-view-${mode}`}
+          >
+            {mode === 'single' ? copy.viewMode.single : copy.viewMode.multi}
+          </button>
+        ))}
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
@@ -222,7 +248,7 @@ export function EditorToolbar({
                 <div className="audio-menu absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[min(22rem,calc(100vw-1.5rem))] space-y-4 p-4">
                   <p className="text-sm font-semibold text-[var(--text-primary)]">{saveButtonLabel}</p>
 
-                  <div className="space-y-1.5">
+                  <div className={single ? 'hidden' : 'space-y-1.5'}>
                     <p className="audio-range-label">{targetLabel}</p>
                     <div className="audio-segmented w-full" role="group" aria-label={targetLabel}>
                       {targets.map((target) => (
@@ -308,6 +334,26 @@ export function EditorToolbar({
 
           {menuOpen ? (
             <div className="audio-menu absolute right-0 top-[calc(100%+0.5rem)] z-50 min-w-[220px] p-1.5">
+              {empty ? null : (
+                <div className="border-b border-[var(--border)] pb-1.5 mb-1.5 sm:hidden" role="group" aria-label={copy.viewMode.label}>
+                  {(['single', 'multi'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => {
+                        onViewModeChange(mode);
+                        setMenuOpen(false);
+                      }}
+                      disabled={viewModeLocked}
+                      aria-pressed={viewMode === mode}
+                      className="audio-menu-item"
+                    >
+                      <span className="w-4 text-center">{viewMode === mode ? '✓' : ''}</span>
+                      {mode === 'single' ? copy.viewMode.single : copy.viewMode.multi}
+                    </button>
+                  ))}
+                </div>
+              )}
               {onShowShortcuts ? (
                 <button
                   type="button"

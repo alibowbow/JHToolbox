@@ -67,6 +67,18 @@ import { usePreparedAudioFile } from './usePreparedAudioFile';
 
 const DROPPABLE_AUDIO_PATTERN = /\.(mp3|wav|m4a|aac|ogg|flac|webm|mp4|mov|m4v|jhaudio)$/i;
 const RECORDING_SETTINGS_KEY = 'jh-audio-recording-settings';
+const VIEW_MODE_KEY = 'jh-audio-view-mode';
+
+/** One track (a plain recorder, the default) or several (a studio). */
+export type AudioViewMode = 'single' | 'multi';
+
+function readSavedViewMode(): AudioViewMode {
+  try {
+    return window.localStorage.getItem(VIEW_MODE_KEY) === 'multi' ? 'multi' : 'single';
+  } catch {
+    return 'single';
+  }
+}
 
 function isDroppableAudioFile(file: File) {
   return file.type.startsWith('audio/') || file.type.startsWith('video/') || DROPPABLE_AUDIO_PATTERN.test(file.name);
@@ -218,6 +230,10 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   const [microphones, setMicrophones] = useState<Array<{ id: string; label: string }>>([]);
   const [deviceSupport, setDeviceSupport] = useState<DeviceAudioSupport>('none');
   const [hydrated, setHydrated] = useState(false);
+  const [viewMode, setViewMode] = useState<AudioViewMode>('single');
+  const isSingle = viewMode === 'single';
+  const viewModeRef = useRef<AudioViewMode>('single');
+  viewModeRef.current = viewMode;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importFilesRef = useRef<(files: File[]) => Promise<void>>(async () => undefined);
@@ -380,6 +396,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   useEffect(() => {
     setRecordingSettings(readSavedRecordingSettings());
     setDeviceSupport(deviceAudioSupport());
+    setViewMode(readSavedViewMode());
     setHydrated(true);
     void listMicrophones().then(setMicrophones);
     const mediaDevices = navigator.mediaDevices;
@@ -394,8 +411,10 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   // Stable, so the level meter's animation loop is not restarted on renders.
   const readInputPeaks = useMemo(() => () => inputPeaksRef.current, []);
 
-  const effectiveRecordingSettings: RecordingSettings =
+  const supportedRecordingSettings: RecordingSettings =
     deviceSupport !== 'none' || recordingSettings.source === 'mic' ? recordingSettings : { ...recordingSettings, source: 'mic' };
+  // One track: every take goes into it (continuing it, or over it from the playhead).
+  const effectiveRecordingSettings: RecordingSettings = isSingle ? { ...supportedRecordingSettings, target: 'track' } : supportedRecordingSettings;
 
   const updateRecordingSettings = (next: RecordingSettings) => {
     setRecordingSettings(next);
@@ -571,6 +590,10 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       if (nextFiles.length === 1 && isAudioSessionFile(nextFiles[0])) {
         const sessionState = await parseAudioSessionFile(nextFiles[0]);
         applySessionState(sessionState);
+        if (viewModeRef.current === 'single' && sessionState.tracks.length > 1) {
+          setViewMode('multi');
+          setStatusMessage(copy.viewMode.sessionIsMulti);
+        }
         return;
       }
 
@@ -580,6 +603,25 @@ export function AudioEditor({ mode }: AudioEditorProps) {
         setStatusMessage(copy.status.loading(file.name));
         const decoded = await decodeAudioBlobToBuffer(file);
         decodedTracks.push(createProjectTrack(file.name, decoded, 'file'));
+      }
+
+      if (viewModeRef.current === 'single') {
+        // One track: the files become the recording, joined in order. What
+        // was there before comes back with undo.
+        let joined: AudioBuffer | null = null;
+        for (const decodedTrack of decodedTracks) {
+          if (decodedTrack.buffer) {
+            joined = joined ? insertAudioAtTime(joined, decodedTrack.buffer, joined.duration) : decodedTrack.buffer;
+          }
+        }
+        const opened = createProjectTrack(decodedTracks[0]?.name ?? copy.viewMode.newRecording, joined, 'file');
+        commitTracks(copy.commands.openAudio, [opened], {
+          activeTrackId: opened.id,
+          selection: null,
+          playhead: 0,
+          status: decodedTracks.length > 1 ? copy.viewMode.joined(decodedTracks.length) : null,
+        });
+        return;
       }
 
       const targetTrack = activeTrackRef.current;
@@ -613,6 +655,55 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     }
   };
   importFilesRef.current = importFiles;
+
+  /**
+   * Switches between one track and multitrack. Going to one track with
+   * several tracks (or one moved, quieted or muted) mixes them into one, as
+   * heard; undo brings the tracks back.
+   */
+  const changeViewMode = async (next: AudioViewMode) => {
+    if (next === viewModeRef.current || isRecording) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(VIEW_MODE_KEY, next);
+    } catch {
+      // Private mode: the choice lasts for this visit only.
+    }
+    if (next === 'multi') {
+      setViewMode('multi');
+      return;
+    }
+    const current = tracksRef.current;
+    const needsMerge =
+      current.length > 1 ||
+      current.some((track) => track.startTime > 0.0005 || track.gain !== 1 || track.muted || track.solo);
+    if (needsMerge) {
+      const player = getPlayer();
+      player.pause();
+      setIsPlaying(false);
+      const mixed = await mixAudioTracks(current);
+      const merged = mixed ? [createProjectTrack(activeTrackRef.current?.name ?? copy.viewMode.newRecording, mixed, 'file')] : [];
+      viewModeRef.current = 'single';
+      setViewMode('single');
+      commitTracks(copy.commands.mergeTracks, merged, {
+        activeTrackId: merged[0]?.id ?? null,
+        selection: null,
+        status: current.length > 1 ? copy.viewMode.merged(current.length) : null,
+      });
+      return;
+    }
+    setViewMode('single');
+  };
+
+  // Undo can bring several tracks back in one-track mode: show them all.
+  useEffect(() => {
+    if (isSingle && tracks.length > 1) {
+      setViewMode('multi');
+      setStatusMessage(copy.viewMode.backToMulti);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reacts to the track count only
+  }, [isSingle, tracks.length]);
 
   const handleAddEmptyTrack = () => {
     const nextTrack = createProjectTrack(
@@ -1206,7 +1297,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
     }
 
     const targetId =
-      !newTrack && effectiveRecordingSettings.target === 'track' ? (activeTrackRef.current?.id ?? null) : null;
+      (isSingle || !newTrack) && effectiveRecordingSettings.target === 'track' ? (activeTrackRef.current?.id ?? null) : null;
 
     const player = getPlayer();
     player.pause();
@@ -1403,7 +1494,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       return;
     }
 
-    void handleStartRecording({ newTrack });
+    void handleStartRecording({ newTrack: newTrack && !isSingle });
   };
 
   const handleResetProject = () => {
@@ -1595,13 +1686,19 @@ export function AudioEditor({ mode }: AudioEditorProps) {
   }, []);
 
   const emptyStatePromptText =
+    (isSingle && intent === 'merge'
+      ? locale === 'ko'
+        ? '여러 오디오 파일을 한 번에 열면 순서대로 이어 붙여 하나의 녹음이 돼요. 그대로 저장하면 돼요.'
+        : 'Open several audio files at once: they are joined in order into one recording, ready to save.'
+      : null) ??
     INTENT_PROMPTS[intent ?? '']?.[locale] ??
     (locale === 'ko'
       ? '마이크나 기기 소리를 녹음하거나, 오디오 파일을 열어 편집하세요.'
       : 'Record your microphone or the device’s sound, or open audio files to edit.');
   const isEmpty = tracks.length === 0 && !isRecording;
-  const projectTitle = activeTrackName ?? copy.studio.untitled;
-  const projectSubtitle = tracks.length > 0 ? `${copy.studio.tracks(tracks.length)} · ${formatTime(projectDuration)}` : null;
+  const projectTitle = activeTrackName ?? (isSingle ? copy.viewMode.newRecording : copy.studio.untitled);
+  const projectSubtitle =
+    tracks.length > 0 ? (isSingle ? formatTime(projectDuration) : `${copy.studio.tracks(tracks.length)} · ${formatTime(projectDuration)}`) : null;
   const effectsTarget = selection
     ? copy.studio.effectsTargetSelection(formatTime(selection.start), formatTime(selection.end))
     : copy.studio.effectsTargetTrack(activeTrackName ?? copy.studio.untitled);
@@ -1631,7 +1728,7 @@ export function AudioEditor({ mode }: AudioEditorProps) {
       onChange={updateRecordingSettings}
       microphones={microphones}
       deviceSupport={deviceSupport}
-      showTarget={tracks.length > 0}
+      showTarget={!isSingle && tracks.length > 0}
     />
   );
   const banners = [
@@ -1719,6 +1816,9 @@ export function AudioEditor({ mode }: AudioEditorProps) {
         onSaveAs={({ format, filename, target }) => void handleSaveAs({ format, filename, target })}
         onReset={handleResetProject}
         onShowShortcuts={() => setShowShortcuts(true)}
+        viewMode={viewMode}
+        viewModeLocked={isRecording}
+        onViewModeChange={(next) => void changeViewMode(next)}
       />
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 sm:p-4">
@@ -1782,7 +1882,8 @@ export function AudioEditor({ mode }: AudioEditorProps) {
                   : null
               }
               canPaste={canPaste}
-              canSplit={canSplit}
+              canSplit={!isSingle && canSplit}
+              simple={isSingle}
               onZoomChange={(nextZoom) => setZoom(clamp(nextZoom, 1, MAX_ZOOM))}
               onSelectTrack={setActiveTrackId}
               onSeek={seekTo}

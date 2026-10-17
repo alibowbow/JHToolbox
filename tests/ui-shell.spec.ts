@@ -122,6 +122,11 @@ async function expectNoLegacyAudioContainers(page: Page) {
   await expect(page.getByTestId('audio-master-waveform')).toHaveCount(0);
 }
 
+/** The audio editor opens in one-track mode; these tests are about multitrack editing. */
+async function useMultitrack(page: Page) {
+  await page.addInitScript(() => window.localStorage.setItem('jh-audio-view-mode', 'multi'));
+}
+
 test('theme toggle changes the global theme without hydration errors', async ({ page }) => {
   const consoleErrors: string[] = [];
   page.on('console', (message) => {
@@ -486,6 +491,7 @@ test('audio editor starts with record and open, without playback controls', asyn
 });
 
 test('audio editor route exposes the unified editor workspace', async ({ page }) => {
+  await useMultitrack(page);
   await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
 
@@ -584,6 +590,7 @@ test('audio editor route exposes the unified editor workspace', async ({ page })
 });
 
 test('each multitrack row renders exactly one waveform surface and shorter tracks stay shorter', async ({ page }) => {
+  await useMultitrack(page);
   await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
 
@@ -621,6 +628,7 @@ test('each multitrack row renders exactly one waveform surface and shorter track
 });
 
 test('dragging a clip moves only that clip on the shared timeline', async ({ page }) => {
+  await useMultitrack(page);
   await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
 
@@ -718,6 +726,7 @@ test.skip('audio editor localizes save, record, and conversion actions in korean
 });
 
 test('audio editor localizes save and record actions in korean mode', async ({ page }) => {
+  await useMultitrack(page);
   await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
   await expect(page.locator('[data-testid="audio-editor-shell"][data-ready="true"]')).toBeVisible({ timeout: 60_000 });

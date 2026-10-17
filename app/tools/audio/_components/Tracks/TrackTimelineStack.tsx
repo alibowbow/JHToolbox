@@ -78,6 +78,11 @@ interface TrackTimelineStackProps {
   onSoloToggle: (trackId: string) => void;
   onGainChange: (trackId: string, nextGain: number) => void;
   onRemoveTrack: (trackId: string) => void;
+  /**
+   * One-track view: a single tall waveform without track headers, the move
+   * grip, Split or Add track — like a plain recorder.
+   */
+  simple?: boolean;
 }
 
 type Interaction =
@@ -108,6 +113,7 @@ const LANE_PAD = 16;
 const LANE_H = 96;
 const CLIP_INSET = 6;
 const GRIP_H = 20;
+const SIMPLE_LANE_H = 200;
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 32;
 const DRAG_THRESHOLD_PX = 4;
@@ -339,14 +345,19 @@ export function TrackTimelineStack({
   onSoloToggle,
   onGainChange,
   onRemoveTrack,
+  simple = false,
 }: TrackTimelineStackProps) {
   const { locale } = useLocale();
   const { theme } = useTheme();
   const copy = getTimelineCopy(locale);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [viewportWidth, setViewportWidth] = useState(960);
+  const [viewportHeight, setViewportHeight] = useState(0);
   const narrow = viewportWidth < 560;
-  const HEADER_W = narrow ? HEADER_W_NARROW : HEADER_W_WIDE;
+  const HEADER_W = simple ? 0 : narrow ? HEADER_W_NARROW : HEADER_W_WIDE;
+  // One track: the waveform takes the panel's height (less the ruler and a scrollbar).
+  const laneH = simple ? Math.max(SIMPLE_LANE_H, viewportHeight - 44) : LANE_H;
+  const gripH = simple ? 0 : GRIP_H;
   const colorFor = useMemo(() => createTrackColorer(), []);
   const [scrollLeft, setScrollLeft] = useState(0);
   const scrollFrameRef = useRef<number | null>(null);
@@ -405,6 +416,7 @@ export function TrackTimelineStack({
       if (nextWidth > 0) {
         setViewportWidth(Math.floor(nextWidth));
       }
+      setViewportHeight(Math.floor(entries[0]?.contentRect.height ?? 0));
     });
 
     observer.observe(node);
@@ -844,7 +856,7 @@ export function TrackTimelineStack({
             clipWidth={liveWidth}
             windowLeft={liveWinLeft}
             windowWidth={liveWinWidth}
-            height={LANE_H - CLIP_INSET * 2}
+            height={laneH - CLIP_INSET * 2}
           />
         ) : null}
         <span className="audio-mono absolute left-1.5 top-1 rounded bg-[var(--bg-surface)]/90 px-1 text-[11px] font-semibold text-red-500 shadow-sm">
@@ -860,6 +872,7 @@ export function TrackTimelineStack({
   return (
     <section
       data-testid="audio-track-timeline-stack"
+      data-view={simple ? 'single' : 'multi'}
       className="audio-panel flex flex-col overflow-hidden rounded-2xl lg:min-h-[18rem] lg:flex-1"
     >
       <div
@@ -867,18 +880,22 @@ export function TrackTimelineStack({
         aria-label={copy.toolbar}
         className="flex flex-wrap items-center gap-1 border-b border-[var(--border)] px-2 py-1.5 sm:px-3"
       >
-        <button type="button" onClick={onSplit} disabled={!canSplit} className={toolButton} aria-label={copy.split} title={copy.split}>
-          <Scissors size={15} strokeWidth={1.75} />
-          <span className="hidden md:inline">{copy.split}</span>
-        </button>
+        {simple ? null : (
+          <button type="button" onClick={onSplit} disabled={!canSplit} className={toolButton} aria-label={copy.split} title={copy.split}>
+            <Scissors size={15} strokeWidth={1.75} />
+            <span className="hidden md:inline">{copy.split}</span>
+          </button>
+        )}
         <button type="button" onClick={onPaste} disabled={!canPaste} className={toolButton} aria-label={copy.paste} title={copy.paste}>
           <ClipboardPaste size={15} strokeWidth={1.75} />
           <span className="hidden md:inline">{copy.paste}</span>
         </button>
-        <button type="button" onClick={onAddTrack} className={toolButton} aria-label={copy.addTrack} title={copy.addTrack}>
-          <Plus size={15} strokeWidth={1.75} />
-          <span className="hidden sm:inline">{copy.addTrack}</span>
-        </button>
+        {simple ? null : (
+          <button type="button" onClick={onAddTrack} className={toolButton} aria-label={copy.addTrack} title={copy.addTrack}>
+            <Plus size={15} strokeWidth={1.75} />
+            <span className="hidden sm:inline">{copy.addTrack}</span>
+          </button>
+        )}
 
         <div className="ml-auto flex items-center gap-0.5">
           <button
@@ -937,14 +954,16 @@ export function TrackTimelineStack({
         <div className="relative flex flex-1 flex-col" style={{ width: `${HEADER_W + laneWidth}px` }}>
           {/* Ruler */}
           <div className="flex border-b border-[var(--border)] bg-[var(--ruler-bg)]">
-            <div
-              className="sticky left-0 z-30 flex h-7 shrink-0 items-center border-r border-[var(--border)] bg-[var(--ruler-bg)] px-3"
-              style={{ width: `${HEADER_W}px` }}
-            >
-              <span className="audio-mono text-[11px] text-[var(--text-tertiary)]">
-                {formatTime(Math.max(projectDuration, recordingEnd, 0))}
-              </span>
-            </div>
+            {simple ? null : (
+              <div
+                className="sticky left-0 z-30 flex h-7 shrink-0 items-center border-r border-[var(--border)] bg-[var(--ruler-bg)] px-3"
+                style={{ width: `${HEADER_W}px` }}
+              >
+                <span className="audio-mono text-[11px] text-[var(--text-tertiary)]">
+                  {formatTime(Math.max(projectDuration, recordingEnd, 0))}
+                </span>
+              </div>
+            )}
             <div
               className="relative h-7 cursor-ew-resize select-none"
               style={{ width: `${laneWidth}px`, touchAction: 'none' }}
@@ -1055,6 +1074,7 @@ export function TrackTimelineStack({
               return (
                 <div key={track.id} data-testid="audio-track-stack-row" className="flex border-b border-[var(--border)]">
                   {/* Track header */}
+                  {simple ? null : (
                   <div
                     className={`sticky left-0 z-30 flex shrink-0 flex-col justify-center gap-1.5 border-r border-[var(--border)] py-2 pl-3.5 pr-2 ${
                       track.isActive ? 'bg-[var(--bg-elevated)]' : 'bg-[var(--bg-surface)]'
@@ -1187,11 +1207,12 @@ export function TrackTimelineStack({
                       </button>
                     </div>
                   </div>
+                  )}
 
                   {/* Lane */}
                   <div
                     className="relative"
-                    style={{ width: `${laneWidth}px`, height: `${LANE_H}px` }}
+                    style={{ width: `${laneWidth}px`, height: `${laneH}px` }}
                     onPointerDown={(event) => {
                       const target = event.target as HTMLElement;
                       if (target.closest('[data-track-clip]')) {
@@ -1267,6 +1288,7 @@ export function TrackTimelineStack({
                         }}
                       >
                         {/* Grip strip: drag to move the clip in time */}
+                        {simple ? null : (
                         <div
                           data-track-grip
                           data-testid="audio-track-drag-handle"
@@ -1291,14 +1313,15 @@ export function TrackTimelineStack({
                           <GripVertical size={11} strokeWidth={1.75} className="shrink-0 opacity-70" />
                           <span className="truncate">{trackLabel}</span>
                         </div>
+                        )}
 
                         <ClipWaveformWindow
                           buffer={buffer}
                           clipWidth={clipWidth}
                           windowLeft={winLeft}
                           windowWidth={winWidth}
-                          top={GRIP_H}
-                          height={LANE_H - CLIP_INSET * 2 - GRIP_H}
+                          top={gripH}
+                          height={laneH - CLIP_INSET * 2 - gripH}
                           theme={theme}
                           color={color}
                           muted={track.muted}
@@ -1396,14 +1419,16 @@ export function TrackTimelineStack({
 
             {recordingActive && !recordingTarget ? (
               <div data-testid="audio-recording-lane" className="flex border-b border-[var(--border)]">
-                <div
-                  className="sticky left-0 z-30 flex shrink-0 items-center gap-2 border-r border-[var(--border)] bg-[var(--bg-elevated)] px-3.5 py-2"
-                  style={{ width: `${HEADER_W}px`, boxShadow: 'inset 3px 0 0 #ef4444' }}
-                >
-                  <span className={`h-2.5 w-2.5 rounded-full bg-red-500 ${recording?.paused ? '' : 'animate-pulse'}`} />
-                  <span className="text-[13px] font-semibold text-[var(--text-primary)]">{copy.recordingLane}</span>
-                </div>
-                <div className="relative" style={{ width: `${laneWidth}px`, height: `${LANE_H}px` }}>
+                {simple ? null : (
+                  <div
+                    className="sticky left-0 z-30 flex shrink-0 items-center gap-2 border-r border-[var(--border)] bg-[var(--bg-elevated)] px-3.5 py-2"
+                    style={{ width: `${HEADER_W}px`, boxShadow: 'inset 3px 0 0 #ef4444' }}
+                  >
+                    <span className={`h-2.5 w-2.5 rounded-full bg-red-500 ${recording?.paused ? '' : 'animate-pulse'}`} />
+                    <span className="text-[13px] font-semibold text-[var(--text-primary)]">{copy.recordingLane}</span>
+                  </div>
+                )}
+                <div className="relative" style={{ width: `${laneWidth}px`, height: `${laneH}px` }}>
                   {renderLiveTake()}
                 </div>
               </div>
@@ -1411,7 +1436,9 @@ export function TrackTimelineStack({
 
             {/* Empty space below the tracks keeps the track-header column. */}
             <div className="flex min-h-0 flex-1" aria-hidden="true">
-              <div className="sticky left-0 z-30 shrink-0 border-r border-[var(--border)] bg-[var(--bg-surface)]" style={{ width: `${HEADER_W}px` }} />
+              {simple ? null : (
+                <div className="sticky left-0 z-30 shrink-0 border-r border-[var(--border)] bg-[var(--bg-surface)]" style={{ width: `${HEADER_W}px` }} />
+              )}
             </div>
           </div>
         </div>
