@@ -32,6 +32,18 @@ function createDemoAudioBuffer(durationSeconds: number, frequency = 220) {
   return buffer;
 }
 
+// These tests are about multitrack editing; one-track mode, the default, has
+// its own tests at the end of the file.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem('jh-audio-view-mode', 'multi');
+    } catch {
+      // No storage: the default applies.
+    }
+  });
+});
+
 test('audio mixer exposes live gain, mute, and solo controls per track', async ({ page }) => {
   await page.goto('/tools/audio', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('main')).toBeVisible({ timeout: 60_000 });
@@ -772,5 +784,102 @@ test.describe('audio save compatibility', () => {
     await checkDecoded(page, bytes);
     const retry = await downloadBytes(page);
     expect(retry.bytes.equals(bytes)).toBe(true);
+  });
+});
+
+test.describe('one-track mode (the default)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      try {
+        window.localStorage.removeItem('jh-audio-view-mode');
+      } catch {
+        // No storage: the default applies.
+      }
+    });
+  });
+
+  test('several files open as one recording on one plain waveform', async ({ page }) => {
+    await openReadyEditor(page);
+    await expect(page.getByTestId('audio-view-single')).toHaveAttribute('aria-pressed', 'true');
+
+    await page.locator('input[type="file"]').setInputFiles([
+      { name: 'first.wav', mimeType: 'audio/wav', buffer: createDemoAudioBuffer(1.2, 220) },
+      { name: 'second.wav', mimeType: 'audio/wav', buffer: createDemoAudioBuffer(0.8, 330) },
+    ]);
+    await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1, { timeout: 60_000 });
+    await expect(page.getByTestId('audio-track-timeline-stack')).toHaveAttribute('data-view', 'single');
+    await expect(page.getByText('Joined 2 files into one recording, in order.')).toBeVisible();
+    await expect.poll(() => projectSeconds(page)).toBeCloseTo(2, 1);
+
+    // No multitrack controls: no track header, move grip, Split or Add track.
+    await expect(page.getByRole('button', { name: 'Mute' })).toHaveCount(0);
+    await expect(page.getByTestId('audio-track-drag-handle')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Add track' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Split at playhead' })).toHaveCount(0);
+
+    // Selecting and removing a part works as before.
+    const surface = page.getByTestId('audio-track-waveform-surface');
+    const box = (await surface.boundingBox())!;
+    await page.mouse.move(box.x + box.width * 0.1, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.4, box.y + box.height / 2, { steps: 6 });
+    await page.mouse.up();
+    await expect(page.getByTestId('audio-selection-bar')).toHaveCount(1);
+    const before = await projectSeconds(page);
+    await page.keyboard.press('Delete');
+    await expect.poll(() => projectSeconds(page)).toBeLessThan(before - 0.3);
+
+    // Saving has nothing to pick but the name and format.
+    await page.getByRole('button', { name: 'Save as' }).click();
+    await expect(page.getByRole('group', { name: 'Save target' })).toBeHidden();
+  });
+
+  test('every take goes into the one recording', async ({ page }) => {
+    await stubCapture(page);
+    await openReadyEditor(page);
+
+    await recordFor(page, 700);
+    await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1, { timeout: 30_000 });
+    const firstLength = await projectSeconds(page);
+    await recordFor(page, 700);
+    await expect(page.getByText(/^Recorded into /)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1);
+    expect(await projectSeconds(page)).toBeGreaterThan(firstLength + 0.4);
+
+    // Shift+R adds a track only in multitrack mode.
+    await page.keyboard.press('Shift+R');
+    await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible({ timeout: 30_000 });
+    await page.waitForTimeout(400);
+    await page.getByRole('button', { name: 'Stop recording' }).click();
+    await expect(page.getByText(/^Recorded into /)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1);
+
+    // There is no "Record into" choice to make.
+    await page.getByRole('button', { name: 'Recording settings' }).click();
+    await expect(page.getByText('Record into', { exact: true })).toHaveCount(0);
+  });
+
+  test('switching to one track mixes the tracks into one; undo brings them back', async ({ page }) => {
+    await page.addInitScript(() => window.localStorage.setItem('jh-audio-view-mode', 'multi'));
+    await openReadyEditor(page);
+    await page.locator('input[type="file"]').setInputFiles([
+      { name: 'alpha.wav', mimeType: 'audio/wav', buffer: createDemoAudioBuffer(1.2, 220) },
+      { name: 'beta.wav', mimeType: 'audio/wav', buffer: createDemoAudioBuffer(1.6, 330) },
+    ]);
+    await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(2, { timeout: 60_000 });
+
+    await page.getByTestId('audio-view-single').click();
+    await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1);
+    await expect(page.getByText('Merged 2 tracks into one. Undo brings them back.')).toBeVisible();
+    await expect.poll(() => projectSeconds(page)).toBeCloseTo(1.6, 1);
+
+    await page.getByRole('button', { name: 'Undo' }).first().click();
+    await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(2);
+    await expect(page.getByTestId('audio-view-multi')).toHaveAttribute('aria-pressed', 'true');
+
+    // The chosen mode is remembered on this device.
+    await page.getByTestId('audio-view-single').click();
+    await expect(page.getByTestId('audio-track-stack-row')).toHaveCount(1);
+    expect(await page.evaluate(() => window.localStorage.getItem('jh-audio-view-mode'))).toBe('single');
   });
 });
