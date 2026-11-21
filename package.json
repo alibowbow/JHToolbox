@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "copy:pdf-worker": "node scripts/copy-pdf-worker.mjs",
-    "predev": "npm run copy:pdf-worker",
-    "prebuild": "npm run copy:pdf-worker",
+    "predev": "npm run copy:pdf-worker && node scripts/copy-rhwp-assets.mjs",
+    "prebuild": "npm run copy:pdf-worker && node scripts/copy-rhwp-assets.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -51,6 +51,7 @@
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "@next/env": "^14.2.35",
+    "@rhwp/core": "0.9.1",
     "browser-image-compression": "^2.0.2",
     "cal-sans": "^1.0.1",
     "exifr": "^7.1.3",

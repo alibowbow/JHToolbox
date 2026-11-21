@@ -101,6 +101,7 @@ const toolIcons: Record<string, LucideIcon> = {
   'pdf-compare': GitCompare,
   'pdf-to-pdfa': BadgeCheck,
   'pdf-to-hwpx': ArrowLeftRight,
+  'hwp-hwpx': ArrowLeftRight,
 
   'image-resize': Scaling,
   'image-compress': Minimize2,

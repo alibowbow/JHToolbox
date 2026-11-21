@@ -48,6 +48,7 @@ const TOOL_ALIASES: Record<string, string[]> = {
   'pdf-compare': ['비교', '차이', '다른 점', '대조'],
   'pdf-to-pdfa': ['보존', '아카이브', '장기 보관'],
   'pdf-to-hwpx': ['한글', '한컴', '아래아', '한글 문서', 'hwp'],
+  'hwp-hwpx': ['한글', '한컴', '아래아한글', '한글 문서 변환', 'hwp to hwpx', 'hwpx to hwp', 'hwp를 hwpx로', 'hwpx를 hwp로'],
   'image-resize': ['크기', '사이즈', '리사이즈', '해상도', '픽셀', '늘리기', '줄이기'],
   'image-compress': ['용량', '줄이기', '압축', '경량화', '최적화', '작게'],
   'image-crop': ['자르기', '크롭', '잘라내기', '트리밍'],
@@ -247,6 +248,7 @@ type SearchDocument = {
   keywords: string[];
   categories: string[];
   descriptions: string[];
+  aliasPhrases: Set<string>;
   direction: string;
 };
 
@@ -267,7 +269,8 @@ const DIRECTION_HINTS: Record<string, string> = {
 
 function buildDocument(entry: SearchableToolCopy, order: number): SearchDocument {
   const names = entry.names.map(normalize);
-  const keywords = [...entry.tool.tags, ...entry.tool.id.split('-'), ...(TOOL_ALIASES[entry.tool.id] ?? [])].map(normalize);
+  const aliases = (TOOL_ALIASES[entry.tool.id] ?? []).map(normalize);
+  const keywords = [...entry.tool.tags, ...entry.tool.id.split('-')].map(normalize).concat(aliases);
   return {
     tool: entry.tool,
     order,
@@ -277,6 +280,7 @@ function buildDocument(entry: SearchableToolCopy, order: number): SearchDocument
     keywords,
     categories: entry.categoryLabels.map(normalize),
     descriptions: entry.descriptions.map(normalize),
+    aliasPhrases: new Set(aliases.filter((alias) => alias.includes(' ')).map(compact)),
     direction: DIRECTION_HINTS[entry.tool.id] ?? entry.tool.id.replace(/-/g, ' '),
   };
 }
@@ -384,6 +388,7 @@ export function searchTools(entries: SearchableToolCopy[], query: string, option
         let score = row.reduce((sum, value) => sum + value, 0) + matched * 5;
         if (phrase.length >= 2 && doc.namesCompact.some((name) => name.includes(phrase))) score += 12;
         if (doc.namesCompact.includes(phrase)) score += 6;
+        if (doc.aliasPhrases.has(phrase)) score += 12;
         // "jpg png" / "엑셀을 pdf로" prefer the converter going that way.
         const positions = words.map((word) => directionPosition(doc, word)).filter((position) => position >= 0);
         if (positions.length >= 2) {

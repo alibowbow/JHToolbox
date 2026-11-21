@@ -2003,6 +2003,16 @@ export const tools: ToolDefinition[] = [
     ],
   },
   {
+    id: 'hwp-hwpx',
+    name: 'HWP ↔ HWPX Converter',
+    category: 'file',
+    description: 'Convert Hangul documents to the opposite format in your browser. Drop HWP and HWPX files together to convert them in one batch. Check complex layouts in Hancom before submitting important documents.',
+    accept: '.hwp,.hwpx',
+    multiple: true,
+    tags: ['hwp', 'hwpx', 'hangul', 'hancom', 'convert'],
+    browseGroups: ['new', 'convert'],
+  },
+  {
     id: 'csv-json',
     name: 'CSV to JSON',
     category: 'file',
@@ -2313,8 +2323,9 @@ export const categories: ToolCategoryDefinition[] = [
   {
     id: 'file',
     label: 'File and Data Tools',
-    description: 'Convert structured data, split CSV files, and work with ZIP archives.',
+    description: 'Convert Hangul documents and structured data, split CSV files, and work with ZIP archives.',
     tools: [
+      'hwp-hwpx',
       'csv-json',
       'json-csv',
       'excel-csv',

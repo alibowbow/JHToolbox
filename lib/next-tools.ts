@@ -24,6 +24,7 @@ const RULES: Rule[] = [
   { test: (mime, name) => mime.includes('xml') || extension(name) === 'xml', toolIds: ['xml-csv', 'xml-json'] },
   { test: (_mime, name) => ['xlsx', 'xls'].includes(extension(name)), toolIds: ['excel-to-pdf', 'excel-csv'] },
   { test: (_mime, name) => extension(name) === 'docx', toolIds: ['word-to-pdf'] },
+  { test: (_mime, name) => ['hwp', 'hwpx'].includes(extension(name)), toolIds: ['hwp-hwpx'] },
   { test: (_mime, name) => extension(name) === 'hwpx', toolIds: ['pdf-to-hwpx'] },
 ];
 

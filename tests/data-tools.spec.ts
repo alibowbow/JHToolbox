@@ -1,5 +1,8 @@
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { expect, test, type Page } from '@playwright/test';
+import JSZip from 'jszip';
+import { writeTextHwpx } from '../lib/hwpx/text-writer';
 
 async function downloadFirstResult(page: Page): Promise<{ name: string; bytes: Buffer }> {
   const downloadPromise = page.waitForEvent('download');
@@ -7,6 +10,47 @@ async function downloadFirstResult(page: Page): Promise<{ name: string; bytes: B
   const download = await downloadPromise;
   return { name: download.suggestedFilename(), bytes: readFileSync((await download.path())!) };
 }
+
+test('Hangul batch conversion saves both document formats and reports a damaged file', async ({ page }) => {
+  const { initSync, HwpDocument } = await import('@rhwp/core');
+  const resolve = createRequire(`${process.cwd()}/package.json`).resolve;
+  initSync({ module: readFileSync(resolve('@rhwp/core/rhwp_bg.wasm')) });
+
+  const text = '한글 문서 변환 테스트';
+  const hwpx = Buffer.from(await writeTextHwpx({
+    pages: [{ pageNumber: 1, widthPt: 595, heightPt: 842, lines: [{ text, fontSizePt: 11, bold: false, align: 'left' }] }],
+  }));
+  const document = new HwpDocument(hwpx);
+  const hwp = Buffer.from(document.exportHwp());
+  document.free();
+
+  await page.goto('/tools/file/hwp-hwpx');
+  await page.locator('input[type="file"]').setInputFiles([
+    { name: 'legacy.hwp', mimeType: 'application/x-hwp', buffer: hwp },
+    { name: 'damaged.hwp', mimeType: 'application/x-hwp', buffer: Buffer.from('broken') },
+    { name: 'standard.hwpx', mimeType: 'application/hwp+zip', buffer: hwpx },
+  ]);
+  await page.getByRole('button', { name: 'Run tool' }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'damaged.hwp' })).toContainText('Could not open');
+  await expect(page.getByText('legacy.hwpx', { exact: true })).toBeVisible();
+  await expect(page.getByText('standard.hwp', { exact: true })).toBeVisible();
+
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download all', exact: true }).click();
+  const bundle = await download;
+  expect(bundle.suggestedFilename()).toBe('legacy.zip');
+  const zip = await JSZip.loadAsync(readFileSync((await bundle.path())!));
+  expect(Object.keys(zip.files).sort()).toEqual(['legacy.hwpx', 'standard.hwp']);
+  for (const name of Object.keys(zip.files)) {
+    const converted = new HwpDocument(await zip.files[name].async('uint8array'));
+    try {
+      expect(converted.getSourceFormat()).toBe(name.split('.').pop());
+      expect(converted.getTextRange(0, 0, 0, text.length)).toBe(text);
+    } finally {
+      converted.free();
+    }
+  }
+});
 
 test('csv-json reads a CP949 CSV saved by Korean Excel', async ({ page }) => {
   // "이름,도시\n홍길동,서울\n똠방각하,뷁\n" in CP949, including the extension
