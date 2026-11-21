@@ -14,3 +14,4 @@ pnpm-debug.log*
 
 # pdf.js font assets copied from node_modules (scripts/copy-pdf-worker.mjs)
 public/pdfjs/
+public/rhwp/

@@ -57,6 +57,7 @@ The static export output is written to `out/`.
 - `/tools/video`
 - `/tools/audio`
 - `/tools/file`
+- `/tools/file/hwp-hwpx` — local HWP ↔ HWPX batch conversion powered by [rhwp](https://github.com/edwardkim/rhwp)
 - `/tools/web`
 
 ## Notes

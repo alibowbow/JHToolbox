@@ -69,7 +69,7 @@ const IMAGE_TOOLS = new Set([
   'svg-png',
 ]);
 
-const HWPX_TOOLS = new Set(['pdf-to-hwpx', 'hwpx-to-pdf']);
+const HANGUL_TOOLS = new Set(['pdf-to-hwpx', 'hwpx-to-pdf', 'hwp-hwpx']);
 
 const OCR_TOOLS = new Set(['ocr-image-to-text', 'ocr-pdf-to-text']);
 const MEDIA_TOOLS = new Set([
@@ -124,7 +124,7 @@ const DATA_TOOLS = new Set([
 
 const WEB_TOOLS = new Set(['qr-generator', 'url-image', 'url-pdf', 'detect-cms', 'image-metadata']);
 
-const ROUTED_TOOL_SETS = [PDF_TOOLS, HWPX_TOOLS, IMAGE_TOOLS, OCR_TOOLS, MEDIA_TOOLS, DATA_TOOLS, WEB_TOOLS];
+const ROUTED_TOOL_SETS = [PDF_TOOLS, HANGUL_TOOLS, IMAGE_TOOLS, OCR_TOOLS, MEDIA_TOOLS, DATA_TOOLS, WEB_TOOLS];
 
 /**
  * Tools that work on one input at a time. Given several files, they run once
@@ -174,7 +174,12 @@ async function dispatchTool(ctx: ProcessContext): Promise<ProcessedFile[]> {
     return await processPdfTool(ctx);
   }
 
-  if (HWPX_TOOLS.has(ctx.toolId)) {
+  if (ctx.toolId === 'hwp-hwpx') {
+    const { processHwpConversion } = await import('@/lib/processors/hwp-converter');
+    return await processHwpConversion(ctx);
+  }
+
+  if (HANGUL_TOOLS.has(ctx.toolId)) {
     const { processHwpxTool } = await import('@/lib/processors/hwpx');
     return await processHwpxTool(ctx);
   }

@@ -813,6 +813,7 @@ function StandardToolWorkbench({
     setProgress({ percent: 2, stage: messages.workbench.statusRunning });
 
     try {
+      const fileErrors: string[] = [];
       const processedFiles = await runTool({
         toolId: tool.id,
         files,
@@ -822,6 +823,7 @@ function StandardToolWorkbench({
             setProgress(next);
           }
         },
+        onFileError: (file, cause) => fileErrors.push(`${file.name} · ${localizeErrorMessage(cause, locale)}`),
         signal: controller.signal,
       });
 
@@ -830,6 +832,7 @@ function StandardToolWorkbench({
       }
 
       setResults(withPreviewUrls(processedFiles));
+      if (fileErrors.length) setError(fileErrors.join('\n'));
       setResultsSignature(signature);
       if (supportsOptionMemory) {
         saveLastRunToolOptions(tool.id, rememberableOptions, currentOptions);
@@ -1204,7 +1207,7 @@ function StandardToolWorkbench({
           {error ? (
             <div role="alert" className="flex items-start gap-3 rounded-2xl border border-danger/25 bg-danger/5 p-4 text-sm text-danger">
               <AlertCircle size={18} className="mt-px shrink-0" aria-hidden="true" />
-              <p className="min-w-0 break-words">{error}</p>
+              <p className="min-w-0 whitespace-pre-line break-words">{error}</p>
             </div>
           ) : null}
           {error && failedCaptureUrl !== null ? (

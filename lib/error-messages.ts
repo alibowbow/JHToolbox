@@ -19,6 +19,12 @@ const EXACT_ERRORS_KO: Record<string, string> = {
   'Select at least one image or PDF file.': '이미지 또는 PDF 파일을 하나 이상 추가하세요.',
   'Select at least one PDF file.': 'PDF 파일을 하나 이상 추가하세요.',
   'Select an HWPX file to convert.': '변환할 HWPX 파일을 추가하세요.',
+  'Select an HWP or HWPX document.': 'HWP 또는 HWPX 파일을 추가하세요.',
+  'Could not open this HWP or HWPX document. It may be damaged or unsupported.': '한글 문서를 열 수 없습니다. 파일이 손상되었거나 지원하지 않는 형식일 수 있습니다.',
+  'Password-protected Hangul documents need to be unlocked before conversion.': '암호가 걸린 한글 문서입니다. 잠금을 해제한 사본으로 다시 시도하세요.',
+  'Could not save the converted Hangul document.': '변환한 한글 문서를 저장하지 못했습니다.',
+  'This browser cannot run the Hangul conversion engine. Try an updated browser.': '이 브라우저에서는 한글 변환을 실행할 수 없습니다. 최신 브라우저에서 다시 시도하세요.',
+  'Could not load the Hangul conversion engine. Please try again.': '한글 변환 엔진을 불러오지 못했습니다. 다시 시도하세요.',
   'Select a ZIP file to extract.': '압축을 풀 ZIP 파일을 추가하세요.',
   'Select a PDF or HWPX file to convert.': '변환할 PDF 또는 HWPX 파일을 추가하세요.',
   'Add two PDF files to compare.': '비교할 PDF 파일 두 개를 추가하세요.',
@@ -311,6 +317,8 @@ const STAGES_KO: Record<string, string> = {
   'Redacting pages': '페이지 가리는 중',
   'Analyzing PDF layout': 'PDF 레이아웃 분석 중',
   'Reading HWPX content': 'HWPX 읽는 중',
+  'Loading Hangul conversion engine': '한글 변환 엔진을 불러오는 중',
+  'Converting Hangul documents': '한글 문서를 변환하는 중',
   'Building HWPX document': 'HWPX 문서 만드는 중',
   'Building HWPX package': 'HWPX 파일 만드는 중',
   'Preparing OCR worker': '글자 인식 엔진 준비 중',
@@ -401,12 +409,15 @@ const METADATA_LABELS: Record<string, { en: string; ko: string }> = {
   differencesFound: { en: 'Differences found', ko: '차이 있음' },
   candidates: { en: 'Detected', ko: '감지 결과' },
   entries: { en: 'Entries', ko: '항목' },
+  omittedHangulItems: { en: 'Omitted items', ko: '빠진 항목' },
   rows: { en: 'Rows', ko: '행' },
   reason: { en: 'Note', ko: '안내' },
   note: { en: 'Note', ko: '참고' },
 };
 
 const METADATA_VALUES_KO: Record<string, string> = {
+  'Some document content could not be saved. Check this file against the original.':
+    '일부 내용을 저장하지 못했습니다. 결과 파일을 원본과 비교해 주세요.',
   'No recompressible JPEG images were found (text-only or non-JPEG images), so the original is returned unchanged.':
     '다시 압축할 JPEG 이미지가 없어(텍스트만 있거나 다른 형식의 이미지) 원본을 그대로 돌려드립니다.',
   'Rebuilding the structure did not make the file smaller, so the original is returned unchanged.':

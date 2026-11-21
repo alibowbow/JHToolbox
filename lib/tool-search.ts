@@ -48,6 +48,7 @@ const TOOL_ALIASES: Record<string, string[]> = {
   'pdf-compare': ['비교', '차이', '다른 점', '대조'],
   'pdf-to-pdfa': ['보존', '아카이브', '장기 보관'],
   'pdf-to-hwpx': ['한글', '한컴', '아래아', '한글 문서', 'hwp'],
+  'hwp-hwpx': ['한글', '한컴', '아래아한글', '문서 변환', 'hwp to hwpx', 'hwpx to hwp', 'hwp2hwpx', 'hwpx2hwp'],
   'image-resize': ['크기', '사이즈', '리사이즈', '해상도', '픽셀', '늘리기', '줄이기'],
   'image-compress': ['용량', '줄이기', '압축', '경량화', '최적화', '작게'],
   'image-crop': ['자르기', '크롭', '잘라내기', '트리밍'],
