@@ -43,7 +43,8 @@ jobs:
 
   e2e:
     name: Playwright (local-only suites)
-    runs-on: ubuntu-latest
+    # The pinned Playwright version supports Ubuntu 24.04 for Chromium.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
