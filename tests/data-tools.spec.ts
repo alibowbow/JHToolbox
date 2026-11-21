@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { expect, test, type Page } from '@playwright/test';
 import JSZip from 'jszip';
+import { writeTextHwpx } from '../lib/hwpx/text-writer';
 
 async function downloadFirstResult(page: Page): Promise<{ name: string; bytes: Buffer }> {
   const downloadPromise = page.waitForEvent('download');
@@ -15,11 +16,12 @@ test('Hangul batch conversion saves both document formats and reports a damaged 
   const resolve = createRequire(`${process.cwd()}/package.json`).resolve;
   initSync({ module: readFileSync(resolve('@rhwp/core/rhwp_bg.wasm')) });
 
-  const document = HwpDocument.createEmpty();
   const text = '한글 문서 변환 테스트';
-  document.insertText(0, 0, 0, text);
+  const hwpx = Buffer.from(await writeTextHwpx({
+    pages: [{ pageNumber: 1, widthPt: 595, heightPt: 842, lines: [{ text, fontSizePt: 11, bold: false, align: 'left' }] }],
+  }));
+  const document = new HwpDocument(hwpx);
   const hwp = Buffer.from(document.exportHwp());
-  const hwpx = Buffer.from(document.exportHwpx());
   document.free();
 
   await page.goto('/tools/file/hwp-hwpx');
